@@ -283,9 +283,14 @@ Expected: seven `ok:` lines.
 Run: `for h in Verdict Changes "Open Gaps" Rationale; do j=$(grep -c "$h" /home/anshul/workspace/skills/auto-plan/CONVERGENCE-JUDGE-CHECKLIST.md); s=$(grep -c "$h" /home/anshul/workspace/skills/auto-plan/SKILL.md); [ "$j" -ge 1 ] && [ "$s" -ge 1 ] && echo "ok:$h" || echo "BROKEN:$h"; done`
 Expected: four `ok:` lines.
 
-- [ ] **Step 3: Verify the instability-score formula is identical across the three files:**
-Run: `grep -h "instability_score = material_changes + open_gaps + pending_questions + unresolved_markers" /home/anshul/workspace/skills/auto-plan/SKILL.md /home/anshul/workspace/skills/auto-plan/CONVERGENCE-JUDGE-CHECKLIST.md /home/anshul/workspace/skills/docs/adr/0006-instability-score-metric.md | sort -u | wc -l`
-Expected: `1` (one canonical formula string, appearing in all three).
+- [ ] **Step 3: Verify the instability-score formula is identical across the three files.** Use
+`-ho` (only-matching) so the test compares the formula substring itself, not the surrounding
+markdown — the formula legitimately sits in a fenced code block in SKILL.md but inline-code in the
+judge checklist and ADR 0006:
+Run: `grep -rho "instability_score = material_changes + open_gaps + pending_questions + unresolved_markers" /home/anshul/workspace/skills/auto-plan/SKILL.md /home/anshul/workspace/skills/auto-plan/CONVERGENCE-JUDGE-CHECKLIST.md /home/anshul/workspace/skills/docs/adr/0006-instability-score-metric.md | sort -u | wc -l`
+Expected: `1` (one canonical formula substring).
+Run: `grep -rl "instability_score = material_changes + open_gaps + pending_questions + unresolved_markers" /home/anshul/workspace/skills/auto-plan/SKILL.md /home/anshul/workspace/skills/auto-plan/CONVERGENCE-JUDGE-CHECKLIST.md /home/anshul/workspace/skills/docs/adr/0006-instability-score-metric.md | wc -l`
+Expected: `3` (present in all three files).
 
 - [ ] **Step 4: Verify no placeholders leaked into the fragments:**
 Run: `grep -rn "TBD\|TODO\|FIXME\|to be determined\|placeholder" /home/anshul/workspace/skills/auto-plan/HARDENING-PASS-PROTOCOL.md /home/anshul/workspace/skills/auto-plan/HARDENING-PASS-RESPONSE-TEMPLATE.md /home/anshul/workspace/skills/auto-plan/CONVERGENCE-JUDGE-CHECKLIST.md`
