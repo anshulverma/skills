@@ -275,6 +275,50 @@ State file structure:
 
 State file is **always kept** (not deleted on completion). Required for `--redo` and `--resume`.
 
+**`--harden` extension.** When `--harden` is set, the state gains one top-level `harden` object.
+The full-rewrite-each-pass discipline is unchanged (the whole file is re-serialized after every
+mutation; never patched in place).
+
+```json
+"harden": {
+  "enabled": true,
+  "max_passes": 3,
+  "current_pass": 2,
+  "convergence_status": "in_progress",
+  "snapshots_dir": "docs/auto-plan/reports/snapshots",
+  "passes": [
+    {
+      "pass": 1,
+      "started_at": "2026-06-05T10:00:00Z",
+      "completed_at": "2026-06-05T10:08:00Z",
+      "status": "complete",
+      "snapshot_path": "docs/auto-plan/reports/snapshots/pass-1",
+      "judge_verdict": "NOT CONVERGED",
+      "judge_rationale": "Spec gained an error-handling section; 2 ADRs revised.",
+      "fingerprint": ["d014", "d015", "spec:error-handling"],
+      "gaps_filled": ["partial-write recovery", "retry semantics"],
+      "questions_bubbled_up": [],
+      "decisions_delta": {"added": ["d014", "d015"], "modified": ["d007"], "invalidated": []},
+      "metrics": {"material_changes": 2, "minor_changes": 4, "open_gaps": 0,
+                  "pending_questions": 0, "unresolved_markers": 0, "instability_score": 2}
+    }
+  ]
+}
+```
+
+`convergence_status` ∈ `in_progress | converged | max_passes_reached | oscillation | failed | interrupted`.
+`current_pass` and `convergence_status` sit at the top of the `harden` object for quick inspection.
+**Two-phase write:** each pass entry is written as `status:"running"` (with `judge_verdict:null`)
+*before* the Pass agent runs, then updated to `status:"complete"` *after* the judge verdicts — the
+`running`→`complete` transition is how an interrupted pass is detected.
+
+**Snapshots.** Plain file copies (not git commits, not a concatenated history file) under
+`docs/auto-plan/reports/snapshots/pass-N/`, preserving original artifact filenames including any
+`adr/NNNN-*.md`. Each `pass-N/` holds the full pre-overwrite artifact set. Retention: keep the last
+2 pass directories, pruning older ones as each new pass starts (the per-pass changelog in state is
+the permanent audit trail). The artifact filename date prefix is frozen at Pass 1's date so paths
+never churn across multi-day runs.
+
 **Output:** `[auto-plan] State saved to docs/auto-plan/reports/YYYY-MM-DD-<topic>-state.json`
 
 ## Phase 3: Artifacts
@@ -566,6 +610,10 @@ report with a note that no renderer was found.
 7. Re-generate affected artifacts
 8. Run Phase 4
 
+`--redo` is **independent of the hardening meta-loop**: it operates on the decision log, does not
+run inside a pass, creates no snapshots, and does not auto-re-harden. To re-harden after a `--redo`,
+re-invoke with `--harden`.
+
 ## --resume Support
 
 ```
@@ -575,6 +623,12 @@ report with a note that no renderer was found.
 1. Load state file
 2. Check current phase and progress
 3. Continue from where interrupted — if mid-Phase 2, resume the grilling loop; if between phases, start the next phase
+
+**`--harden` re-entry.** If the state has a `harden` object, read `harden.convergence_status` and
+`harden.current_pass`. If the last `passes[]` entry is `status:"running"` (interrupted mid-pass),
+restore the artifacts from its snapshot, then re-run that pass. If `status:"complete"` but not
+converged, start the next pass. If terminal (`converged` / `max_passes_reached` / `oscillation` /
+`failed`), the meta-loop is done — fall through to normal completion.
 
 Also triggered automatically: if the skill detects a state file for the topic on startup (without `--resume` flag), ask "Found interrupted session. Resume or start fresh?"
 
@@ -589,6 +643,7 @@ At the end of execution, produce and commit `docs/auto-plan/reports/YYYY-MM-DD-<
 - Duration: Nm
 - Sub-agents spawned: N (N grillers, N writers, N reviewers, N researchers)
 - Grilling iterations: N
+- Hardening passes: N         (only when --harden; omit otherwise)
 - Questions auto-answered: N
 - Questions asked to user: N
 - Branches explored: N
@@ -599,6 +654,20 @@ At the end of execution, produce and commit `docs/auto-plan/reports/YYYY-MM-DD-<
 | # | Question | Answer | Confidence | Source | Domain | Branch |
 |---|----------|--------|------------|--------|--------|--------|
 | 1 | ... | ... | ... | ... | ... | ... |
+
+## Hardening Passes
+
+_Only when `--harden` was used. `Convergence: <status> after N passes`, followed by:_
+
+| Pass | Material? | Gaps Filled | Questions Bubbled Up | Verdict Rationale | Snapshot |
+|------|-----------|-------------|----------------------|-------------------|----------|
+| 1 | yes | 2 | 0 | spec gained error-handling section | `snapshots/pass-1/` |
+| 2 | no (minor) | 0 | 1 | only wording changes | `snapshots/pass-2/` |
+
+![convergence](YYYY-MM-DD-<topic>-convergence.png)
+
+_(If no PNG renderer was found, embed an ASCII sparkline of the instability score instead and note
+the PNG was skipped. The convergence CSV is always written.)_
 
 ## Branch Tree
 
@@ -662,7 +731,10 @@ docs/auto-plan/
   reports/
     YYYY-MM-DD-<topic>-report.md
     YYYY-MM-DD-<topic>-tree.dot
-    YYYY-MM-DD-<topic>-tree.png    (best-effort)
-    YYYY-MM-DD-<topic>-state.json  (always kept)
+    YYYY-MM-DD-<topic>-tree.png         (best-effort)
+    YYYY-MM-DD-<topic>-state.json       (always kept)
+    YYYY-MM-DD-<topic>-convergence.csv  (--harden only; always written)
+    YYYY-MM-DD-<topic>-convergence.png  (--harden only; best-effort)
+    snapshots/pass-N/                   (--harden only; last 2 retained)
 docs/adr/NNNN-<slug>.md
 ```
