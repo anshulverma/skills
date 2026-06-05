@@ -372,6 +372,185 @@ If FAIL → fix affected artifacts → re-review → loop until PASS.
 
 **Output:** `[auto-plan] Phase 4: final verification PASS`
 
+## Phase 5: Hardening Meta-Loop
+
+**Enabled by:** `--harden`. **Skipped otherwise.** Phase 5 wraps Phases 0–4. Pass 1 is the
+normal full run (interactive — Phase 0.5 talks to the user) and produces the baseline artifacts
+(**Snapshot-0**). Passes 2…`--max-passes` re-examine the full artifact set in fresh, isolated
+context, fill gaps, and harden the plan until convergence.
+
+**Pass vs Iteration.** A **Pass** is one full re-examination of the artifact set in fresh context
+(bounded by `--max-passes`, default 3). An **Iteration** is a grill-deepen cycle *inside* a single
+pass (bounded by `--max-iterations`). The two loops are orthogonal and nest.
+
+**Input modes.** `--harden` accepts a topic string (Pass 1 = full run including Phase 0.5) and an
+existing spec file (Pass 1 = grill that spec). Either way, Pass 1's Phase 4 output is Snapshot-0.
+
+**Flag composition.** Legal with `--skip-plan`, `--plan-only`, `--resume`, `--confidence-threshold`,
+`--auto-commit`, `--unattended`. **Illegal with `--dry-run`** — hard error: "`--harden` cannot
+combine with `--dry-run`" (dry-run produces no artifacts to converge on). `--redo` is independent:
+it runs its own cascade and does **not** auto-re-harden; re-hardening requires an explicit
+`--harden` re-invocation.
+
+**Cost notice.** Before the loop, print one line and do **not** block for confirmation
+(escalations still pause for the user):
+`[auto-plan --harden] up to N passes, each re-examines the full artifact set; stopping at convergence.`
+
+### The Loop
+
+```
+pass ← 1
+run Phases 0–4 normally          # interactive; produces baseline artifacts = Snapshot-0
+while pass < max_passes:
+    pass ← pass + 1
+    write state: harden.passes[] += {pass, status:"running", judge_verdict:null}   # full rewrite
+    snapshot current artifacts → docs/auto-plan/reports/snapshots/pass-(pass-1)/
+    result ← dispatch Hardening Pass agent (fresh context)
+    if result is failure:
+        retry once; on 2nd failure → status:"failed", keep last-good artifacts, break
+    if result has Bubble-Up Questions and interactive and not --unattended:
+        answers ← ask user (batched, deduped); save as feedback memories + settled decisions
+        # answers are applied by the NEXT pass (record-and-defer) — no mid-pass re-dispatch
+    else if result has Bubble-Up Questions:
+        record each as UNRESOLVED with its recommended answer        # unattended / low threshold
+    apply result.Edits in place; full-rewrite state (decisions delta, status:"complete")
+    verdict ← dispatch Convergence judge (fresh context)             # independent diff
+    metrics ← compute instability_score from verdict + state
+    write state: harden.passes[pass].{judge_verdict, metrics, fingerprint}; full rewrite
+    if converged(verdict): status ← "converged"; break
+    if oscillation(pass fingerprints): status ← "oscillation"; break
+if pass == max_passes and not converged: status ← "max_passes_reached"
+emit report + convergence CSV + convergence PNG
+```
+
+`converged(verdict)` is true iff `verdict.material_changes == 0` AND `verdict.open_gaps == 0` AND no
+`UNRESOLVED:` marker remains in any artifact AND no bubble-up question is pending an answer — i.e.
+exactly `instability_score == 0`.
+
+### Dispatching the Hardening Pass agent
+
+```
+Agent({
+  description: "Harden pass {N}: {topic}",
+  prompt: [
+    "Harden the full artifact set following the Hardening Pass Protocol below.",
+    contents of HARDENING-PASS-PROTOCOL.md,
+    contents of HARDENING-PASS-RESPONSE-TEMPLATE.md,
+    contents of SPEC-REVIEW-CHECKLIST.md, PLAN-REVIEW-CHECKLIST.md, FINAL-REVIEW-CHECKLIST.md,
+    "Current artifacts (spec, ADRs, plan, CONTEXT.md):", [content],
+    "Decision log + unresolved (from state):", [content],
+    "Settled decisions (constraints — do not re-decide):", [list],
+    "User model brief:", [brief],
+    "Prior-pass change summaries:", [summaries],
+    "Confidence threshold:", [--confidence-threshold]
+  ],
+  model: "opus"
+})
+```
+
+The Pass agent does a **single-context review-and-patch**: it reads all artifacts itself, proposes
+**material-only** edits as full-file replacement bodies, and spawns no sub-agents. It never writes
+to disk. **Ordering (orchestrator-owned):** `snapshot → apply edits (overwrite) → full-rewrite
+state → dispatch judge`. The snapshot strictly precedes the overwrite so an interrupted pass is
+recoverable.
+
+### Collecting Pass Results
+
+Read the Pass agent's response (structured by `HARDENING-PASS-RESPONSE-TEMPLATE.md`) by its seven
+section headers:
+
+1. **Edits** — apply each full-file body in place (after snapshotting).
+2. **Decisions Changed** — fold into the decision log (`decisions_delta`).
+3. **Gaps Filled** — record in the pass's `gaps_filled`.
+4. **Unresolved Resolved** — remove the corresponding `UNRESOLVED:` markers.
+5. **ADR Candidates** — write any that meet all three ADR criteria.
+6. **Bubble-Up Questions** — handle per Escalation below.
+7. **Material Change Assessment** — the Pass agent's self-report; input to the judge (cross-check only).
+
+### Dispatching the Convergence judge
+
+```
+Agent({
+  description: "Judge convergence: pass {N}",
+  prompt: [
+    "Decide whether the loop has converged, following the checklist below.",
+    contents of CONVERGENCE-JUDGE-CHECKLIST.md,
+    "Snapshot (pass N-1):", [content],
+    "Current artifacts (pass N):", [content],
+    "Pass agent Material Change Assessment:", [content]
+  ],
+  model: "opus"
+})
+```
+
+The judge **independently diffs** snapshot vs current and emits `Verdict` / `Changes` / `Open Gaps`
+/ `Rationale`. The Pass agent's self-report is a cross-check only. It runs after **every** pass —
+including Pass 1, which diffs against Snapshot-0. Ambiguous changes are classified **material**
+(conservative bias).
+
+### Escalation / Bubble-Up
+
+Pass agents are non-interactive; only the orchestrator talks to the user. On collecting a pass's
+`Bubble-Up Questions`, the orchestrator asks the user immediately (batched, with recommendations,
+**deduped** against already-answered/deferred questions), saves each answer as a domain-tagged
+feedback memory and a settled decision (`source: "user/bubble-up"`), and the **next** pass applies
+them (record-and-defer). Applying an answer is itself a material change, so a pass that only raised
+questions is never converged.
+
+**Confidence gating** (by `--confidence-threshold`):
+
+| Threshold | Bubble-up behavior |
+|-----------|--------------------|
+| `low` | Never bubble up; every low-confidence question becomes `UNRESOLVED` with a recommended answer. |
+| `medium` (default) | Bubble up only genuinely-novel material trade-offs; routine gaps become `UNRESOLVED`. |
+| `high` | Bubble up all material low-confidence questions. |
+| `paranoid` | Bubble up every low-confidence question. |
+
+**Unattended runs.** When `--unattended` is set, or no interactive channel is detected (running as
+a sub-agent / scheduled), bubble-up is disabled: every would-be question becomes `UNRESOLVED` with a
+recommended answer and the loop continues without blocking. An `UNRESOLVED` marker is
+"answered: deferred" — it does not block convergence and is not re-asked.
+
+**Contradiction with a settled decision.** If a user's bubble-up answer contradicts a settled
+decision, reuse the `--redo` cascade: mark the contradicted decision `invalidated`, walk
+`depends_on` to re-queue affected gaps, apply the >60%-invalidated "consider re-planning" warning,
+and continue under the corrected constraint.
+
+### Termination
+
+| Condition | Detected by | Emitted | `convergence_status` |
+|-----------|-------------|---------|----------------------|
+| Convergence | judge: 0 material + 0 gaps + 0 UNRESOLVED + 0 pending | final hardened artifacts | `converged` |
+| Pass budget exhausted | orchestrator: `pass == max_passes`, not converged | most-hardened artifacts + surviving `UNRESOLVED` markers + "did not converge" banner | `max_passes_reached` |
+| Oscillation | orchestrator: pass-N fingerprint == pass-(N-2) | the version with fewer open gaps; tie → latest | `oscillation` |
+| Hard failure | Pass agent garbage/timeout twice | last-good artifacts | `failed` |
+
+A retried (failed-then-redispatched) pass does **not** consume the `--max-passes` budget.
+Oscillation compares the per-pass material-change **fingerprint** sets stored in state (not raw
+text), so minor edits don't mask a ping-pong. Oscillation detection is orchestrator-owned; the
+judge stays stateless and pairwise.
+
+### Convergence Metric and Chart
+
+Each pass yields an **instability score**:
+
+```
+instability_score = material_changes + open_gaps + pending_questions + unresolved_markers
+```
+
+It reaches 0 exactly at convergence — the numeric form of the stop condition. Per-pass metrics are
+stored in `harden.passes[].metrics` and written to
+`docs/auto-plan/reports/YYYY-MM-DD-<topic>-convergence.csv` on every run (no dependencies). CSV
+columns: `pass,material_changes,minor_changes,open_gaps,pending_questions,unresolved_markers,instability_score`.
+
+A best-effort PNG at `docs/auto-plan/reports/YYYY-MM-DD-<topic>-convergence.png` plots the
+instability score (plus component lines) against pass number, titled `Convergence — <topic>`.
+Rendering mirrors the `dot -Tpng` best-effort pattern: try `python3` + matplotlib (from the CSV),
+else `gnuplot`, else skip the PNG and embed an ASCII sparkline of the instability score in the
+report with a note that no renderer was found.
+
+**Output per pass:** `[auto-plan] Phase 5/pass N: instability=K (material M, gaps G, pending P, unresolved U) — <verdict>`
+
 ## --redo Support
 
 ```
