@@ -58,4 +58,5 @@ For each gap you find:
 - **Do not edit against a settled decision.** Settled decisions in your prompt are facts. If you
   believe one is wrong, record it under `### Bubble-Up Questions` flagged
   `conflict-with-settled: dNNN` with your reasoning — never silently contradict it in an edit.
-- **Do not churn prose.** No cosmetic-only edits (see the Material-Only Rule).
+- **Do not churn prose.** No cosmetic-only edits — propose only material edits (see the
+  Material-Only Rule above).
