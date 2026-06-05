@@ -1,0 +1,47 @@
+digraph harden_loop_branches {
+    rankdir=TB
+    node [shape=box style=filled fontname="Helvetica"]
+
+    skeleton [label="Hardening meta-loop\n(7 branches, 36 decisions)" fillcolor=white]
+
+    b001 [label="b001 Outer-loop control\nflow + termination\n(10 decisions)" fillcolor=palegreen]
+    b002 [label="b002 Hardening Pass\nagent contract\n(6 decisions)" fillcolor=palegreen]
+    b003 [label="b003 Convergence judge\n+ change detection\n(5 decisions)" fillcolor=palegreen]
+    b004 [label="b004 State schema +\nsnapshots\n(4 decisions)" fillcolor=palegreen]
+    b005 [label="b005 Escalation /\nbubble-up\n(5 decisions)" fillcolor=palegreen]
+    b006 [label="b006 Documentation\nsurface\n(1 decision)" fillcolor=lightgray]
+    b007 [label="b007 Convergence metric\n+ chart (PNG)\n(2 decisions)" fillcolor=lightyellow]
+
+    skeleton -> b001
+    skeleton -> b002
+    skeleton -> b003
+    skeleton -> b004
+    skeleton -> b005
+    skeleton -> b006
+    skeleton -> b007 [label="discovered\nmid-run (user)"]
+
+    // key user-input decisions (lightskyblue)
+    d002 [label="d002 mechanism:\nfresh sub-agent per pass" fillcolor=lightskyblue]
+    d005 [label="d005 bubble-up to\ninteractive orchestrator" fillcolor=lightskyblue]
+    d006 [label="d006 passes fill gaps\n+ harden" fillcolor=lightskyblue]
+    d034 [label="d034 instability_score\nmetric" fillcolor=lightskyblue]
+    d035 [label="d035 convergence chart\nPNG" fillcolor=lightskyblue]
+
+    b002 -> d002
+    b005 -> d005
+    b003 -> d006
+    b007 -> d034
+    b007 -> d035
+
+    // legend
+    subgraph cluster_legend {
+        label="Legend" fontname="Helvetica" style=dashed
+        L1 [label="auto-answered" fillcolor=palegreen]
+        L2 [label="user input" fillcolor=lightskyblue]
+        L3 [label="from ADR/memory" fillcolor=lightgray]
+        L4 [label="discovered" fillcolor=lightyellow]
+        L1 -> L2 [style=invis]
+        L2 -> L3 [style=invis]
+        L3 -> L4 [style=invis]
+    }
+}
