@@ -46,6 +46,9 @@ split between orchestrator and sub-agent prompts is the key to working here:
 | `SPEC-REVIEW-CHECKLIST.md` | Pass/fail criteria for the spec | Reviewer agent prompt |
 | `PLAN-REVIEW-CHECKLIST.md` | Pass/fail criteria for the plan | Reviewer agent prompt |
 | `FINAL-REVIEW-CHECKLIST.md` | Cross-cutting review of all artifacts | Reviewer agent prompt |
+| `HARDENING-PASS-PROTOCOL.md` | How a Hardening Pass agent reviews-and-patches the full artifact set in one pass (`--harden`) | Hardening Pass agent prompt |
+| `HARDENING-PASS-RESPONSE-TEMPLATE.md` | Exact section headers the orchestrator parses back from a pass | Hardening Pass agent prompt |
+| `CONVERGENCE-JUDGE-CHECKLIST.md` | Material-vs-minor rubric + CONVERGED/NOT CONVERGED format | Convergence judge agent prompt |
 
 Flow: the orchestrator builds a branch skeleton, dispatches **Griller** sub-agents (one per
 uncertain design branch, parallel on the first iteration) to auto-answer questions, collects
@@ -63,6 +66,12 @@ Consequences when editing:
 - The JSON **state file** (`docs/auto-plan/reports/...-state.json`) is the source of truth
   that survives context compression and powers `--resume`/`--redo`. It's rewritten in full
   each iteration (never patched incrementally).
+- `--harden` adds a second loop (Phase 5). Two more contracts mirror the Griller one:
+  `HARDENING-PASS-RESPONSE-TEMPLATE.md`'s seven headers ↔ the SKILL.md Phase 5 "Collecting Pass
+  Results" logic, and `CONVERGENCE-JUDGE-CHECKLIST.md`'s four response headers (`Verdict` /
+  `Changes` / `Open Gaps` / `Rationale`) ↔ the SKILL.md judge-collection logic. Changing the
+  section headers in one requires updating the other. A **Pass** (outer, `--max-passes`) and an
+  **Iteration** (inner, `--max-iterations`) are distinct loops — keep the vocabulary separate.
 
 ## Output locations (written into the target project, not this repo)
 

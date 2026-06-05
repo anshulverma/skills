@@ -8,7 +8,7 @@ no compiled code, build step, or test suite. The content *is* the product.
 
 | Skill | Description |
 |-------|-------------|
-| [`auto-plan`](auto-plan/SKILL.md) | Autonomous planning agent. Wraps grill-with-docs with contextual auto-answering, iterative deepening, and sub-agent orchestration to produce fully-grilled specs, ADRs, and implementation plans. |
+| [`auto-plan`](auto-plan/SKILL.md) | Autonomous planning agent. Wraps grill-with-docs with contextual auto-answering, iterative deepening, and sub-agent orchestration to produce fully-grilled specs, ADRs, and implementation plans. With `--harden`, it re-runs the whole flow across fresh-context passes — filling gaps and hardening the plan until a numeric instability score converges to 0 — and emits a convergence chart alongside the report. |
 
 ## Installation
 
