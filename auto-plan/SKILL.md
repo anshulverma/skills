@@ -55,6 +55,9 @@ digraph auto_plan {
 | `--dry-run` | off | Show skeleton + branches only |
 | `--resume` | off | Continue interrupted session from state file |
 | `--redo` | — | Change a decision (e.g., `--redo "use SQLite instead of PostgreSQL"`) |
+| `--harden` | off | Run the hardening meta-loop: re-examine artifacts across fresh-context passes until convergence (Phase 5). |
+| `--max-passes` | `3` | Maximum hardening passes. Distinct from `--max-iterations` (in-pass grill cycles). |
+| `--unattended` | off | Suppress user prompts; bubble-up questions degrade to `UNRESOLVED` so the loop never blocks. |
 
 **Phase matrix:**
 
@@ -66,6 +69,7 @@ digraph auto_plan {
 | `--dry-run` | 0 → 0.5 → 1 | nothing (shows skeleton) |
 | `--resume` | load state → continue | remaining artifacts |
 | `--redo` | load state → 2 → 3 → 4 | updated artifacts |
+| `--harden` | 0 → … → 4, then Phase 5 loop | artifacts + convergence CSV/PNG + report |
 
 ## Input Mode Detection
 
