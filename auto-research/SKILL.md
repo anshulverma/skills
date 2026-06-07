@@ -1,5 +1,5 @@
 ---
-name: autoresearch
+name: auto-research
 description: 'Autonomous iterative experimentation loop for any programming task. Guides the user through defining goals, measurable metrics, and scope constraints, then runs an autonomous loop of code changes, testing, measuring, and keeping/discarding results. Inspired by Karpathy''s autoresearch. USE FOR: autonomous improvement, iterative optimization, experiment loop, auto research, performance tuning, automated experimentation, hill climbing, try things automatically, optimize code, run experiments, autonomous coding loop. DO NOT USE FOR: one-shot tasks, simple bug fixes, code review, or tasks without a measurable metric.'
 license: MIT
 compatibility: Requires git. The project must be a git repository. Requires terminal access to run commands.
@@ -141,8 +141,8 @@ Ask the user to confirm. Do not proceed until confirmed.
 
 Once the user confirms:
 
-1. **Create a branch**: Propose a tag based on today's date (e.g., `autoresearch/mar17`).
-   Create the branch: `git checkout -b autoresearch/<tag>`.
+1. **Create a branch**: Propose a tag based on today's date (e.g., `auto-research/mar17`).
+   Create the branch: `git checkout -b auto-research/<tag>`.
 
 2. **Read in-scope files**: Read all files that are in scope to build full context of the current state.
 
@@ -260,7 +260,7 @@ experiment	commit	metric	status	description
 
 ### Git Workflow
 
-- All experiments happen on the `autoresearch/<tag>` branch
+- All experiments happen on the `auto-research/<tag>` branch
 - Each experiment is committed before running
 - Failed experiments are reverted with `git reset --hard HEAD~1`
 - Successful experiments advance the branch
