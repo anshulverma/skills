@@ -2,6 +2,10 @@
 
 Append a lesson whenever an investigation teaches you a reusable technique, gotcha, or cheap-repro trick. Keep each entry: **Lesson / Why / How to apply.** Newest at top. These are seeded from the MRS/SIA multimodal SFT GPU-utilization investigation.
 
+## After a partial revert, grep for references to what you removed
+- **Why:** Reverting `avocado_media.py` to pristine (to make a clean commit) removed `prefetch_image_paths`, but an uncommitted `model.py` still imported it — the next MAST run died at import with `ImportError` before running a single step.
+- **How to apply:** When you `sl revert`/reset a file during cleanup, `grep` the working copy for every symbol you removed. A modified working copy is not guaranteed self-consistent after a partial revert. Cheap MAST-launch import failures are a feature — they fail in the first ~2 min, so a fast relaunch beats hand-auditing, but grep first.
+
 ## Verify instrumentation actually emitted before trusting a null result
 - **Why:** In a GPU run, an opt-in `print()`-based timing hook (`GRAIN_SAMPLE_TIMING`) produced **0 lines** even though the env flag was set, so "no signal" was ambiguous between "the fix did nothing" and "the code path never ran / the log wasn't captured."
 - **How to apply:** Every instrumentation arm must emit a proof-of-life line first (e.g. `[PHASE_X] enabled window=16`). If you see zero instrumentation output, treat the run as **invalid**, not as evidence. Grain workers are subprocesses: use `print(..., flush=True)` (not `logging`) and confirm the capture stream (stdout vs stderr) actually contains it.
