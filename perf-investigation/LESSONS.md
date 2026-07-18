@@ -2,6 +2,18 @@
 
 Append a lesson whenever an investigation teaches you a reusable technique, gotcha, or cheap-repro trick. Keep each entry: **Lesson / Why / How to apply.** Newest at top. These are seeded from the MRS/SIA multimodal SFT GPU-utilization investigation.
 
+## Triangulate "comms-bound" without a profiler
+- **Why:** Confirming that forward/backward wall is FSDP all-gather comms (not compute) normally wants a profiler NCCL split, but the profiler capture was slow/fiddly. Four cheaper independent signals converged instead: (1) reconciled per-phase decomposition showing fwd+bwd ≫ everything, (2) per-phase time near-identical across all ranks = collective-synchronized barrier, (3) device-util high (~90%) while MFU ~1.5% = device running non-compute kernels, (4) structural: params all-gathered scale with total (106B) not active (5.5B).
+- **How to apply:** When the profiler is unavailable, triangulate comms with rank-uniformity + (device-busy ∧ low-MFU) + param-scaling + phase reconciliation. Treat the profiler NCCL% as a confidence-raiser, not a gate.
+
+## Separate cold-start/compile steps from steady state before trusting an aggregate
+- **Why:** A single `step_time=199s` sample looked like a huge observer effect; it was actually the compile/first step. Steady-state was 71–90s, matching baseline. Reading the one-sample aggregate would have sent the analysis sideways.
+- **How to apply:** Always pull min (or exclude the first N steps) for step/latency aggregates. `avg==min==max` means one sample — get more before concluding.
+
+## Verify instrumentation didn't perturb by comparing an overlapping metric to baseline
+- **Why:** Per-phase `cuda.synchronize()` risks an observer effect. Checking the instrumented `batch_time_proportion` (84%) against the uninstrumented baseline (~87%) proved the perturbation was negligible in steady state, so the phase numbers were trustworthy.
+- **How to apply:** Keep one metric that exists both with and without your instrumentation; if it matches baseline, your added timers aren't distorting the result. Prefer `cuda.Event` over `synchronize()` when you can't afford any drain.
+
 ## After a partial revert, grep for references to what you removed
 - **Why:** Reverting `avocado_media.py` to pristine (to make a clean commit) removed `prefetch_image_paths`, but an uncommitted `model.py` still imported it — the next MAST run died at import with `ImportError` before running a single step.
 - **How to apply:** When you `sl revert`/reset a file during cleanup, `grep` the working copy for every symbol you removed. A modified working copy is not guaranteed self-consistent after a partial revert. Cheap MAST-launch import failures are a feature — they fail in the first ~2 min, so a fast relaunch beats hand-auditing, but grep first.
