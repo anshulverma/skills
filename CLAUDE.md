@@ -8,8 +8,9 @@ A personal collection of Claude Code **skills** — each skill is a directory of
 files (no compiled code, no test suite, no build step). The content *is* the product:
 prose and protocols that get loaded into a Claude Code session as instructions.
 
-The skills are `auto-plan/` (an autonomous planning orchestrator) and `auto-research/` (an
-autonomous experimentation loop, ported from github/awesome-copilot). New skills are added as
+The skills are `auto-plan/` (an autonomous planning orchestrator), `auto-research/` (an
+autonomous experimentation loop, ported from github/awesome-copilot), and `i-have-adhd/` (an
+output-shaping style skill, ported from ayghri/i-have-adhd). New skills are added as
 sibling directories.
 
 ## How skills are deployed
