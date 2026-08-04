@@ -4,8 +4,16 @@
 
 Everything lives outside the code repo. Never write pipeline artifacts into `fbsource`.
 
+**Do not put the run under `~/.claude/` or `~/workspace/`.** Both are dotsync-managed. dotsync
+periodically restores its parent snapshot and quarantines your writes into
+`~/.dotsync/conflicts/<n>/`, so a completed unit silently reverts. On the monk run this
+destroyed two separate edit rounds; the quarantined copies held an older revision, so the work
+was not even recoverable. Every check reported success at the time.
+
+Use local disk outside both scopes:
+
 ```
-~/.claude/docs/sdd/<slug>/
+/data/users/anshulverma/sdd-runs/<slug>/
   run.json          # pipeline state — the router
   spec.md           # working copy of the input spec + folded-in answers
   questions.md      # stage-1 questions, then surviving UNRESOLVED markers
@@ -16,8 +24,25 @@ Everything lives outside the code repo. Never write pipeline artifacts into `fbs
 `<slug>` is kebab-case, derived from the spec filename and frozen at stage 1 so paths never
 churn.
 
-**auto-plan writes to repo-relative `docs/auto-plan/...` and has no output-path flag.** Run
-every `auto-plan` invocation with cwd = `~/.claude/docs/sdd/<slug>/` so its tree lands there.
+### Keeping auto-plan's output out of the repo
+
+`auto-plan` hardcodes repo-relative paths (`docs/auto-plan/specs|plans|reports/...`) and has
+**no output-path flag**. The session cwd is normally inside `fbsource`, and the `Skill` tool
+offers no way to change it — so a naive invocation writes planning cruft straight into the
+monorepo.
+
+`cd` does not fix this: each `Bash` call resets cwd, and `auto-plan` runs in the session, not
+in a shell.
+
+**Do this instead.** `auto-plan` is a markdown skill — its instructions are interpreted, not
+executed — so an explicit override in the invocation wins. State the absolute artifact root
+every time:
+
+> Write **all** artifacts under `/data/users/anshulverma/sdd-runs/<slug>/docs/auto-plan/` (absolute), not
+> the repo-relative `docs/auto-plan/`. Write nothing inside `fbsource`.
+
+Verify after the first pass that the tree actually appeared under the run directory. If
+anything landed in the repo, move it out and re-state the override — do not leave it there.
 
 ## run.json
 
@@ -28,16 +53,21 @@ Rewrite in full every tick. Never patch in place.
   "slug": "monk",
   "stage": "SPEC_HARDEN",
   "status": "running",
-  "spec_path": "~/.claude/docs/sdd/monk/spec.md",
+  "spec_path": "/data/users/anshulverma/sdd-runs/monk/spec.md",
   "plan_path": "",
-  "autoplan_state": "~/.claude/docs/sdd/monk/docs/auto-plan/reports/<date>-monk-state.json",
+  "autoplan_state": "/data/users/anshulverma/sdd-runs/monk/docs/auto-plan/reports/<date>-monk-state.json",
   "unresolved": [],
   "blocked_reason": "",
+  "in_flight": null,
   "tick": 7,
   "stage_ticks": 3,
   "updated_at": "2026-08-04T18:22:00Z"
 }
 ```
+
+`in_flight` is the concurrency guard — a tick claims a unit before starting it and clears it
+on completion, so a fresh-context tick can tell a running unit from an idle run without
+relying on file mtime. Schema and the staleness rule: see `SKILL.md`, "In-flight marker".
 
 `stage` ∈ `UNDERSTAND | SPEC_HARDEN | PLAN_WRITE | PLAN_HARDEN | EXECUTE`.
 `status` ∈ `running | done | blocked`.
@@ -61,7 +91,7 @@ The only stage with a human present. Do not arm the loop until it completes.
 
 ## Stage 2 — SPEC_HARDEN
 
-cwd `~/.claude/docs/sdd/<slug>/`. First tick:
+cwd `/data/users/anshulverma/sdd-runs/<slug>/`. First tick:
 
 ```
 /auto-plan ./spec.md --harden --max-passes 20 --skip-plan --unattended
@@ -81,6 +111,49 @@ Every later tick: identical, plus `--resume`.
 | `in_progress` | Stay; next tick adds `--resume` |
 | `failed` | Retry once with `--resume`; second failure → `blocked` |
 
+### Do not give one agent the whole artifact set
+
+auto-plan's Phase 5 dispatches a single pass agent that reads every artifact, proposes edits as
+full-file replacement bodies, and returns them. At real spec-and-plan size that agent **stalls**
+— on the monk run it died on stream idle timeout twice, the second time after only reaching
+"now let me read the spec". Nothing was produced either time.
+
+Two things make it fail: the read (a 1659-line spec plus a 1129-line plan plus protocol files)
+and the return (a full-file body as a payload).
+
+Split it instead:
+
+1. **Narrow read-only audits, run in parallel.** One per failure mode — provenance citations,
+   interface/coverage, ordering. Each pulls what it needs with `grep -n` and targeted `sed`
+   rather than loading whole files, and returns a compact list of defects.
+2. **Apply the fixes from the orchestrator**, not from the agent.
+
+This is the same rule as "keep payloads small, materialize files from the main loop", applied
+to hardening. The convergence judge can stay a single agent, because it returns a verdict
+rather than content.
+
+### Stop on divergence, not just convergence
+
+auto-plan detects `converged`, `oscillation`, and `max_passes_reached`. It does **not** detect
+an artifact that is steadily *inflating* — every pass makes real changes, so nothing looks
+stuck, and the loop runs to the pass cap while the document grows past the thing it describes.
+
+After each pass, compute two numbers and record them in `run.json`:
+
+- artifact line count
+- markers raised this pass minus markers retired this pass
+
+**Stop the loop when, over 2 consecutive passes, line count grows AND raised exceeds retired.**
+That is a pass adding surface rather than resolving it. Record the triggering metrics, then
+advance the stage.
+
+On the monk run, SPEC_HARDEN pass 1 raised 26 markers and retired 1 while producing a
+1276-line spec for a 7-file markdown skill. Nothing in auto-plan's own termination table would
+have caught that; the Phase 4 reviewer caught it by reading. This rule makes it mechanical.
+
+Ending a hardening loop early in either direction is the pipeline's call, not a question for
+the user — report the decision and the metrics behind it.
+
 ## Stage 3 — PLAN_WRITE (one tick)
 
 Invoke `superpowers:writing-plans` against the hardened spec. Save the plan to the path
@@ -94,6 +167,18 @@ in stage 5.
 
 ### The seam
 
+**Precondition: the state file must exist.** Stage 4 assumes stage 2 ran auto-plan end to end,
+letting it emit `docs/auto-plan/reports/<date>-<slug>-state.json`. If you ran stage 2's phases
+manually — dispatching grillers, writers, and reviewers yourself for control or payload reasons,
+which is often the right call — **auto-plan never wrote one**. Then `--resume` has nothing to
+load and the seam surgery below has nothing to patch.
+
+Check for the state file before stage 4. If it is absent, reconstruct it: record the artifact
+paths (spec, plan, ADRs), a `harden_spec` block summarising what stage 2 actually did, and a
+fresh `harden` block at `current_pass: 1`. Mark it `"reconstructed": true` with a note saying
+why, so the audit trail does not claim auto-plan produced it. Then run Phase 5's protocol
+directly — pass agent, apply edits, convergence judge — rather than relying on `--resume`.
+
 Stage 4 must **harden this plan**, not regenerate it. auto-plan's state file must therefore
 name it. Rewrite `autoplan_state` in full:
 
@@ -106,7 +191,7 @@ through stage 4 doing nothing.
 
 ## Stage 4 — PLAN_HARDEN
 
-cwd `~/.claude/docs/sdd/<slug>/`:
+cwd `/data/users/anshulverma/sdd-runs/<slug>/`:
 
 ```
 /auto-plan ./spec.md --resume --harden --max-passes 20 --unattended

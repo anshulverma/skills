@@ -95,9 +95,10 @@ Consequences when editing:
   anything but disk breaks resumability.
 - **One bounded unit of work per tick** is load-bearing. A tick that tries to finish a whole
   stage runs out of context mid-stage and strands partial state.
-- **Dynamic loop mode only.** `ScheduleWakeup({stop: true})` is the termination path.
-  Interval mode (`/loop 15m ...`) is a recurring cron that cannot self-terminate and expires
-  after 7 days.
+- **`/loop` is always a recurring cron** (`CronCreate`); omitting the interval defaults it to
+  `10m`, it does not switch to self-paced mode. Termination is `CronDelete({id})`, which
+  means `run.json` must carry `cron_job_id`. Arm `durable: true` or the run dies with the
+  process, and note the 7-day cron expiry on long runs.
 - **Stage 4 uses `--resume --harden`, never `--plan-only`.** `--plan-only` routes `0 → 3 → 4`
   and Phase 3 regenerates the plan, destroying the `writing-plans` output from stage 3. The
   state-file reset described in `STAGES.md` is what makes `--resume` harden that plan; the
