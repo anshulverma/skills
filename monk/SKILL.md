@@ -326,7 +326,7 @@ either table here.
 
 monk never produces a confidence number **in its report output**. The one numeric `confidence` monk
 ever writes is the KB frontmatter field, which `kb.py` requires; it is a fixed lookup off the
-`## Verification` label, given by the `### Verification vocabulary` table in
+`## Verification` label, given by the ``## `## Verification` vocabulary [D-D6]`` table in
 `references/KNOWLEDGE-INTEGRATION.md`, which owns both of its values. It is never a judgment about
 how sure monk feels, and it never appears in a report.
 

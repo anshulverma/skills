@@ -98,7 +98,7 @@ never as the anchor. A stitched cross-file chain carries **waypoints**: an order
 | 4 | Diff | the full diff (all files) when small, otherwise a change map plus this file's own hunks |
 | 5 | Adjacency | which other changed files reference this file's changed symbols, and vice versa |
 | 6 | Method | path pointers to `METHOD.md` and `ANTI-PATTERNS.md`, plus the ~1.7% base rate inline |
-| 7 | Rubric | tier definitions from `SKILL.md`'s `### The tier lookup`, warrant grades from `METHOD.md`, annotation definitions from `SKILL.md`'s Phase 4a, pasted into the brief at assembly time from those sections, so merged tiers are comparable |
+| 7 | Rubric | tier definitions from `SKILL.md`'s `### The tier lookup [B-D3]`, warrant grades from `METHOD.md`, annotation definitions from `SKILL.md`'s Phase 4a, pasted into the brief at assembly time from those sections, so merged tiers are comparable |
 | 8 | Output contract | the response schema below |
 | 9 | Prohibitions | no `/dexter:solve`; no recursive fan-out; no quota; no writes; no tier assignment (stage-1 only, relaxed for stage 2 as noted in the stage-2 brief below) |
 
@@ -106,7 +106,7 @@ Briefs cite paths, never paste file bodies. Anything not shared makes agents inc
 merge, tier definitions especially, since the orchestrator must not have to re-derive them.
 
 Block 7 ships the rubric text to agents; this file does not become a third normative copy of it.
-The assembly step reads `SKILL.md`'s `### The tier lookup` and Phase 4a annotation definitions, and
+The assembly step reads `SKILL.md`'s `### The tier lookup [B-D3]` and Phase 4a annotation definitions, and
 `references/METHOD.md`'s `## Warrant grades`, and pastes what it finds there. Block 6 inlines the
 `~1.7%` base rate only; the rest of the calibration census stays in `SKILL.md` and is cited, not
 restated.
