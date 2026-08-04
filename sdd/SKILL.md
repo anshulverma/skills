@@ -115,6 +115,13 @@ at the *start of the next unit* does.
 Corollary: `grep`-verifying your own edit proves the write reached the filesystem at that
 instant, nothing more. Never treat it as proof the change is durable.
 
+**Never type a fingerprint from memory.** When passing a hash to a subagent, read it out of
+`run.json` or recompute it in the same command that builds the prompt, and paste that. On the
+monk run the orchestrator edited an artifact, re-fingerprinted it into `run.json` without
+printing the value, then wrote an invented hex string into the next dispatch. Subagents are
+told to STOP on mismatch, so a fabricated hash blocks a correct build, and a fabricated hash
+that happens to look right is worse. A hash you did not read is not a verification.
+
 ## Arming and Termination
 
 Arm with an explicit interval:
