@@ -9,9 +9,10 @@ files (no compiled code, no test suite, no build step). The content *is* the pro
 prose and protocols that get loaded into a Claude Code session as instructions.
 
 The skills are `auto-plan/` (an autonomous planning orchestrator), `auto-research/` (an
-autonomous experimentation loop, ported from github/awesome-copilot), and `i-have-adhd/` (an
-output-shaping style skill, ported from ayghri/i-have-adhd). New skills are added as
-sibling directories.
+autonomous experimentation loop, ported from github/awesome-copilot), `diff-authoring/`
+(Phabricator diff conventions), `i-have-adhd/` (an output-shaping style skill, ported from
+ayghri/i-have-adhd), `pr-authoring/` (GitHub PR conventions), and `sdd/` (spec-to-code
+pipeline). New skills are added as sibling directories.
 
 ## How skills are deployed
 
@@ -76,8 +77,42 @@ Consequences when editing:
   section headers in one requires updating the other. A **Pass** (outer, `--max-passes`) and an
   **Iteration** (inner, `--max-iterations`) are distinct loops — keep the vocabulary separate.
 
+## Architecture of the `sdd` skill
+
+`sdd` is a **tick-based orchestrator**, not a single-shot skill. It is armed once with
+`/loop /sdd <slug>` and thereafter re-enters itself from fresh context on every tick.
+
+| File | Role |
+|------|------|
+| `SKILL.md` | Tick contract, the five stages, common mistakes, red flags |
+| `references/LOOP.md` | Dynamic vs interval loop modes, pacing, exact `ScheduleWakeup` signatures, why no lockfile |
+| `references/STAGES.md` | Per-stage `auto-plan` flags, `run.json` schema, the stage 3→4 seam |
+
+Consequences when editing:
+
+- **`run.json` is the router.** Conversation memory is never a valid source of stage or
+  progress — context compacts between ticks. Any change that makes a tick infer state from
+  anything but disk breaks resumability.
+- **One bounded unit of work per tick** is load-bearing. A tick that tries to finish a whole
+  stage runs out of context mid-stage and strands partial state.
+- **Dynamic loop mode only.** `ScheduleWakeup({stop: true})` is the termination path.
+  Interval mode (`/loop 15m ...`) is a recurring cron that cannot self-terminate and expires
+  after 7 days.
+- **Stage 4 uses `--resume --harden`, never `--plan-only`.** `--plan-only` routes `0 → 3 → 4`
+  and Phase 3 regenerates the plan, destroying the `writing-plans` output from stage 3. The
+  state-file reset described in `STAGES.md` is what makes `--resume` harden that plan; the
+  first PLAN_HARDEN tick must verify it held.
+- `sdd` composes `auto-plan`, `superpowers:writing-plans`, and
+  `superpowers:subagent-driven-development`. Changing `auto-plan`'s flag table or state schema
+  requires updating `references/STAGES.md`.
+
 ## Output locations (written into the target project, not this repo)
 
-When the skill runs, it writes artifacts into the project being planned:
+When `auto-plan` runs, it writes artifacts into the project being planned:
 `docs/auto-plan/{specs,plans,reports}/` and `docs/adr/NNNN-<slug>.md`.
 Filenames are date-prefixed `YYYY-MM-DD-<topic>-*`.
+
+`sdd` keeps its whole run under `~/.claude/docs/sdd/<slug>/` (`run.json`, `spec.md`,
+`questions.md`, `ledger.md`, and a nested `docs/auto-plan/` tree). It invokes `auto-plan` with
+cwd set to that directory, which is what redirects auto-plan's repo-relative output there.
+Nothing is written into `fbsource`.
