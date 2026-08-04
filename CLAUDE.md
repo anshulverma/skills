@@ -11,8 +11,9 @@ prose and protocols that get loaded into a Claude Code session as instructions.
 The skills are `auto-plan/` (an autonomous planning orchestrator), `auto-research/` (an
 autonomous experimentation loop, ported from github/awesome-copilot), `diff-authoring/`
 (Phabricator diff conventions), `i-have-adhd/` (an output-shaping style skill, ported from
-ayghri/i-have-adhd), `pr-authoring/` (GitHub PR conventions), and `sdd/` (spec-to-code
-pipeline). New skills are added as sibling directories.
+ayghri/i-have-adhd), `monk/` (whole-chain diff review), `pr-authoring/` (GitHub PR
+conventions), and `sdd/` (spec-to-code pipeline). New skills are added as sibling
+directories.
 
 ## How skills are deployed
 
@@ -107,6 +108,69 @@ Consequences when editing:
   `superpowers:subagent-driven-development`. Changing `auto-plan`'s flag table or state schema
   requires updating `references/STAGES.md`.
 
+## Architecture of the `monk` skill
+
+`monk` is a **review protocol**, not an orchestrator with a state file. `SKILL.md` carries the
+phase spine (0 through 4e) and every rule the orchestrator applies itself; the six
+`references/` files carry material that is either too long to inline or is pasted verbatim
+into sub-agent briefs.
+
+| File | Role |
+|------|------|
+| `SKILL.md` | Phases 0-4e, input resolution and flags, annotations, the tier lookup, the four Human Judgment gates including gate 4 (the style-laundering ban), the reporting floor, the caps, verdict mapping, delivery, the agent response schema |
+| `references/METHOD.md` | The seven rules, warrant grades A-E, edge kinds, trigger derivation, the closed terminal-class list T1-T6, the negation test, the residual-unknown bound |
+| `references/ANTI-PATTERNS.md` | Competing reviewers' prompts quoted at `path:line`, the load-bearing negatives, the style-laundering framing, citing `SKILL.md`'s gate 4 |
+| `references/REPORT-TEMPLATE.md` | Exact output structure and both worked examples, byte-identical to the design spec |
+| `references/FANOUT.md` | Fan-out threshold, the nine-block stage-1 brief, the stage-2 brief, the response schema, stitching, dedup, the coverage ledger |
+| `references/PERSISTENCE.md` | `reviews/D<n>.md` schema, the identity triple, version-over-version classification, the ask protocol, suppression |
+| `references/KNOWLEDGE-INTEGRATION.md` | Phase 0 prior selection, the dexter understand-only contract, the KB router and authoring rules |
+
+**One normative owner per concept.** Seven files that each restate the tier lookup, the warrant
+grades or the terminal classes will drift, and two drifted copies are worse than one missing
+copy because both still read as authoritative. So each shared concept has exactly one owning
+file and every other file cites that owner by section name instead of restating it:
+`METHOD.md` owns the rules, grades, edge kinds and terminals; `SKILL.md` owns the annotations,
+tier lookup, caps and verdict mapping; `FANOUT.md` owns the threshold table and the
+concurrency cap; `PERSISTENCE.md` owns the ledger schema and identity;
+`KNOWLEDGE-INTEGRATION.md` owns the dexter contract and the KB `confidence` values. Adding a
+fact means putting it in one file and pointing at it from the others.
+
+Three duplications are deliberate, because at the moment each is read the other copy is not in
+context:
+
+| Duplicated block | Sites | Why both copies exist |
+|---|---|---|
+| Agent response schema headers | `SKILL.md` ↔ `references/FANOUT.md` | `FANOUT.md` is pasted into the sub-agent brief; `SKILL.md` is what the orchestrator parses the return with |
+| Verdict mapping table | `SKILL.md` ↔ `references/REPORT-TEMPLATE.md` | the report is written from the template alone, with tiering already decided |
+| Killer vocabulary tokens | `references/METHOD.md` ↔ `references/PERSISTENCE.md` | the ledger's `killer` field is a closed enum and has to be checkable from the persistence file alone |
+
+Each pair must stay byte-identical. Task 9 of the build plan diffs all three; after editing one
+side, extract both blocks and `diff` them again rather than eyeballing it.
+
+Consequences when editing:
+
+- **The response schema is a parsing contract.** Its six headers (`### COVERAGE`, `### DELTA`,
+  `### CHAINS`, `### OPEN-ENDS`, `### UNPROVEN-FACTS`, `### ABANDONED`) must match across both
+  sites. Changing one without the other makes the orchestrator silently drop a whole section of
+  every agent's return.
+- **Finding identity is `(file path, enclosing symbol, terminal failure class)`**, never
+  `file:line`. `line_at_raise` is stored for the report and is never matched on. Changing that
+  key is not a refactor: it orphans every ledger entry, every suppression and every
+  knowledge-base backlink written before the change.
+- **The dexter escalation is understand-only, and that is a safety invariant.** Phase 3.5 hands
+  dexter a single proposition to decide; the fix phase and the `knowledge/` write are suppressed
+  at invocation, the working copy must not be modified, and probes are read-only, local and
+  single-host by default. A reviewer that repairs the code it is reviewing has destroyed its own
+  evidence, so monk banks any resulting entry itself rather than letting dexter do it.
+- **The 0.5 to 0.8 confidence band is published and demoted, never dropped.** Adding a
+  confidence threshold or a filter that hides conditional findings is the change a future
+  maintainer is most likely to make, and it reproduces the exact failure monk was built to fix.
+  The reporting floor and the caps are the noise control.
+- **Phabricator stays strictly read-only while the skill writes and git-commits to
+  `~/workspace/investigations/`.** Both halves are load-bearing: monk never posts, so there is
+  no decline channel, so the local ledger and the batched ask are the only feedback loop it has.
+- monk is markdown-only: no scripts, no plugin manifest, no non-markdown artifact.
+
 ## Output locations (written into the target project, not this repo)
 
 When `auto-plan` runs, it writes artifacts into the project being planned:
@@ -117,3 +181,8 @@ Filenames are date-prefixed `YYYY-MM-DD-<topic>-*`.
 `questions.md`, `ledger.md`, and a nested `docs/auto-plan/` tree). It invokes `auto-plan` with
 cwd set to that directory, which is what redirects auto-plan's repo-relative output there.
 Nothing is written into `fbsource`.
+
+`monk` writes nothing into this repo at runtime. Its per-diff findings ledgers go to
+`~/workspace/investigations/reviews/D<number>.md`, and confirmed findings graduate into
+`~/workspace/investigations/knowledge/` and `LESSONS.md`, the same git-backed repo dexter
+uses. It creates `reviews/` on its first run; do not pre-create it here.
