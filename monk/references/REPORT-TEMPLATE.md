@@ -57,7 +57,7 @@ n | <path> :: <symbol> (line L) | concern
     predicate: <one falsifiable sentence>
 
 ### Decisions to Validate
-n | <path> :: <symbol> (line L) | you chose X over Y | trade-off
+n | <path> :: <symbol> (line L) | the author chose X over Y | trade-off
 
 ### Pre-existing (not this diff)
 n | <path> :: <symbol> (line L) | <one line>          # never counted in the verdict
@@ -79,6 +79,20 @@ Never substitute HTML entities such as `&nbsp;` for indentation. Markdown render
 through as literal text, so the reader sees the entity instead of the indent. If a surface
 cannot render a fence, drop to flat lines with an explicit `key:` prefix on each continuation
 rather than faking the nesting.
+
+### The reader is the monk user, never the diff author
+
+Write every finding in the third person, naming the author as `the author`. Never address the
+reader as the person who wrote the code: no "you chose", no "your test plan", no "your MAST run".
+
+This is not a style preference, it is a consequence of Phabricator-read-only. monk never posts a
+comment, so the report is delivered only to whoever invoked it, and that person is usually
+reviewing someone else's diff. Second person silently asserts that the reader is the author,
+which is false by default and reads as a factual error about who did what. The rule covers the
+whole report, not just the `Decisions to Validate` row whose schema line is the usual source of
+the leak: a body paragraph that slips into "your" is the same defect.
+
+When the monk user IS the author, third person costs nothing.
 
 ### Chains: what the report says about abandoned chains
 
@@ -308,7 +322,7 @@ none
                mechanism is proven either way; only its significance turns on this
 
 ### Decisions to Validate
-1 | mitra/.../convert.py :: _DcpToHfConverter._health_check (line 206) | you chose a full
+1 | mitra/.../convert.py :: _DcpToHfConverter._health_check (line 206) | the author chose a full
     zero-fraction scan over sampling k elements per tensor | the scan is O(numel) and allocates a
     full fp32 copy, while a k-element sample detects an all-zero tensor with the same certainty
     and no allocation. The summary names the rejected alternative ("sampling felt flaky"), so
