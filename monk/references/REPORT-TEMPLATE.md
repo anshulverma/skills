@@ -70,6 +70,16 @@ prior reviews: <X> findings emitted, <Y> confirmed, <Z> declined (last <W>)
 Clean | Clean (partial: N files unreviewed, listed) | Needs Fixes | Needs Discussion
 ```
 
+### Emit the report inside a fenced block
+
+The skeleton above is fenced for a reason: continuation lines under a finding carry meaning
+through their indentation. Emit the whole report inside a fence with real spaces.
+
+Never substitute HTML entities such as `&nbsp;` for indentation. Markdown renderers pass them
+through as literal text, so the reader sees the entity instead of the indent. If a surface
+cannot render a fence, drop to flat lines with an explicit `key:` prefix on each continuation
+rather than faking the nesting.
+
 ### Chains: what the report says about abandoned chains
 
 Abandoned chains surface in the report as one line each, carrying the killer. The persisted ledger
