@@ -126,6 +126,34 @@ A proven proposition that establishes a real defect is C2's "dexter proved it". 
 was suppressed here, **monk itself authors that entry**, once the finding is confirmed, per the
 ownership rule in the KB section.
 
+## Escalation volume in repo mode
+
+`SKILL.md`'s Phase 3.5 puts expected volume at 0 to 2 escalations per diff. Repo mode multiplies
+that expectation by the unit count: a 25-unit run is 25 chances to reach the same expectation, and
+the obvious response is a per-run escalation budget. There is **no per-run budget**, and adding one
+would be wrong on two counts.
+
+- It contradicts the unlimited escalation budget C3 grants for facts reading cannot settle. That
+  phrase is already narrow, because `SKILL.md`'s three-way unknown split sends readable unknowns
+  back to reading and kills unfalsifiable ones outright, so the only thing a per-run cap could
+  actually ration is the empirical set, which is exactly the set the budget exists to pay for.
+- It parks an unsettled factual unknown. A run that has spent its budget can only report the
+  finding as "a chain that would have escalated but could not", which is a factual unknown resting
+  in a tier. Goal 5, prove or kill, says a factual unknown is settled by reading, by dexter, or by
+  dropping the finding, and gate 1 of `SKILL.md`'s Human Judgment gates says factual uncertainty
+  may not rest there. A per-run cap would be a third disposal route that both of them forbid.
+
+What bounds the volume instead is the eligibility rule that already exists: only an **otherwise
+complete** chain may escalate, meaning every non-empirical link is proven and the terminal is
+named. Most unknowns never reach that point. They die earlier at reading, at weakening into a
+proven weaker link, or at trigger satisfiability. A unit that produces no complete chain produces
+no escalation, and the per-unit expectation of 0 to 2 is dominated by the 0.
+
+If real runs show otherwise, the honest response is calibration, not a rule invented ahead of the
+measurement: record escalations per unit across roughly 20 unit reviews, and if the count is
+routinely at the top of the band rather than the bottom, the thing that is too loose is the
+eligibility rule or the unknown split, not the budget.
+
 ## Verdict mapping
 
 | Dexter verdict | Effect on the finding |

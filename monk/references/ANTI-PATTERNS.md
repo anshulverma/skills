@@ -261,6 +261,57 @@ What is left after subtracting all four is aperture and whole-chain custody: rea
 every link of one causal chain inside one reasoner until it reaches a terminal or dies. Everything
 else in this skill is machinery for doing those two things without drowning the user in output.
 
+## `simplify`: the taxonomy is taken, the execution model is refused
+
+One sourcing note before the quotes, because this section breaks the rule the preamble states.
+`simplify` is a built-in Claude Code skill, not an fbsource file, so it has no `path:line` to cite.
+Both quotes below are the prompt the skill emits, read out of the shipped binary at
+`node_modules/@anthropic-ai/claude-code-linux-x64/claude`. That is a build artifact and not a
+stable citation, so re-read before relying on the wording. The tool name in the second quote is
+interpolated at render time; everything else is literal.
+
+`simplify` states its own scope first:
+
+```
+You are improving the quality of the changed code, not hunting for bugs. Review
+it for reuse, simplification, efficiency, and altitude issues, then fix what you
+find.
+```
+
+and then its execution model:
+
+```
+Launch **4 independent review agents** via the Agent tool, all in a
+single message so they run concurrently. Pass each agent the diff and one of
+the four angles below.
+```
+
+The four angles are reuse, simplification, efficiency, and altitude. One agent per angle is a
+**lens split**, and it is the same shape as the perf agent plus correctness agent plus security
+agent named under **Not fan-out** above: the arrangement that turns a five-link chain into a
+performance nit, because no single agent ever holds more than one link. That is rule 1, never fan
+out by lens, and rule 1 admits no exception for a lens set that happens to be about quality rather
+than about severity.
+
+monk's position on this skill is deliberately split, and the split is the point of writing the
+section down. The **taxonomy is taken**: all four angles survive the fold into `QUALITY.md`'s
+Q1-Q8, and its `## Where these came from` table is the row-by-row proof that nothing was dropped.
+The **execution model is rejected**, in full, including inside an owner agent. A maintainer who
+reads both skills will see monk carrying `simplify`'s vocabulary while running none of its
+structure, and the available misreading is that monk is an unfinished port. It is not. The
+divergence is the design.
+
+In this file's fair-quoting tradition: `simplify` is not wrong for what it is, and the lens split
+costs it nothing. It says plainly that it is not hunting for bugs, and it applies the fixes rather
+than reporting them. Its findings are single-site by construction, so there is no chain to sever
+and nothing an agent boundary can cut in half. Four angles in parallel is the right shape for that
+job. The split is fatal only for chain construction, which is monk's whole job and is precisely
+what `simplify` disclaims.
+
+The direction of the pressure is worth naming too. `simplify` is a shipped, well-known skill with
+a visibly simpler structure, so "why does monk not just do what `simplify` does" is the easy
+question and "because rule 1" is the answer, every time.
+
 ## Style laundering
 
 Style, naming, formatting, and convention are not monk's scope. Lint owns them, and as
@@ -288,6 +339,10 @@ ships to defend and pushes the false positive rate off its measured baseline.
 
 ## The reversal to watch for
 
+Two of them, and the second arrived with the Improvements tier.
+
+### First: a threshold on conditional findings
+
 The design decision most likely to be reversed by a well-meaning future maintainer is the one that
 keeps conditional findings visible. Output feels noisy, and the obvious remedies are a minimum
 confidence threshold or a filter that hides anything written conditionally.
@@ -302,3 +357,30 @@ Noise control is already built, and it is built out of parts that a reader can a
 floor, the tier caps enforced by displacement, the residual-unknown bound, and trigger
 satisfiability, all of which kill chains for a stated reason that gets recorded. Those are the
 knobs. A confidence filter is not one of them, and neither is suppressing the conditional form.
+
+### Second: relaxing the Q evidence bar
+
+The **evidence bar** on quality findings, owned by `QUALITY.md`'s `## The evidence bar`, is the
+only thing standing between the Improvements tier and the dumping ground the rest of this file
+describes. It admits three forms and nothing else: a present inconsistency, a real past change
+that paid the cost cited by commit hash, or a checkable absence stated with how the absence was
+established. A prediction is not one of them and a preference is not one of them.
+
+Everything about relaxing it will feel like an improvement at the moment someone does it. The bar
+is one paragraph, so it is a one-line change. It is stricter than either source skill, so it will
+look like an unforced restriction rather than a defended one. It visibly kills useful-sounding
+candidates, and the report even lists them one line each under `Q candidates dropped`, so the cost
+of the bar is on screen every run while the benefit never is. And the relaxation has a reasonable
+name ready to hand: "let a well-argued observation in without a citation."
+
+That is the whole failure mode. Every "this would be cleaner" is well argued, because arguing is
+free when nothing has to be cited. Drop the bar and the tier fills with them, silently, one
+plausible entry at a time, and the Improvements section becomes the place a style objection goes
+once `SKILL.md`'s gate 4 has thrown it out of Human Judgment. The anti-laundering gate cannot save
+it either: laundering is about relabelling, and a candidate that clears no evidence form was never
+mislabelled, it was simply never evidence.
+
+The bar is not the noise control for this tier, and confusing the two is how it gets traded away.
+Noise control is the per-unit and global caps enforced by displacement and the Q severity order
+that decides what displaces what. The bar is the admission test. Tighten the caps if the tier is
+too long. Leave the bar alone.
