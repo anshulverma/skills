@@ -46,11 +46,23 @@ keeps one story about how much one reasoner holds.
 ### Unit filenames and the slug
 
 `<unit>` as a filename is the unit's scope-root-relative path with `/` replaced by `-`, so the
-`monk/references` node becomes `monk-references.md`. Where one directory yields two leaf groups of
-different artifact kinds, the kind is appended: `monk-references-code.md` and
-`monk-references-docs.md`. A node and a collapsed leaf group never collide, because a collapsed
-group **is** that directory's review and only one file is written. The mapping is deterministic and
-reversible.
+`monk/references` node becomes `monk-references.md`. Two suffixes disambiguate the two ways one
+directory can yield more than one unit, and both are required for the mapping to stay injective:
+
+| Case | Suffix | Example |
+|---|---|---|
+| the node itself | none | `monk-references.md` |
+| groups of different artifact kinds | the kind | `monk-references-code.md`, `monk-references-docs.md` |
+| two or more groups of the **same** kind, because the directory exceeded the leaf bound | a 1-based index in grouping order | `monk-references-docs-1.md`, `monk-references-docs-2.md` |
+
+The index is not optional. `monk/references/` is 8 document files and 2,983 lines, so it exceeds
+the leaf bound and yields three same-kind groups plus its node: without the index all four units
+write one filename and three units' findings are silently lost. Grouping order is the deterministic
+order the split rule already fixes (declared intent where stated, otherwise lexical), so the index
+is stable across runs.
+
+A node and a collapsed leaf group never collide, because a collapsed group **is** that directory's
+review and only one file is written. The mapping is deterministic and reversible.
 
 `<slug>` is the scope root's basename, lowercased, with non-alphanumerics collapsed to `-`, so
 `~/workspace/skills` gives `skills`.
@@ -185,7 +197,8 @@ depends: <what this unit needs from outside it>
 
 `SKILL.md`'s `### Response schema (parsing contract)` and `references/FANOUT.md`'s
 `### Response schema (parsing contract)` carry a fenced block that is byte-identical in both files
-by design, and is checked as such. The upward record does **not** touch it. It is an additional
+by design, and any edit to it must be applied to both copies in the same change. The upward record
+does **not** touch it. It is an additional
 schema, owned here under this heading and cited from elsewhere. Repo-mode leaf agents still emit the
 existing `### COVERAGE`, `### DELTA`, `### CHAINS`, `### OPEN-ENDS`, `### UNPROVEN-FACTS`, and
 `### ABANDONED` blocks unchanged; node agents additionally emit `### UNIT`, `### CONTRACT`,

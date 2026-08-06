@@ -116,8 +116,9 @@ The closed vocabulary is **one token**, and the spelling is normative:
 
 `no-evidence-cited` is **not** a killer. Killers belong to chains, a quality finding is not one,
 and a killed chain is the only finding that carries a killer at all. It must therefore never be
-written under `references/METHOD.md`'s `## Killer vocabulary`: the invariant gate extracts the
-canonical killer list from exactly that heading, so a non-killer filed there fails the gate on
+written under `references/METHOD.md`'s `## Killer vocabulary`. That heading is the single place the
+canonical killer list is read from, by a maintainer or by any checker someone later writes, so a
+non-killer filed there corrupts the list for
 correct work.
 
 Cap-evicted quality findings are **displaced, not dropped**. They stay in the per-unit ledger and

@@ -207,10 +207,11 @@ chain: <one line> | killer: grade-E-root | unsatisfiable-trigger | negation-held
 Five of the six killer tokens on the `### ABANDONED` line are the subset an agent can reach on its
 own: `grade-E-root`, `unsatisfiable-trigger`, `negation-held`, `two-residual-unknowns`, and
 `survivorship-unexplained`, the last of these in repo mode only, where a loud terminal with no
-answer to `why_not_yet` kills the chain. `dexter-refutation` is on the line because the line is the
-parsing contract for every abandoned record, but an agent never writes it: agents do not escalate,
-so only the orchestrator can reach a refutation. The closed list of six, with its normative
-spelling, lives in `references/METHOD.md`, `## Killer vocabulary`.
+answer to `why_not_yet` kills the chain. `dexter-refutation` is deliberately **absent** from the
+line: agents do not escalate, so only the orchestrator can reach a refutation, and putting an
+unreachable token in an agent's parsing contract invites an agent to emit one. The orchestrator
+writes it directly into the ledger instead. The closed list of six, with its normative spelling,
+lives in `references/METHOD.md`, `## Killer vocabulary`.
 
 A `### QUALITY` record is the quality-finding counterpart of a `### CHAINS` record, and it is
 emitted only for a candidate that clears the bar in `references/QUALITY.md`'s `## The evidence bar`.

@@ -175,18 +175,20 @@ Sections, in this order:
 | 1 | Scope and budget | scope root, `--scope`, `--since`, budget spent of budget available, units reviewed |
 | 2 | Intent spine | pass 1's one line per node, ancestors first, inherited lines marked |
 | 3 | Coverage | two blocks, never merged: subtree states, then per-file statuses for the units reviewed |
-| 4 | Priors | as in a diff report |
-| 5 | Chains | pushed and abandoned, one line per abandoned chain carrying its killer |
-| 6 | `Q candidates dropped` | one line per dropped candidate, carrying its token |
-| 7 | Escalations | omitted when none |
-| 8 | `### Must Fix` | all of them; there is no cap, only the per-unit tripwire |
-| 9 | `### Human Judgment` | ranked digest under the global cap, remainder count-only |
-| 10 | `### Improvements` | ranked digest under the global cap, remainder count-only |
-| 11 | `### Decisions to Validate` | ranked digest under the global cap, remainder count-only |
-| 12 | `### Outside review scope` | one line each, under the global cap |
-| 13 | Calibration | the outcome window for `mode: repo` only, plus the statement that repo mode's brakes are unmeasured |
-| 14 | Verdict | with its coverage clause, per the mapping above |
-| 15 | Resume pointer | the exact command that continues this run, plus what it would pick up |
+| 4 | Intent vs Implementation | per unit that declared an intent, rolled up: ALIGNED / EXTRA / MISSING |
+| 5 | Priors | as in a diff report |
+| 6 | Read | files opened **outside** the reviewing unit, with why. Coverage rows are per file inside a unit and have no column for an out-of-unit dependency, which unlimited repo aperture makes load-bearing |
+| 7 | Chains | pushed and abandoned, one line per abandoned chain carrying its killer |
+| 8 | `Q candidates dropped` | one line per dropped candidate, carrying its token |
+| 9 | Escalations | omitted when none |
+| 10 | `### Must Fix` | all of them; there is no cap, only the per-unit tripwire |
+| 11 | `### Human Judgment` | ranked digest under the global cap, remainder count-only |
+| 12 | `### Improvements` | ranked digest under the global cap, remainder count-only |
+| 13 | `### Decisions to Validate` | ranked digest under the global cap, remainder count-only |
+| 14 | `### Outside review scope` | one line each, under the global cap |
+| 15 | Calibration | the outcome window for `mode: repo` only, plus the statement that repo mode's brakes are unmeasured |
+| 16 | Verdict | with its coverage clause, per the mapping above |
+| 17 | Resume pointer | the exact command that continues this run, plus what it would pick up |
 
 Everything durable is in the per-unit ledgers regardless of what the digest shows, so a
 count-only remainder is a display decision and never a loss.
