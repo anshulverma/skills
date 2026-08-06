@@ -71,7 +71,7 @@ n | <path> :: <symbol or heading> (line L) | Q<k> <class name>
 ### Decisions to Validate
 n | <path> :: <symbol> (line L) | you chose X over Y | trade-off
 
-### Outside review scope
+### Outside review scope                 # repo mode only; diff mode uses Pre-existing
 n | <path> :: <symbol or heading> (line L) | <one line>   # never counted in the verdict
 
 ### Pre-existing (not this diff)
@@ -103,7 +103,7 @@ never a chain, and its token is not a killer.
 
 Required even when nothing is found: Intent, Intent vs Implementation (EXTRA/MISSING may be
 non-empty and the verdict still Clean), Priors, Read, Chains, Must Fix: none, Human Judgment:
-none, Calibration, Verdict. `Decisions to Validate`, `Improvements`, `Outside review scope`, and
+none, Calibration, Verdict. `Decisions to Validate`, `Improvements`, and
 `Pre-existing` are optional in a diff report. A repo report additionally always prints
 `### Improvements` and both coverage blocks, with `none` where they are empty, because those are
 what a repo review is mostly for and an omitted section reads as a tier that does not exist.
