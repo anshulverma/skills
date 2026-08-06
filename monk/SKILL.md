@@ -36,7 +36,8 @@ each, quoted from the competing reviewers' own prompts.
 ## Definition of done
 
 The report distinguishes what is provably broken from what warrants a human's judgment, anchors
-every item at a file plus enclosing symbol, states a derived and satisfiable triggering
+every item at a file plus enclosing symbol (the nearest enclosing heading in a document unit),
+states a derived and satisfiable triggering
 condition, names what work was done (priors scanned, files read, chains abandoned, coverage), and
 says "nothing found" cleanly when that is the truth. Silence produced by a crashed agent or a
 skipped file is not a finding of nothing [E-D9].
@@ -52,6 +53,14 @@ ever measured on the lower tiers that dominate output.
 
 **Consequence: most reviews find nothing. A skill that always emits a Must Fix is broken.**
 
+**The census measures diffs and does not transfer to repo mode.** It counts critical catches per
+diff; a repository's code has already been running, so the same ratio says nothing about what one
+unit review should produce, and quoting it there would be false precision. Repo mode's three brakes
+on emission are stated where they are owned: survivorship in `references/METHOD.md`'s
+`## Survivorship`, the evidence bar in `references/QUALITY.md`'s `## The evidence bar`, and the
+per-unit caps in `### Caps and overflow`. None of the three is measured yet, and the repo report's
+`Calibration` block says so rather than printing a borrowed rate.
+
 ### How that is enforced in skill text, not merely asserted
 
 The 1.7% line ships in `SKILL.md` and in every per-file agent brief, but it does no enforcement
@@ -63,14 +72,19 @@ work by itself. Enforcement is structural [F-D1]:
 | Fact-uncertainty must exit | Any factual unknown is read, escalated per C3, or kills the link. Escalation returns Must Fix (proof cited) or dropped. It never demotes into a tier. | Phase 3.5 |
 | Killed chains get a destination | Every abandoned chain is logged with its terminating reason in the required `Chains abandoned` field. The urge to report has a home that costs the author nothing. | Report |
 | A clean report is long, not empty | The clean report is where monk demonstrates work: priors scanned, files read and why, chains pushed and abandoned. Removes the incentive to demonstrate work via a finding [F-D2]. | `REPORT-TEMPLATE.md` |
-| Structural floor | Three drop rules, no numbers, plus an explicit prohibition: never emit a finding so the report is not empty [B-D4]. | Tier rubric |
-| Volume caps | Human Judgment capped at 3 by displacement, Decisions to Validate capped at 3 by displacement. Agents have no quota and are graded on chain completeness and open-end honesty, never on finding count [B-D5][E-D8]. | Orchestrator |
+| Structural floor | Four drop rules, no numbers, plus an explicit prohibition: never emit a finding so the report is not empty [B-D4]. | Tier rubric |
+| Volume caps | Human Judgment capped at 3, Decisions to Validate capped at 3, Improvements capped at 5 per unit and 15 in the report, all by displacement. Agents have no quota and are graded on chain completeness and open-end honesty, never on finding count [B-D5][E-D8]. | Orchestrator |
 | Measured, not asserted | The per-diff ledger records each finding's outcome. Phase 0 reads the last ~20 outcomes and the report header prints them. If declined exceeds confirmed over the window, raise the emission bar this run, which is three specific rule changes defined in Phase 0, not a mood [F-D5]. | Phase 0 + report |
 
 ## Architecture
 
 ```
 /monk [D<n> | --stack] [--gchat] [--include-bots]
+/monk --repo <path> [--scope <subpath>] [--budget <n>] [--since <rev>] [--gchat]
+  |
+  v
+Phase -1 Scope + inventory  repo mode only. tree -> artifact kind -> ranking -> budget
+                            -> intent descent; then one review per unit, leaves upward
   |
   v
 Phase 0  Priors + prior state
@@ -101,13 +115,15 @@ Markdown only, no scripts, no plugin. Lives at `~/workspace/skills/monk/` and sy
 
 ```
 ~/workspace/skills/monk/
-  SKILL.md                        # phases 0-4, tier lookup, floor, caps, calibration, verdict map
+  SKILL.md                        # phases -1 to 4, tier lookup, floor, caps, calibration, verdict map
   references/
-    METHOD.md                     # seven rules, warrant grades, terminal classes, trigger derivation
+    METHOD.md                     # seven rules, warrant grades, terminal sets, trigger derivation
+    QUALITY.md                    # Q1-Q8, the evidence bar, severity order, tier names, vocabulary
+    SCOPE.md                      # repo tree, ranking, budget, resume, the upward record
     ANTI-PATTERNS.md              # what other reviewers do wrong, quoted from their prompts
-    REPORT-TEMPLATE.md            # exact output structure + both verbatim worked examples
+    REPORT-TEMPLATE.md            # exact output structure + all three verbatim worked examples
     FANOUT.md                     # brief template, open-end ledger, stitch, dedup, coverage
-    PERSISTENCE.md                # reviews/D<n>.md schema, matching, ask protocol, suppression
+    PERSISTENCE.md                # ledger schemas, matching, ask protocol, suppression
     KNOWLEDGE-INTEGRATION.md      # prior selection/citation, dexter contract, KB + LESSONS authoring
 ```
 
@@ -131,6 +147,23 @@ Rationale and evidence: `references/METHOD.md`.
 | `/monk` | current commit's diff, via `sl log -r . -T '{phabdiff}'` | `reviews/D<n>.md` |
 | `/monk` with no diff on the commit | uncommitted working-copy changes, via `sl diff` | none [C-D9] |
 | `/monk --stack` | every diff base-to-top, each reviewed separately | one file per diff |
+| `/monk --repo <path>` | that repository or directory, whole tree, reviewed unit by unit | `reviews/repo-<slug>.md` plus one file per unit |
+| `/monk --repo <path> --scope <subpath>` | that subtree only; the scope root is `<path>/<subpath>` | same manifest |
+| `/monk --repo <path> --budget <n>` | override the per-run unit budget, default **25 units** | same manifest |
+| `/monk --repo <path> --since <rev>` | only subtrees holding a file touched since `<rev>` | same manifest |
+
+A repo invocation resolves to a tree of review units, and everything that then happens to that
+tree is owned by `references/SCOPE.md`: the four tree nouns, `<slug>` and `<unit>` derivation,
+artifact-kind detection, the two passes, ownership, ranking, budget, and resume. Phase -1 below
+runs it. Re-invoking `/monk --repo <path>` against an existing manifest **resumes** rather than
+restarting.
+
+**How the repo flags compose.** `--repo` composes with `--gchat`, which is still a delivery channel
+and nothing more. `--repo` is **mutually exclusive with `--stack`**: a stack is a sequence of diff
+versions and a repository has none. `--include-bots` is **rejected with a message rather than
+ignored**, because in repo mode there is no diff author to detect and no bot skip to override, so
+accepting it silently would imply an admission rule that does not exist. Print what was rejected
+and why, then continue with the rest of the invocation.
 
 Pre-publish review is in scope: catching a deadlock before publication is the cheapest place to
 catch it. With no Phabricator summary, the intent check falls back to the commit message; with no
@@ -155,6 +188,12 @@ paths. Never a bare date and never a working-copy path, neither of which resolve
 `--gchat`, `--stack`, and `--include-bots` are independent and may be combined freely. No flag
 changes what monk reasons about; each changes only delivery, iteration, or admission.
 
+The repo flags in the invocation table are the one exception to that sentence, and they are
+exempted rather than smuggled in: `--repo` selects the review's **subject**, and `--scope`,
+`--budget`, and `--since` bound the tree it walks. They change what is reasoned about by
+construction, which is why their composition rules are stated above rather than left to the
+"combine freely" default.
+
 | Flag | Effect |
 |---|---|
 | `--gchat` | Deliver the report through `meta google.chat.message send` instead of the terminal. A delivery channel only; its one behavioral consequence, the deferred Asked tier, is stated in Delivery |
@@ -176,6 +215,47 @@ the moment that diff's review completes, with a `[k/N] D<number>` prefix on the 
 single combined message is rejected: the reports have independent verdicts and independent
 `Calibration` blocks, and concatenating them buries a `Needs Fixes` inside a wall of `Clean`.
 One final one-line summary message follows the last diff, listing each diff and its verdict.
+
+## Phase -1: scope and inventory
+
+Repo mode only. A diff invocation enters at Phase 0 and nothing below runs. This phase turns a path
+into a queue of review units and an intent spine; it decides **what** is reviewed and **in what
+order**, never what counts as a finding.
+
+Six steps, each mechanic owned by `references/SCOPE.md` and cited rather than restated here:
+
+1. **Resolve the scope root.** `--repo` plus optional `--scope`. `<slug>` and the per-unit filenames come from `references/SCOPE.md`'s `### Unit filenames and the slug`.
+2. **Build or load the inventory.** A first run builds it and persists it; a later run loads it from the manifest and re-checks it against HEAD. The manifest layout, its frontmatter, and the per-unit files are owned by `references/PERSISTENCE.md`'s `## Repo mode: one manifest, one file per unit`.
+3. **Detect artifact kind per file, before grouping**, per `references/SCOPE.md`'s `## Artifact-kind detection`. The kind selects the terminal set the unit is reviewed against, which `references/METHOD.md`'s `## Closed terminal sets by artifact kind` owns.
+4. **Group into units.** Leaf groups, nodes, units, and subtrees are defined once, in `references/SCOPE.md`'s `## The four tree nouns`, together with the boundary-file rule and the degenerate collapses. The **unit** is the count `--budget` bounds, the scope the caps apply to, and the scope of the Must Fix tripwire.
+5. **Rank and select.** `references/SCOPE.md`'s `## Ranking` owns the formula and the tie-breaks; `## Budget and resume` owns subtree-atomic spending, the oversized-subtree skip, and the deferred root. Budget is applied **after** any `--since` filtering.
+6. **Run the intent descent.** Pass 1 reads declared intent only, covers the whole tree, is one orchestrator read, and consumes no budget, per `references/SCOPE.md`'s `### Pass 1: descend to declare intent`. Its output is the intent spine every later unit checks itself against, which is rule 7 applied to a repository.
+
+The ascent then reviews units post-order, per `references/SCOPE.md`'s `### Pass 2: ascend to review`,
+and a chain that crosses units is owned by the lowest node containing every file it touches, per
+`references/SCOPE.md`'s `### Chain ownership: lowest common ancestor`.
+
+### `--since` composition
+
+`--since <rev>` **intersects** `--scope` rather than widening it, and the budget is applied to what
+survives the filter, so a filtered run spends its 25 units on the subtrees that actually changed.
+On resume monk **re-filters rather than re-ranks**, so a resumed run never reorders work it has
+already reported on. Exclusion lands at two granularities, because subtree states and per-file
+coverage statuses are orthogonal and print in separate blocks:
+
+| Excluded thing | Records as |
+|---|---|
+| a whole subtree | subtree state `skipped`, per `references/SCOPE.md`'s `## Subtree states` |
+| a file inside a reviewed unit | per-file status `skipped-with-reason: outside --since` |
+
+### Resume invalidates ancestors
+
+A unit whose content hash changed **returns to the queue**, and **its ancestors' node reviews are
+invalidated and requeued with it**. A boundary review rests on its children, so a node review kept
+alive over a changed child asserts a boundary that may no longer exist, which is worse than no node
+review at all because it carries an assurance. `references/SCOPE.md`'s `### Resume` owns the
+mechanics; the invalidation rule is stated here because it is what makes a resumed run's coverage
+claim honest.
 
 ## Phase 0: priors and prior state
 
@@ -237,7 +317,7 @@ MISSING: <behavior the summary claims that the diff does not implement>
 - Plus every file a chain link actually needs: exception hierarchies, base classes, callers of changed signatures, the config or test-plan job the change targets.
 - A file is opened because a link needs it, and the reason is recorded. The report's `Read` field lists changed files plus each untouched dependency opened with why it was opened [F-D2].
 - Library semantics recalled from memory is not evidence. When the library source is in the repo, read it; a grade B link cites that path or a doc URL [A-D2].
-- Aperture is unlimited for reading and bounded for reporting by the chain-root rule in Phase 3 [A-D9], which is what keeps full-file aperture from becoming a repo audit.
+- Aperture is unlimited for reading and bounded for reporting by the chain-root rule in Phase 3 [A-D9], which is what keeps full-file aperture from becoming a repo audit in diff mode. In repo mode the audit is the point, so the same rule substitutes rather than lapses: a root must be an observation **inside the declared scope**, and a finding anchored outside it is reported on an `Outside review scope` line. `references/METHOD.md`'s `## Where a chain may start [A-D9]` owns both forms.
 
 ## Phase 3: chain construction
 
@@ -255,6 +335,13 @@ point the diff is reviewed by per-file owner agents in two stages rather than by
 `references/FANOUT.md` owns the threshold table, what counts as a reviewable changed file, the
 brief template, the open-end ledger, the stitch, dedup, and the coverage ledger. Fan-out is by
 file or subsystem only, never by lens, at every level including inside an owner agent.
+
+In repo mode the tree replaces the threshold. The **unit** is the fan-out unit, siblings run as one
+parallel wave under the same concurrency cap, levels run sequentially, and ownership is read off
+the tree instead of matched pair by pair: `references/SCOPE.md`'s
+`### Chain ownership: lowest common ancestor` owns that rule and `references/FANOUT.md` owns the
+wave structure and the repo-mode brief blocks. Diff mode's threshold, its stage-1 / stage-2 stitch,
+and its root-file ownership are unchanged.
 
 Owner agents run in bounded waves under a concurrency cap, whose number `references/FANOUT.md`
 owns along with the change-inlining budget. The cap is recorded here because it is a source of
@@ -370,16 +457,41 @@ cluster hang (observable).
 | any INFERRED link | do not tier. Enter Phase 3.5 triage (read it, escalate it, or kill it). **Single exception, B-D8:** an escalation that returned `blocked` or did not terminate leaves the link INFERRED; that finding is tiered Human Judgment, marked `escalated, unsettled`, with the blocker displayed, and the link consumes the chain's single residual slot |
 | everything else | not reported |
 
-An anchor is required in all three tiers, not just Human Judgment. It costs nothing and kills the
+An anchor is required in every tier, not just Human Judgment. It costs nothing and kills the
 vaguest findings.
+
+**What an anchor is.** `<path> :: <enclosing symbol>`. In a **document** unit the enclosing symbol
+is the **nearest enclosing heading**, so a dangling citation inside a skill file anchors at
+`<path> :: ## Delivery` rather than at a line number. Without this extension floor rule 1 would
+drop every document finding monk is capable of making, since a markdown line has no enclosing
+symbol. Line numbers still print and are still never the identity: they drift, and
+`references/PERSISTENCE.md`'s `## Stable identity [B-D10][C-D3]` matches on the anchor.
+
+**Quality findings never enter this lookup.** Q1-Q8 are a finding kind rather than a terminal, so
+there is no annotation vector to look up and no trigger to satisfy. A quality candidate that clears
+the evidence bar routes to `Improvements` **by construction**; one that does not is dropped by floor
+rule 4 below. `references/QUALITY.md` owns the classes, the bar, and the order that ranks them.
+
+**Document findings do enter it, and they do drive the verdict.** A chain reaching D1-D4 runs the
+ordinary lookup exactly as one reaching T1-T6 does, so a document-only repository can legitimately
+be `Needs Fixes`. Nothing about a document terminal makes it advisory: an instruction a reader
+cannot follow is a defect in the same sense a hang is.
 
 ### The reporting floor [B-D4]
 
-Three structural drop rules, no numbers:
+Four structural drop rules, no numbers:
 
-1. No anchor (file plus enclosing symbol) -> drop. It is not actionable.
-2. No observable failure **and** no named rejected alternative -> drop. It is a feeling.
+1. No anchor (file plus enclosing symbol, or nearest enclosing heading in a document) -> drop. It is not actionable.
+2. No observable failure **and** no named rejected alternative **and** no cited quality class with its evidence -> drop. It is a feeling.
 3. The "why it might be fine" sentence would read identically on a different finding ("may be intentional", "worth double-checking") -> drop. A generic hedge is the dumping-ground tell.
+4. A quality candidate citing none of the three evidence forms -> drop, and record it in `Q candidates dropped` as `no-evidence-cited`. It is **not** tagged with a killer: killers belong to chains and a quality finding is not one.
+
+Rule 2 is a three-way disjunction rather than the original two-way one because a quality finding has
+no observable failure and no named rejected alternative by construction. Left as written, rule 2
+would drop the entire Improvements tier before it reached the report. The third clause is not a
+loophole: it demands a **cited** class, and `references/QUALITY.md`'s `## The evidence bar` fixes
+what a citation may be. Rule 4 is what stops the widened rule 2 from admitting an uncited hunch;
+the two are one mechanism and neither works alone.
 
 Plus an explicit prohibition in `SKILL.md`: **never emit a finding so the report is not empty.**
 Clean is a valid, expected verdict.
@@ -407,19 +519,39 @@ would produce exactly the 7.7% red-tier false positives the census already measu
 
 ### Caps and overflow
 
-| Tier | Cap | Enforcement |
-|---|---|---|
-| Must Fix | none | tripwire, below |
-| Human Judgment | 3 | displacement, ranked by terminal severity |
-| Decisions to Validate | 3 | displacement, ranked by terminal severity |
-| Pre-existing (not this diff) | 3 | displacement; never counted in the verdict |
+Caps are **two-level**. The per-unit level bounds what one review may write to its own ledger; the
+global level bounds what the report shows. Both are enforced by displacement, never by appending.
 
-Evicted items go to the persisted ledger, and the report prints a count-only footer.
+| Tier | Per unit | Global, in the report | Enforcement |
+|---|---|---|---|
+| Must Fix | none; tripwire below | none | tripwire, below |
+| Human Judgment | 3 | 10 | displacement, ranked by terminal severity |
+| Decisions to Validate | 3 | 10 | displacement, ranked by terminal severity |
+| Improvements | 5 | 15 | displacement, ranked by the Q severity order |
+| Outside review scope | 3 | 10 | displacement; never counted in the verdict |
+| Pre-existing (not this diff) | 3 | 3, diff mode only | displacement; never counted in the verdict |
 
-Must Fix carries no cap but does carry a tripwire: more than 2 Must Fix items on one diff triggers
-a re-verification pass before the report is delivered. Against 18 real critical catches across 929
-diffs, three provable Must-Fixes on a single diff is far more likely to be rubric drift than a
-genuinely broken diff.
+**In diff mode the diff is the only unit**, so the per-unit column binds and the global column never
+does. The one diff-mode-specific number is Improvements, **capped at 3 per diff** rather than 5,
+matching the existing Human Judgment cap: diff mode has no units outside fan-out, and a diff report
+dominated by structural suggestions is the dumping ground `references/ANTI-PATTERNS.md` exists to
+prevent. Pre-existing (not this diff) stays diff mode only. Repo mode has no counterpart, because in
+a repository everything is pre-existing; `Outside review scope` is the tier that holds a finding
+anchored beyond the declared scope, and it is capped rather than deleted for the same reason.
+
+Everything durable lands in the per-unit ledger regardless of what the report shows. Evicted items
+go to that ledger and the report prints a count-only footer; a global overflow prints the same way,
+as a ranked digest plus a remainder count.
+
+**The sort key** for displacement and for the ranked digest is **terminal severity** for chains and
+the declared order in `references/QUALITY.md`'s `## Q severity order` for quality findings. No
+confidence decimal enters either one: Improvements are **ranked, never scored**, exactly like every
+other tier.
+
+Must Fix carries no cap but does carry a tripwire: **more than 2 Must Fix items in one unit in repo
+mode, or on one diff in diff mode**, triggers a re-verification pass of that unit or that diff
+before the report is assembled. Against 18 real critical catches across 929 diffs, three provable
+Must-Fixes in one place is far more likely to be rubric drift than a genuinely broken artifact.
 
 ## Phase 4b: persist
 
@@ -427,6 +559,11 @@ Classify every surviving finding against the previous version, then write the pe
 `references/PERSISTENCE.md` owns the ledger location and schema, the stable identity used for
 cross-version matching, the version-over-version classification, and the single-writer rule that
 keeps fan-out from producing two ledgers for one diff. Uncommitted mode writes no ledger [C-D9].
+
+Repo mode persists a manifest plus one findings file per unit, and classifies against the previous
+HEAD rather than the previous diff version. Both are owned by `references/PERSISTENCE.md`'s
+`## Repo mode: one manifest, one file per unit`, including the `mode` filter that keeps repo tallies
+out of the diff-mode calibration window.
 
 ## Phase 4c: ask
 
@@ -438,9 +575,15 @@ and suppressed on later versions.
 ## Phase 4d: report format
 
 `references/REPORT-TEMPLATE.md` owns the exact output structure, the fields required even when
-nothing is found, the count-only withheld footer, and both worked examples reproduced verbatim. A
-clean report is long, not empty: it is where monk demonstrates work, which removes the incentive
+nothing is found, the count-only withheld footer, and all three worked examples reproduced verbatim.
+A clean report is long, not empty: it is where monk demonstrates work, which removes the incentive
 to demonstrate work via a finding [F-D2].
+
+It also owns the repo report: its section order, the `### Improvements` and
+`### Outside review scope` line formats, the two coverage blocks, and the rule that the full report
+is written to `reviews/repo-<slug>-report.md` without frontmatter while a ranked digest goes to the
+terminal or to `--gchat`. The "under roughly 40 lines" target is a diff-report target and does not
+apply to it.
 
 ### Verdict mapping [F-D3]
 
@@ -454,6 +597,23 @@ to demonstrate work via a finding [F-D2].
 `Decisions to Validate` and `Pre-existing` may be non-empty and the verdict is still `Clean`. The
 mapping is stated as a table because ambiguity is exploitable: a model reluctant to say Clean can
 otherwise park one item in Decisions to Validate and claim Needs Discussion.
+
+`Improvements` and `Outside review scope` join that list. Neither drives the verdict, exactly as
+`Decisions to Validate` does not, and the table gains **no rows and no columns** for repo mode.
+
+**Coverage is a clause on the verdict, not a row in the table.** A bare `Clean` requires full
+coverage. An unreviewed file forces `Clean (partial: N files unreviewed, listed)`, and in repo mode
+an unbudgeted subtree forces the parenthesised form too, because a deliberate stopping point still
+leaves the denominator smaller than the repository. Both qualifiers may print at once, innermost
+first:
+
+    Clean (partial: 2 files unreviewed, listed; 4 of 7 subtrees complete)
+    Needs Fixes (4 of 7 subtrees complete)
+
+Unbudgeted subtrees and unreviewed files are different things and print in separate blocks: one is
+a deliberate stopping point, the other is a failure, and merging them would let either read as the
+other. `references/SCOPE.md`'s `## Subtree states` owns the first vocabulary;
+`references/FANOUT.md`'s `## Coverage ledger and partial-review honesty [E-D9]` owns the second.
 
 ## Phase 4e: knowledge capture
 
@@ -517,6 +677,13 @@ confirmation is the one path where monk learns something without spending the us
 - Writing `status: provisional` KB entries, in any circumstance, including a verbal corroboration the user insists on banking.
 - Reviewing bot-authored or codemod diffs without `--include-bots`.
 - Call-graph or component-based partitioning, scripts, or any non-markdown artifact in the skill.
+- A quality finding that cites none of the three evidence forms. It is dropped as `no-evidence-cited`, never demoted into `Improvements`, and never re-labelled as a smaller finding.
+- Style, naming, and convention objections re-labelled as `Improvements`. The tier holds cited structural defects; the anti-laundering rule is unchanged and now covers one more heading.
+- Predictions and preferences as evidence, in any tier. "This will be hard to change later" is a prediction and does not clear the bar.
+- `--repo` with `--stack`, and `--include-bots` with `--repo`: the first is rejected as mutually exclusive, the second is rejected with a message rather than silently ignored.
+- A `Pre-existing (not this diff)` tier in repo mode. In a repository everything is pre-existing, so the tier is inapplicable and `Outside review scope` takes its place.
+- Reviewing outside the declared scope. Reading outside it stays unlimited; **reporting** outside it is one `Outside review scope` line, capped and never counted in the verdict.
+- A repo report that prints a bare `Clean` while a subtree is unbudgeted or a file is unreviewed.
 
 ## Agent response schema
 
@@ -536,16 +703,24 @@ file: <path> | status: reviewed | skipped-with-reason: <reason> | partial: <what
 ### CHAINS
 id: <local id>
 anchor: <path> :: <symbol>
-root: <observation in the changed lines>
+root: <observation in the changed lines; in repo mode, one inside the declared scope>
 links:
   - grade: A|B|C|D | edge: entails|enables | side-condition: <named or none> | annotation: READ|INFERRED|ASSUMED | cite: <path>:<line>
-terminal: T1..T6 | <one line>
+terminal: T1..T6 | D1..D4 | <one line>
 trigger: <conjunction of side-conditions>
 trigger-satisfiability: <config/callsite that satisfies it, or NOT FOUND>
 predicate: <one falsifiable sentence about the new code>
 negation-checked: <the falsifier and why it does not hold>
+why_not_yet: newly-reachable | has-fired | silent    # repo mode, code terminals only
 decisive-question: <the one fact that promotes or deletes> | settler: <who>
 tier: NOT ASSIGNED          # stage-1 agents always. Stage-2 agents emit `PROPOSED <tier>` instead
+
+### QUALITY
+anchor: <path> :: <symbol, or the nearest enclosing heading in a document>
+quality_class: Q1..Q8 | <one line>
+evidence: present-inconsistency | commit <hash> | checkable-absence | <the citation it rests on>
+predicate: <one falsifiable sentence about the structure>
+fix: <the named alternative, specific enough to act on>
 
 ### OPEN-ENDS
 direction: EXPORT | symbol: <sym> | at: <path>:<line> | property: <F now produces/permits X; consequences outside F unknown>
@@ -557,12 +732,22 @@ why-unreadable: <what execution/measurement/runtime state it needs>
 depends: <local chain ids>
 
 ### ABANDONED
-chain: <one line> | killer: grade-E-root | unsatisfiable-trigger | negation-held | two-residual-unknowns
+chain: <one line> | killer: grade-E-root | unsatisfiable-trigger | negation-held | two-residual-unknowns | survivorship-unexplained
 ```
+
+A `### QUALITY` record is emitted only for a candidate that clears the bar in
+`references/QUALITY.md`'s `## The evidence bar`. One that does not is reported in
+`Q candidates dropped` and never here. `references/FANOUT.md` records which of the six killer
+tokens an agent can reach on its own and which one only the orchestrator writes.
+
+Repo mode adds one more block, `### UNIT` and its companions, which node agents emit alongside
+these. It is a separate schema, owned by `references/SCOPE.md`'s `## The upward record`, precisely
+so that this fenced block stays byte-identical in both files.
 
 ## Open calibration questions
 
 These values are binding today. Each names what would change it.
 
 - **Human Judgment cap = 3**, enforced by displacement. Record the pre-cap count every review; the report's withheld-count footer is that record. If pre-cap counts routinely exceed 3 across roughly 20 reviews, the rubric is too loose, not the cap too tight. No measurement exists today to justify any other number.
+- **The per-unit caps of 3 Human Judgment, 5 Improvements, 3 Decisions to Validate, and 3 Outside review scope, and the global caps of 10, 15, 10, and 10.** Invented in exactly the sense the cap of 3 above is, and the global numbers are the per-unit ones scaled by a guess at how many units a run reviews. Record pre-cap counts per unit and per run: if the per-unit counts routinely exceed the cap across roughly 20 unit reviews, the rubric is too loose rather than the cap too tight; if the global digest is routinely almost all remainder, the global number is too small to be a digest at all.
 

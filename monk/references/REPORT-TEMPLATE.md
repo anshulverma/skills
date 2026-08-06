@@ -1,23 +1,30 @@
 # monk: report template
 
-This file owns the exact report structure, the fields that are printed even when the review is
-clean, the `waypoints:` and `predicate:` fields, and both worked examples. It defines nothing that
-another file already defines. Terminal classes `T1`-`T6`, the warrant grades, the edge kinds, the
-chain predicate, and the killer vocabulary live in `references/METHOD.md`. The tier lookup, the
-reporting floor, the caps and their overflow behavior, the Human Judgment gates, and the Must Fix
-tripwire live in `SKILL.md`. Cite them by name; do not restate them here.
+This file owns the exact report structure for both modes, the fields that are printed even when the
+review is clean, the `waypoints:` and `predicate:` fields, the rendered line formats, and all three
+worked examples. It defines nothing that another file already defines. The two terminal sets
+`T1`-`T6` and `D1`-`D4`, the warrant grades, the edge kinds, the chain predicate, survivorship, and
+the killer vocabulary live in `references/METHOD.md`. The quality classes `Q1`-`Q8`, the evidence
+bar, the severity order, and the canonical tier names live in `references/QUALITY.md`. The tree, the
+subtree states, budgeting, and resume live in `references/SCOPE.md`. The tier lookup, the reporting
+floor, the caps and their overflow behavior, the Human Judgment gates, and the Must Fix tripwire
+live in `SKILL.md`. Cite them by name; do not restate them here.
 
 The single deliberate exception is `### Verdict mapping [F-D3]` below. It is reproduced
 byte-for-byte from `SKILL.md`, because whoever is writing the report has to be able to close out a
 verdict without leaving this file, and because a verdict table paraphrased in a second place is a
 verdict table that will disagree with itself.
 
-`references/REPORT-TEMPLATE.md` ships this structure plus **both worked examples reproduced
-verbatim from the Worked examples section below**: the clean report, and the D114284934
-conditional-deadlock report. A clean report is long, not empty: it is where monk demonstrates work,
-which removes the incentive to demonstrate work via a finding [F-D2].
+`references/REPORT-TEMPLATE.md` ships this structure plus **all three worked examples reproduced
+verbatim from the Worked examples section below**: the clean report, the D114284934
+conditional-deadlock report, and the repo-mode report. A clean report is long, not empty: it is
+where monk demonstrates work, which removes the incentive to demonstrate work via a finding [F-D2].
 
 ## Report structure
+
+The skeleton below is the **diff** report. A repo report reuses these sections and their line
+formats but runs in a different order, with two coverage blocks and a resume pointer; that order is
+fixed under `## The repo report` further down, and nothing here is restated there.
 
 ```
 ## Intent
@@ -56,8 +63,16 @@ n | <path> :: <symbol> (line L) | concern
     why it might be fine: <specific to this finding>
     predicate: <one falsifiable sentence>
 
+### Improvements
+n | <path> :: <symbol or heading> (line L) | Q<k> <class name>
+    evidence: <present inconsistency | commit <hash> | checkable absence>, cited
+    fix: <the named alternative, specific enough to act on>
+
 ### Decisions to Validate
 n | <path> :: <symbol> (line L) | you chose X over Y | trade-off
+
+### Outside review scope
+n | <path> :: <symbol or heading> (line L) | <one line>   # never counted in the verdict
 
 ### Pre-existing (not this diff)
 n | <path> :: <symbol> (line L) | <one line>          # never counted in the verdict
@@ -76,14 +91,39 @@ Abandoned chains surface in the report as one line each, carrying the killer. Th
 carries the full reasoning. This shows the base rate the census demands without turning a clean
 review into a wall of rejected speculation.
 
-The killer token on each line is one of the five strings in `references/METHOD.md`'s
+The killer token on each line is one of the six strings in `references/METHOD.md`'s
 `## Killer vocabulary`, spelled exactly. Cap-evicted findings are not abandoned chains: they are
 live findings displaced by the caps in `SKILL.md`, and they appear only as the count-only footer
 already present in the skeleton above.
 
+A `Q candidates dropped` block is the quality-finding counterpart of `Chains abandoned`, printed
+the same way, one line each, carrying the single token `references/QUALITY.md`'s
+`## Q candidates dropped` owns. It is never merged into `Chains abandoned`: a dropped candidate was
+never a chain, and its token is not a killer.
+
 Required even when nothing is found: Intent, Intent vs Implementation (EXTRA/MISSING may be
 non-empty and the verdict still Clean), Priors, Read, Chains, Must Fix: none, Human Judgment:
-none, Calibration, Verdict. `Decisions to Validate` and `Pre-existing` are optional.
+none, Calibration, Verdict. `Decisions to Validate`, `Improvements`, `Outside review scope`, and
+`Pre-existing` are optional in a diff report. A repo report additionally always prints
+`### Improvements` and both coverage blocks, with `none` where they are empty, because those are
+what a repo review is mostly for and an omitted section reads as a tier that does not exist.
+
+### The two new tier sections
+
+Both line formats are owned here and their vocabulary is owned by `references/QUALITY.md`.
+
+`### Improvements` holds quality findings, ranked by the order in `references/QUALITY.md`'s
+`## Q severity order`, never scored. Every line carries three things and is dropped without them:
+the anchor, the **cited** evidence in one of the three admissible forms, and the `fix`. A fix
+specific enough to act on is the contract with whatever applies it, so "call
+`shared/paths.py :: resolve_shard_root` instead" is a fix and "deduplicate this" is not.
+
+`### Outside review scope` holds a finding whose anchor lies beyond the declared scope, one line
+each, capped by displacement and **never counted in the verdict**. It is where an open end whose
+consuming side leaves the scope is closed rather than carried forever. It is named
+`Outside review scope` and not "out of scope" because `SKILL.md` already carries an
+`## Out of Scope` non-goals heading, and two headings with one name make every citation to either
+one ambiguous.
 
 Every Must Fix states a triggering condition. A finding that cannot name what makes it fire is
 demoted to Human Judgment, not deleted; a finding whose trigger conjunction is unsatisfiable in
@@ -102,11 +142,60 @@ the repo is dropped, not demoted [A-D3].
 mapping is stated as a table because ambiguity is exploitable: a model reluctant to say Clean can
 otherwise park one item in Decisions to Validate and claim Needs Discussion.
 
+`Improvements` and `Outside review scope` join that list. Neither drives the verdict, exactly as
+`Decisions to Validate` does not, and the table gains **no rows and no columns** for repo mode.
+
+**Coverage is a clause on the verdict, not a row in the table.** A bare `Clean` requires full
+coverage. An unreviewed file forces `Clean (partial: N files unreviewed, listed)`, and in repo mode
+an unbudgeted subtree forces the parenthesised form too, because a deliberate stopping point still
+leaves the denominator smaller than the repository. Both qualifiers may print at once, innermost
+first:
+
+    Clean (partial: 2 files unreviewed, listed; 4 of 7 subtrees complete)
+    Needs Fixes (4 of 7 subtrees complete)
+
+Unbudgeted subtrees and unreviewed files are different things and print in separate blocks: one is
+a deliberate stopping point, the other is a failure, and merging them would let either read as the
+other. `references/SCOPE.md`'s `## Subtree states` owns the first vocabulary;
+`references/FANOUT.md`'s `## Coverage ledger and partial-review honesty [E-D9]` owns the second.
+
+## The repo report
+
+A repo report is a document rather than a terminal blurb. The full report is written to
+`reviews/repo-<slug>-report.md` **without frontmatter**, which is what keeps it out of the
+calibration window: that glob matches `reviews/*.md` and reads `counts:` from frontmatter, so a file
+with none is skipped while the manifest beside it is still read. A **ranked digest** goes to the
+terminal, or to `--gchat`, carrying the verdict, the coverage, and the top of each tier under the
+global caps.
+
+Sections, in this order:
+
+| # | Section | Content |
+|---|---|---|
+| 1 | Scope and budget | scope root, `--scope`, `--since`, budget spent of budget available, units reviewed |
+| 2 | Intent spine | pass 1's one line per node, ancestors first, inherited lines marked |
+| 3 | Coverage | two blocks, never merged: subtree states, then per-file statuses for the units reviewed |
+| 4 | Priors | as in a diff report |
+| 5 | Chains | pushed and abandoned, one line per abandoned chain carrying its killer |
+| 6 | `Q candidates dropped` | one line per dropped candidate, carrying its token |
+| 7 | Escalations | omitted when none |
+| 8 | `### Must Fix` | all of them; there is no cap, only the per-unit tripwire |
+| 9 | `### Human Judgment` | ranked digest under the global cap, remainder count-only |
+| 10 | `### Improvements` | ranked digest under the global cap, remainder count-only |
+| 11 | `### Decisions to Validate` | ranked digest under the global cap, remainder count-only |
+| 12 | `### Outside review scope` | one line each, under the global cap |
+| 13 | Calibration | the outcome window for `mode: repo` only, plus the statement that repo mode's brakes are unmeasured |
+| 14 | Verdict | with its coverage clause, per the mapping above |
+| 15 | Resume pointer | the exact command that continues this run, plus what it would pick up |
+
+Everything durable is in the per-unit ledgers regardless of what the digest shows, so a
+count-only remainder is a display decision and never a loss.
+
 ## Worked examples
 
-Both examples below ship verbatim in `references/REPORT-TEMPLATE.md`. They are normative: where a
-prose rule elsewhere in this spec and an example disagree, that is a defect in one of them and must
-be reconciled, not resolved by preference.
+All three examples below ship verbatim in `references/REPORT-TEMPLATE.md`. They are normative about
+**shape**: where a prose rule elsewhere in this spec and an example's structure disagree, that is a
+defect in one of them and must be reconciled, not resolved by preference.
 
 ### Example 1: a clean report
 
@@ -340,8 +429,152 @@ GPU-hours", because stop-at-first-terminal forbids buying severity with color. A
 raise the tier because the `Decisions to Validate` item points at the same lines; that item has no
 defect chain, so it is a trade-off, and trade-offs never lift a neighbor.
 
+### Example 3: a repo-mode report, partial budget
+
+Repo mode's shape, on this repository, stopped by the budget with the root review deferred. What
+this example is normative about is the section order, an anchor written as a **heading** rather than
+a symbol in a document unit, the two coverage blocks printed separately, the verdict carrying its
+coverage clause, and the resume pointer.
+
+The Must Fix and both Improvements cite sentences that really are in the files named, so the example
+is checkable rather than invented; the tallies, the priors, and the coverage rows are trimmed for
+length. A real run reports whatever that HEAD actually holds.
+
+```
+## Scope and budget
+scope:  ~/workspace/skills, whole tree, no --scope, no --since
+budget: 25 units, 14 spent, 11 remaining at stop
+units:  14 reviewed (10 leaf groups, 4 nodes); root review deferred
+head:   514fe6a
+
+## Intent spine
+skills/           a personal skill library, one subdirectory per skill (README.md)
+  docs/           decision records for the skills in this repository (inherited)
+  docs/adr/       one numbered ADR per decision, immutable once merged
+  monk/           review a diff for real defects (SKILL.md frontmatter)
+  sdd/            take a spec to implemented code with minimal supervision (SKILL.md frontmatter)
+  auto-plan/      Intent: none stated (inherited: a personal skill library)
+
+## Coverage
+subtrees: complete: docs, monk, sdd
+          deferred: auto-plan, i-have-adhd
+          skipped:  none
+          3 of 8 subtrees complete, root review deferred
+          open ends pending root review: 2
+
+files:    | file                            | unit           | status     | reason           |
+          | sdd/SKILL.md                    | sdd            | reviewed   |                  |
+          | sdd/references/LOOP.md          | sdd-references | reviewed   |                  |
+          | sdd/references/STAGES.md        | sdd-references | reviewed   |                  |
+          | docs/adr/0001-...md             | docs-adr       | reviewed   |                  |
+          | i-have-adhd/hooks/always-on.js  | none           | unreviewed | subtree deferred |
+
+## Priors
+Priors: 7 scanned, 0 applicable (the KB is gpu-training-perf / cuda-kernel-debugging; this
+        repository is skill text, and no entry's identifier appears in any file read)
+Lessons: 23 headings scanned, 1 body opened (citation rot in skill text)
+
+## Chains
+pushed: 5   abandoned: 3
+  - two ticks overlap and dispatch competing units | killer: negation-held
+    (LOOP.md:76 states scheduled jobs fire only while the REPL is idle, so two ticks cannot
+     overlap, and the same section gives that as the reason no lock file exists)
+  - a unit that dies mid-flight wedges the pipeline permanently | killer: negation-held
+    (the staleness row under sdd/SKILL.md :: ### In-flight marker clears a marker older than
+     30 minutes and redoes that unit)
+  - a cron interval under 10m starves the run | killer: grade-E-root
+    (LOOP.md:59 rules the interval out already; a preference about pacing reaches no terminal
+     on the document set)
+
+## Q candidates dropped
+  - monk/references and sdd/references could share one "open calibration questions" file
+    | reason: no-evidence-cited (a preference; no inconsistency and no commit cited)
+
+### Must Fix
+1 | sdd/SKILL.md :: ## The Tick Contract (line 37) | D1 contradictory rules
+
+    root | sdd/SKILL.md :: ## The Tick Contract, step 4: "Claim the unit: set `in_flight`, then
+         | do one bounded unit". Claiming writes run.json before the unit runs
+         | (an observation inside the declared scope, so a legal chain root)
+
+    L1   | grade A | edge: entails | annotation: READ
+         | sdd/references/LOOP.md :: ## Interruption safety states the opposite rule with no
+         |   exception: "Never write `run.json` at the *start* of a tick to 'claim' work"
+         | both sentences are normative, both address the same tick, and neither names the other
+
+    L2   | grade A | edge: entails | annotation: READ
+         | a reader who follows LOOP.md never sets `in_flight`, which makes step 3 of the same
+         |   contract ("if `in_flight` is set and not stale, do nothing and exit") unreachable,
+         |   so the concurrency guard the marker exists for is silently off
+         | negation checked: "the staleness window reconciles them" is false as a reconciliation.
+         |   The 30-minute row under ### In-flight marker answers LOOP.md's stated *reason*
+         |   (permanently skipped work) but leaves its *rule* unconditional, so the two
+         |   sentences still cannot both be followed
+
+    term | D1 | the reader picks arbitrarily: one choice disables the guard, the other violates
+         |    a rule printed in bold
+
+    trigger: a reader implements a tick from both files, which is the only supported way to
+             implement one, since SKILL.md points at LOOP.md for loop mechanics
+    trigger-satisfiability: SATISFIED; both files are on the normative path of the same skill
+    predicate: two normative sentences in this skill give opposite rules for writing run.json at
+               the start of a tick, and neither states precedence
+    proof: sdd/SKILL.md :: ## The Tick Contract step 4, and
+           sdd/references/LOOP.md :: ## Interruption safety, both read this run
+
+### Human Judgment
+none
+
+### Improvements
+1 | sdd/SKILL.md :: ### In-flight marker (line 62) | Q1 low locality
+    evidence: the N places, cited: the in-flight rule is stated in three files, sdd/SKILL.md
+    (the schema and the staleness table), sdd/references/STAGES.md :: ## run.json (the field and
+    a one-line semantics gloss), and sdd/references/LOOP.md :: ## Interruption safety (the
+    prohibition), so changing one rule takes three edits and the Must Fix above is what a missed
+    third edit looks like
+    fix: keep the schema and the staleness table where they are and have both references cite
+    that section by name instead of restating the rule, the way monk's own references do
+2 | sdd/SKILL.md :: ## The Tick Contract (line 58) | Q2 drifted duplicate
+    evidence: present inconsistency, cited: "the cron is a watchdog, not a pacer" is stated in
+    full in both files, and the copies have already diverged on what "already advancing" tests.
+    LOOP.md :: ## The cron is a watchdog, not a pacer names the two tests (`updated_at` moved
+    recently, or a unit is in flight); the copy here names neither
+    fix: cite that LOOP.md section from the contract rather than restating the rule
+
+### Outside review scope
+1 | ~/.claude/settings.json :: hooks (line 41) | the hook registration that makes always-on.js run
+    lives outside the declared scope, so its consequences here are unreviewed
+
+## Calibration
+prior repo reviews of this repository: none (the mode: repo window is empty)
+emission bar: normal
+repo mode's three brakes (survivorship, the evidence bar, the per-unit caps) are unmeasured, and
+the diff census does not transfer
+2 lower-ranked observations withheld
+
+## Verdict
+Needs Fixes (3 of 8 subtrees complete, root review deferred)
+
+## Resume
+/monk --repo ~/workspace/skills
+  picks up: auto-plan, i-have-adhd, then the deferred root review
+  carries:  2 open ends pending root review
+```
+
+#### What to copy from this example
+
+- **Every finding is anchored at a heading**, because every unit here is a document. No line number is load-bearing: the anchor is the heading, the line is a convenience, and the ledger matches on the anchor, which is exactly why an anchor survives an edit that shifts every line in the file.
+- **A document terminal drives the verdict.** The repository holds no running code in the units reviewed, and it is still `Needs Fixes`, because a D1 tiers by the ordinary lookup like any T-class chain. A reader who cannot follow an instruction is as real a failure as a hang.
+- **The D finding carries no `why_not_yet`.** Survivorship applies to a chain that could have fired; a contradiction does not fire, it is simply true. The field is absent rather than filled in with "not applicable".
+- The chain is written out with graded links, a negation test, and a satisfiable trigger, exactly as a T-class chain is. Nothing about the D set is a lighter standard of proof; only the terminal list differs.
+- **The two coverage blocks sit under one `## Coverage` section and never merge.** `deferred` is a budget fact and `unreviewed` is a file fact. A reader who cannot tell them apart cannot tell a deliberate stopping point from a crash.
+- The verdict carries its coverage clause even though the tally alone would have produced a bare `Needs Fixes`.
+- `Q candidates dropped` prints even when it holds one line. It is where the urge to file a preference is discharged at no cost, exactly as `Chains abandoned` is for chains.
+- Improvement 1 and the Must Fix point at the same rule from opposite sides, and neither lifts the other. The Q finding is the structural fact that the rule lives in three files; the D1 is the defect that fell out of it. They coexist because a quality finding has no terminal, so it cannot suppress a chain that does.
+- The resume pointer names the **command**, what it would pick up, and what it carries. A pointer that only says "run it again" leaves the reader to re-derive the queue.
+
 ## Open calibration questions
 
 This value is binding today. It names what would change it.
 
-- **A clean report targets under roughly 40 lines**: one line per abandoned chain, one line per file read, with full reasoning in the ledger. Revisit after the first few real runs if the negative space turns out to be the part users stop reading.
+- **A clean diff report targets under roughly 40 lines**: one line per abandoned chain, one line per file read, with full reasoning in the ledger. Revisit after the first few real runs if the negative space turns out to be the part users stop reading. **This target is for diff reports only.** A repo report is a written document covering many units, it is delivered as a file with a ranked digest to the terminal, and holding it to 40 lines would force exactly the summarization loss the upward record is built to prevent.

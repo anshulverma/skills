@@ -13,11 +13,14 @@ cap and the diff-inlining budget. `SKILL.md` states that a cap exists and points
 number.
 
 Two vocabularies are cited here and defined elsewhere. Warrant grades A through E, edge kinds
-`entails` and `enables`, trigger derivation and satisfiability, the closed list of terminal classes
-T1 through T6, the negation test, the residual-unknown bound, the chain predicate, and the five
-killer tokens are owned by `references/METHOD.md`. The tier lookup, the reporting floor, the four
-gates, the caps, the READ / INFERRED / ASSUMED annotations, and the verdict mapping are owned by
-`SKILL.md`. Nothing here restates either set; briefs paste from those sections at assembly time.
+`entails` and `enables`, trigger derivation and satisfiability, the two closed terminal sets
+T1 through T6 and D1 through D4, the negation test, the residual-unknown bound, the chain predicate,
+survivorship, and the six killer tokens are owned by `references/METHOD.md`. The tier lookup, the
+reporting floor, the four gates, the caps, the READ / INFERRED / ASSUMED annotations, and the
+verdict mapping are owned by `SKILL.md`. The quality classes, the evidence bar, and the tier names
+are owned by `references/QUALITY.md`, and repo mode's tree, ranking, budget, and upward record by
+`references/SCOPE.md`. Nothing here restates any of them; briefs paste from those sections at
+assembly time.
 
 ## Threshold and unit
 
@@ -25,6 +28,10 @@ gates, the caps, the READ / INFERRED / ASSUMED annotations, and the verdict mapp
 |---|---|
 | 5 or fewer | one reasoner holds every chain across the whole diff |
 | more than 5 | one stage-1 agent per reviewable changed file |
+
+In repo mode the threshold does not apply. The tree fixes the unit before any agent is dispatched,
+per `references/SCOPE.md`'s `## The four tree nouns`, and every unit gets an agent regardless of how
+many files it holds, because a one-file leaf still has to be read against its declared intent.
 
 The threshold is counted per diff, not across a stack. Under `--stack` each diff is reviewed
 against its own base, and open ends are not stitched across diffs; the prior diff's findings and
@@ -84,9 +91,19 @@ case needed an untouched file (`exceptions.py:47`) to prove the chain, so limiti
 recreate ACR's hunk failure on a new axis.
 
 **Anchor rule.** A finding is anchored at the changed line the author can act on, expressed as
-`file :: enclosing symbol`. Untouched evidence lines (an exception hierarchy) are cited as proof,
-never as the anchor. A stitched cross-file chain carries **waypoints**: an ordered list of
-`file :: symbol (line)` citations between anchor and terminal.
+`file :: enclosing symbol`, where a document unit's enclosing symbol is its nearest enclosing
+heading per `SKILL.md`'s `### The tier lookup [B-D3]`. Untouched evidence lines (an exception
+hierarchy) are cited as proof, never as the anchor. A stitched cross-file chain carries
+**waypoints**: an ordered list of `file :: symbol (line)` citations between anchor and terminal.
+
+**This ownership rule is diff mode's.** Assigning a chain to the agent owning its root file is what
+diff mode does, and it is unchanged. **Repo mode reads ownership off the tree instead: a chain is
+owned by the lowest node containing every file it touches.** A repository already has a hierarchy,
+so an LCA join is deterministic where matching a root file across per-file agents is not, and there
+are no changed lines to make "the root file" the obvious owner in the first place.
+`references/SCOPE.md`'s `### Chain ownership: lowest common ancestor` owns that rule; both modes
+keep the same underlying principle, which is that exactly one holder must report a chain and no
+holder's reading is narrowed by owning it.
 
 ## Brief template: nine blocks [E-D2]
 
@@ -107,9 +124,35 @@ merge, tier definitions especially, since the orchestrator must not have to re-d
 
 Block 7 ships the rubric text to agents; this file does not become a third normative copy of it.
 The assembly step reads `SKILL.md`'s `### The tier lookup [B-D3]` and Phase 4a annotation definitions, and
-`references/METHOD.md`'s `## Warrant grades`, and pastes what it finds there. Block 6 inlines the
-`~1.7%` base rate only; the rest of the calibration census stays in `SKILL.md` and is cited, not
-restated.
+`references/METHOD.md`'s `## Warrant grades`, and pastes what it finds there. In a diff brief block
+6 inlines the `~1.7%` base rate only; the rest of the calibration census stays in `SKILL.md` and is
+cited, not restated.
+
+### Repo-mode content for blocks 2, 4, 5, and 6
+
+Three of the nine blocks are diff-shaped and would arrive empty in repo mode. Each has a repo-mode
+counterpart, and both forms are stated side by side so an assembler never has to guess:
+
+| # | Block | Diff mode | Repo mode |
+|---|---|---|---|
+| 2 | Intent | Phase 1's record verbatim, the author's claim | this unit's line from the pass-1 intent spine, plus its ancestors' lines, each marked inherited |
+| 4 | Diff | the full diff when small, otherwise a change map plus this file's own hunks | for a leaf, the unit's own files in full; for a node, its children's upward records plus its own boundary files |
+| 5 | Adjacency | which other changed files reference this file's changed symbols, and vice versa | for a leaf, its sibling leaf groups under the same node; for a node, the matched EXPORT/IMPORT pairs among its children |
+
+Block 4's repo-mode form is where the summarization discipline is enforced in practice: a node brief
+carries records, not its subtree's files, and `references/SCOPE.md`'s `## The upward record` fixes
+what those records must carry verbatim rather than summarized.
+
+**Block 6 is mode-aware**, which is a substantive change and not a formatting one. A diff brief
+keeps the `~1.7%` base rate verbatim. A repo brief, leaf or node, **replaces** it with repo mode's
+two actual brakes on emission: survivorship, in `references/METHOD.md`'s `## Survivorship`, and the
+evidence bar, in `references/QUALITY.md`'s `## The evidence bar`. The census is measured per diff
+and `SKILL.md` says so, so pasting it into a repo brief would ship a calibration figure the same
+skill calls inapplicable, and an agent given two rates cannot tell which one binds.
+
+Blocks 1, 3, 7, 8, and 9 are unchanged in both modes. Block 7 additionally pastes the tier names
+from `references/QUALITY.md`'s `## Tier names`, since every unit can raise a quality finding and a
+merged report needs one spelling of each tier.
 
 ## Agent response schema
 
@@ -129,16 +172,24 @@ file: <path> | status: reviewed | skipped-with-reason: <reason> | partial: <what
 ### CHAINS
 id: <local id>
 anchor: <path> :: <symbol>
-root: <observation in the changed lines>
+root: <observation in the changed lines; in repo mode, one inside the declared scope>
 links:
   - grade: A|B|C|D | edge: entails|enables | side-condition: <named or none> | annotation: READ|INFERRED|ASSUMED | cite: <path>:<line>
-terminal: T1..T6 | <one line>
+terminal: T1..T6 | D1..D4 | <one line>
 trigger: <conjunction of side-conditions>
 trigger-satisfiability: <config/callsite that satisfies it, or NOT FOUND>
 predicate: <one falsifiable sentence about the new code>
 negation-checked: <the falsifier and why it does not hold>
+why_not_yet: newly-reachable | has-fired | silent    # repo mode, code terminals only
 decisive-question: <the one fact that promotes or deletes> | settler: <who>
 tier: NOT ASSIGNED          # stage-1 agents always. Stage-2 agents emit `PROPOSED <tier>` instead
+
+### QUALITY
+anchor: <path> :: <symbol, or the nearest enclosing heading in a document>
+quality_class: Q1..Q8 | <one line>
+evidence: present-inconsistency | commit <hash> | checkable-absence | <the citation it rests on>
+predicate: <one falsifiable sentence about the structure>
+fix: <the named alternative, specific enough to act on>
 
 ### OPEN-ENDS
 direction: EXPORT | symbol: <sym> | at: <path>:<line> | property: <F now produces/permits X; consequences outside F unknown>
@@ -150,12 +201,21 @@ why-unreadable: <what execution/measurement/runtime state it needs>
 depends: <local chain ids>
 
 ### ABANDONED
-chain: <one line> | killer: grade-E-root | unsatisfiable-trigger | negation-held | two-residual-unknowns
+chain: <one line> | killer: grade-E-root | unsatisfiable-trigger | negation-held | two-residual-unknowns | survivorship-unexplained
 ```
 
-The four killer tokens on the `### ABANDONED` line are the subset an agent can reach on its own.
-The closed list of five, with its normative spelling, lives in `references/METHOD.md`,
-`## Killer vocabulary`.
+Five of the six killer tokens on the `### ABANDONED` line are the subset an agent can reach on its
+own: `grade-E-root`, `unsatisfiable-trigger`, `negation-held`, `two-residual-unknowns`, and
+`survivorship-unexplained`, the last of these in repo mode only, where a loud terminal with no
+answer to `why_not_yet` kills the chain. `dexter-refutation` is on the line because the line is the
+parsing contract for every abandoned record, but an agent never writes it: agents do not escalate,
+so only the orchestrator can reach a refutation. The closed list of six, with its normative
+spelling, lives in `references/METHOD.md`, `## Killer vocabulary`.
+
+A `### QUALITY` record is the quality-finding counterpart of a `### CHAINS` record, and it is
+emitted only for a candidate that clears the bar in `references/QUALITY.md`'s `## The evidence bar`.
+A candidate that cites none of the three forms is reported in `Q candidates dropped` with the single
+token that block owns, which is **not** a killer and never appears on the `### ABANDONED` line.
 
 ## Open ends: mandatory, not hopeful [E-D3]
 
@@ -252,9 +312,13 @@ agreement is correlated, not independent corroboration. Confidence inflation fro
 agents would push 0.5 to 0.8 material into Must Fix, directly attacking the calibration section
 and the measured 7.7% red-tier false positive rate.
 
-Two halves of the original cross-file question are already settled and are not reopened here:
-ownership is the agent owning the **root** file [E-D1], and the merge key is the line-independent
-identity above [E-D6][B-D10][C-D3], never `(terminal class + cited link set)` and never `file:line`.
+Two halves of the original cross-file question are already settled and are not reopened here: in
+**diff mode** ownership is the agent owning the **root** file [E-D1], and the merge key is the
+line-independent identity above [E-D6][B-D10][C-D3], never `(terminal class + cited link set)` and
+never `file:line`. Repo mode amends the first half only, substituting the lowest node that contains
+every file the chain touches, for the reason given under the anchor rule above. The merge key is
+unchanged in both modes: an identity that drifts with line numbers is just as broken across two
+commits of a repository as across two versions of a diff.
 
 ### Tie-break: three keys, applied in order
 
@@ -283,6 +347,15 @@ Required because reachability is often only decidable at the join (the caller li
 agent's file, so a per-file agent can only mark it ASSUMED); caps must be global or ten agents
 yield thirty Human Judgment items; and two agents routinely find the same chain from opposite ends.
 
+**Caps are two-level, and the global level is what satisfies that middle reason.** `SKILL.md`'s
+`### Caps and overflow` sets a per-unit cap, which bounds what one review may write to its own
+ledger, and a global cap, which bounds what the report shows. A per-unit cap standing alone would
+reproduce the exact failure named above, so it never stands alone: the orchestrator applies the
+global cap after the merge, by the same displacement mechanism, and prints the remainder as a
+count-only footer. Everything evicted at either level stays in the ledger. This amends the rule
+this file has always stated rather than overriding it: caps are still global, and a second and
+tighter level now sits beneath the global one so that no single unit can fill the report by itself.
+
 ## Prohibitions in every brief [E-D8]
 
 1. **No recursive fan-out.** An owner agent may not spawn its own sub-agents, and specifically not perf, security, or correctness ones, which would rebuild the failure one level down. Very large files are handled by prioritized passes over changed symbols, not by splitting.
@@ -310,12 +383,29 @@ The four statuses `reviewed`, `skipped-with-reason`, `partial`, and `unreviewed`
 the `### COVERAGE` schema line emits and the same four `references/REPORT-TEMPLATE.md`'s
 `## Coverage` block prints. The verdict mapping that consumes them is owned by `SKILL.md`.
 
+In repo mode the ledger carries one row per file in the unit rather than per changed file, and the
+four statuses are unchanged. A subtree's budget disposition is a **different** vocabulary in a
+**different** block, owned by `references/SCOPE.md`'s `## Subtree states`; the two are never merged,
+because one says a file was not read and the other says a subtree was deliberately not started.
+
 ## Execution [E-D10]
 
 - Foreground Task-tool agents with read-only tools pre-granted, run in waves of roughly **8 in flight**. Not background workflow agents, which stall on permission prompts and oversized structured output.
 - Returns are compact structured records per the schema above.
 - The diff is inlined whole when it is small (order **1500 changed lines**); above that each brief gets a change map (per-file hunk headers and touched symbols) plus its own file's full hunks, and agents pull the rest on demand.
 - The concurrency cap is recorded in `SKILL.md` so partial waves are visible in the coverage ledger.
+
+### Wave structure in repo mode
+
+The tree fixes the waves, so nothing new is scheduled by hand:
+
+- **Siblings run in parallel**, in one wave, under the same cap of roughly **8 in flight**. Sibling units are independent by construction, since each owns only chains rooted in its own files.
+- **Levels run sequentially**, bottom up. A node review is dispatched only after every child has returned its upward record, which is what makes a node's guaranteed context complete rather than partial.
+- A wave wider than the cap is split into consecutive waves at the same level; the level is not considered done until all of them return.
+- A unit whose agent fails gets the same **one** retry as a diff-mode file, then it is marked `unreviewed`. Its ancestors' node reviews are **not** dispatched on the strength of it: a boundary review may not rest on a partly-reviewed child, so the subtree cannot be reported `complete`, the unreviewed unit is carried into the next run's queue, and the verdict prints the partial coverage instead of a bare `Clean`.
+
+Budget is spent subtree-atomically, so a wave never straddles two subtrees, and
+`references/SCOPE.md`'s `## Budget and resume` owns which subtree runs at all.
 
 ## Open calibration questions
 
