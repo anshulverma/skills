@@ -527,7 +527,7 @@ global level bounds what the report shows. Both are enforced by displacement, ne
 | Must Fix | none; tripwire below | none | tripwire, below |
 | Human Judgment | 3 | 10 | displacement, ranked by terminal severity |
 | Decisions to Validate | 3 | 10 | displacement, ranked by terminal severity |
-| Improvements | 5 | 15 | displacement, ranked by the Q severity order |
+| Improvements | 5 repo / **3 diff** | 15 | displacement, ranked by the Q severity order |
 | Outside review scope | 3 | 10 | displacement; never counted in the verdict |
 | Pre-existing (not this diff) | 3 | 3, diff mode only | displacement; never counted in the verdict |
 

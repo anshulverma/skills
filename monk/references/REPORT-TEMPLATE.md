@@ -104,7 +104,10 @@ never a chain, and its token is not a killer.
 Required even when nothing is found: Intent, Intent vs Implementation (EXTRA/MISSING may be
 non-empty and the verdict still Clean), Priors, Read, Chains, Must Fix: none, Human Judgment:
 none, Calibration, Verdict. `Decisions to Validate`, `Improvements`, and
-`Pre-existing` are optional in a diff report. A repo report additionally always prints
+`Pre-existing` are optional in a diff report. **`Outside review scope` never appears in a diff
+report at all**: its only admission rule is repo mode's declared-scope test, and
+`Pre-existing (not this diff)` is diff mode's counterpart for the same shape of finding. Two
+destinations with no rule choosing between them is a contradiction, not a convenience. A repo report additionally always prints
 `### Improvements` and both coverage blocks, with `none` where they are empty, because those are
 what a repo review is mostly for and an omitted section reads as a tier that does not exist.
 
