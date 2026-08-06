@@ -1,10 +1,11 @@
 # monk: method
 
 The vocabulary the rest of the monk skill cites by name. Warrant grades, edge kinds, trigger
-derivation and satisfiability, the closed list of terminal classes, the stop rules, the chain-root
-rule, the negation test, the residual-unknown bound, the chain predicate, and the killer vocabulary
-are defined here. Every other monk file names these terms and points back at this file rather than
-restating them, because a second copy of a normative table is how the two copies drift apart.
+derivation and satisfiability, the two closed terminal sets and the artifact kinds they attach to,
+the stop rules, the chain-root rule, the negation test, the residual-unknown bound, the chain
+predicate, survivorship, and the killer vocabulary are defined here. Every other monk file names
+these terms and points back at this file rather than restating them, because a second copy of a
+normative table is how the two copies drift apart.
 
 ## The seven rules
 
@@ -42,8 +43,19 @@ Pre-existing defects found while reading untouched dependencies are real but are
 They are reported on a separate marked `Pre-existing (not this diff)` line, never as Must Fix, and
 never counted in the verdict.
 
+In repo mode there are no changed lines, so the declared scope substitutes for them: a chain root
+must be an observation **inside the declared scope**. The rule bounds where a finding may be
+anchored, never what may be read. Aperture stays unlimited, and a unit may open any file in the
+repository at any depth to prove a link.
+
+A finding anchored outside the declared scope is reported on a marked `Outside review scope` line,
+capped by displacement at 3, and never counted in the verdict. It is the repo-mode counterpart of
+`Pre-existing (not this diff)`, which is inapplicable when everything under review is pre-existing;
+`references/QUALITY.md`'s `## Tier names` owns both tokens.
+
 Never build a chain backward from a scary outcome. Backward construction is how a model
-manufactures an entry point for a dramatic ending [A-D8].
+manufactures an entry point for a dramatic ending [A-D8]. The rule matters more in repo mode, which
+has no changed lines to anchor honest forward construction.
 
 ## Warrant grades
 
@@ -91,9 +103,22 @@ Derived mechanically from the edges, never written prose-first. Then tested agai
 
 Most invented chains die on satisfiability, and the check costs only reading.
 
-## Closed list of terminal classes [A-D8]
+## Closed terminal sets by artifact kind
 
-Terminal means a signal observable outside the changed function's own source. The list is closed:
+Terminal means a signal observable outside the source the finding is anchored in. There are two
+closed sets, one per artifact kind, and a unit is reviewed against exactly one of them [A-D8]:
+
+| Artifact kind | Terminal set |
+|---|---|
+| code | T1-T6 |
+| document | D1-D4 |
+
+**Artifact kind is mode-independent.** It is a property of a file, not of repo mode: in diff mode
+each changed file has a kind, in repo mode each leaf group does. The concept, its two values, and
+the set each one selects are owned here. `references/SCOPE.md`'s `## Artifact-kind detection` owns
+the detection heuristics only, never the concept.
+
+### T1-T6, code
 
 | Class | Terminal |
 |---|---|
@@ -104,11 +129,49 @@ Terminal means a signal observable outside the changed function's own source. Th
 | T5 | trust-boundary, ACL, or PII leak |
 | T6 | a dependent's liveness loss (stranded ranks, held lock, leaked connection) |
 
-Stop rules:
+### D1-D4, documents
+
+The runtime of an instruction document is a reader following it, so a terminal is a signal
+observable outside the rule's own text: the reader does the wrong thing, or cannot proceed. Each
+class names the evidence it demands, in the same sense the warrant grades do.
+
+| Class | Terminal | Evidence it demands |
+|---|---|---|
+| D1 | Contradictory rules: two normative statements that cannot both be followed, so a reader picks arbitrarily | both statements, cited, plus why they conflict |
+| D2 | Unsatisfiable rule: a rule, row, or condition no input can satisfy, so whatever it was meant to catch is never caught | the rule, plus the argument that its conjunction is empty |
+| D3 | Dangling pointer: a cited section, file, flag, or decision record that does not exist, so the reader cannot obtain what the rule requires | the citation, plus the absence |
+| D4 | Unstated rule: a rule the document relies on but never states anywhere normative, so behavior is undefined | the reliance site, plus the absence of any definition |
+
+The D set deliberately **excludes** "drifted duplicate table". Q2 in `references/QUALITY.md` already
+covers drifted duplicates in any artifact, and a terminal set overlapping the quality classes would
+undercut the reason for closing either list.
+
+D findings run the ordinary tier lookup and do drive the verdict. Nothing about a document terminal
+makes it advisory: an instruction a reader cannot follow is a defect in the same sense a hang is.
+
+Stop rules, both sets:
 
 - **Stop at the first terminal reached.** Never chain past a terminal for severity ("which wastes 512 GPU-hours"). That is color, not a link, and it must never raise the tier.
 - Never chain through a hypothetical future edit.
-- An observation that reaches no terminal on the closed list is not a finding.
+- An observation that reaches no terminal on the set its artifact kind selects is not a finding.
+
+## Quality findings are not chain terminals
+
+The quality classes Q1 through Q8 are a **finding kind, not a third terminal set**, and the reason
+is the stop rule directly above. If a quality class were a terminal a code chain could stop at, a
+chain running through a drifted duplicate would terminate there as an Improvement and **suppress the
+real T2 or T3 defect downstream of it**. Monk would get worse at its existing job, in diff mode, as
+a side effect of adding quality review.
+
+A quality finding therefore carries no links, no trigger, no negation test, no residual-unknown
+bound, and no terminal. `references/QUALITY.md` owns the classes, the evidence bar each one must
+clear, the severity order, and the drop token; this file owns the two terminal sets. Neither table
+has two owners.
+
+One consequence lands in the identity triple: its third element is `terminal_class` **or**
+`quality_class`, exactly one present. A chain supplies the first, a quality finding the second, so
+the triple stays total and a chain and a quality finding at one anchor do not collide.
+`references/PERSISTENCE.md` owns the fields.
 
 ## Negation test on every link [A-D10]
 
@@ -151,6 +214,53 @@ Each surviving chain carries a one-sentence falsifiable assertion about the new 
 from its prose claim, for example: "the `except` in `_health_check` names no base of
 `RuntimeError` while `dist.broadcast` sits inside the `try`". The predicate is the cross-version
 matching key and is a required field in the report row and the ledger [C-D4].
+
+## Survivorship
+
+The census base rate is measured per diff and does not transfer to a repository, where the code has
+already been running. Its replacement is the code's own history. Every chain reaching a **code**
+terminal in repo mode carries a required field:
+
+```
+why_not_yet: newly-reachable | has-fired | silent
+```
+
+| Value | What it asserts |
+|---|---|
+| `newly-reachable` | the path is new or rarely reached. **Name the condition** |
+| `has-fired` | in-repo evidence that it already happened, cited by `file:line` |
+| `silent` | the terminal does not announce itself, so years of running are no evidence against it |
+
+The `has-fired` evidence list is **closed**: a retry loop, a workaround comment, a test pinning the
+behavior, a guard added later, or a defensive catch. Cite the one you found by `file:line`. "A guard
+added later" is established with `git log -S'<guard text>' -- <path>`, a named command rather than an
+assertion, exactly as churn is established by a named command in `references/SCOPE.md`. Evidence is
+**in-repo only**: no task, SEV, or log search, which would make every finding cost a round trip and
+belongs to a different skill.
+
+**`silent` is illegal for T1 and T6.** A crash, hang, or stranded dependent announces itself by
+definition, so calling one silent is a category error. Answer `newly-reachable` or `has-fired`, or
+drop the chain. Without this rule two reviewers reach opposite verdicts on the same chain.
+
+When none of the three values can be answered:
+
+| Terminal | Unexplained |
+|---|---|
+| T1 crash, hang, timeout, OOM-kill; T6 a dependent's liveness loss | **drop**, `killer: survivorship-unexplained` |
+| T4 unbounded resource growth, or a quantified cost regression | **demote one step**, floored: Must Fix becomes Human Judgment, and an already-Human-Judgment finding is dropped as `survivorship-unexplained`. Spelled out because Decisions to Validate requires a named rejected alternative and Improvements holds quality findings only, so neither is a legal demotion target |
+| T2 wrong artifact; T3 wrong numerics; T5 leak | **no penalty**; these hide by construction |
+| D1-D4 | **not applicable**; a document defect does not fire, it is simply true |
+
+Code that has shipped for years without crashing is real evidence that a crash trigger cannot
+actually be hit: survivorship is the empirical form of the trigger-satisfiability check that already
+kills chains in diff mode. The same argument is worthless for a checkpoint written with subtly wrong
+numbers, because nobody was looking.
+
+`why_not_yet` is **absent in diff mode**, where new code has by definition not yet had the chance to
+fire. In repo mode it is always written to the ledger, and it prints in the report only when its
+value is `newly-reachable` or `has-fired`, `silent` being the uninformative default. It never prints
+on a killed chain, which carries its killer instead.
+
 ## Killer vocabulary
 
 Every chain that dies is recorded in `Chains abandoned` tagged with exactly one killer. The list is
@@ -164,6 +274,8 @@ closed and the spelling is normative:
 - `two-residual-unknowns` - 2 or more residual grade D / ASSUMED links stood at report time.
 - `dexter-refutation` - an escalation returned a verdict refuting a load-bearing fact, so the
   finding disappears.
+- `survivorship-unexplained` - a loud terminal with no answer to `why_not_yet`: a T1 or T6 chain
+  that cannot say why the failure has never been seen, or a T4 chain already at its demotion floor.
 
 Killed chains are persisted next to surviving findings, each tagged with its killer, so a re-review
 neither re-derives the chain nor pays the same escalation twice [A-D10].
@@ -172,4 +284,4 @@ neither re-derives the chain nor pays the same escalation twice [A-D10].
 duplicate is deliberate, because the ledger schema has to be readable on its own. `FANOUT.md`'s
 `### ABANDONED` schema line and `REPORT-TEMPLATE.md`'s worked examples each carry only the subset
 they need. The binding rule is spelling, not coverage: every killer token written in any monk file
-must be one of these five strings exactly, character for character.
+must be one of these six strings exactly, character for character.

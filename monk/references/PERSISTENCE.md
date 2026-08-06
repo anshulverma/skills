@@ -1,16 +1,18 @@
 # monk: persistence
 
-This file owns the per-diff findings ledger: where it lives, its exact schema, the stable identity
-used to match a finding across diff versions, the predicate-based classification of what changed
-between versions, the rename and move fallback, the ask protocol, how `declined` is detected and
-suppressed, the single-writer rule, and the auto-commit convention. `SKILL.md` phases 4b and 4c
-point here rather than restating any of it.
+This file owns the per-diff findings ledger and the repo-mode manifest: where they live, their exact
+schemas, the stable identity used to match a finding across diff versions or across commits, the
+predicate-based classification of what changed between them, the rename and move fallback, the ask
+protocol, how `declined` is detected and suppressed, the single-writer rule, and the auto-commit
+convention. `SKILL.md` phases 4b and 4c point here rather than restating any of it.
 
-It defines nothing another file already defines. Terminal classes `T1`-`T6` and the chain predicate
-live in `references/METHOD.md`. Tiers, the annotation vocabulary `READ` / `INFERRED` / `ASSUMED`,
-the caps, and the emission-bar rules live in `SKILL.md`. The KB router, the `confidence` values,
-and what `kb.py validate` requires live in `references/KNOWLEDGE-INTEGRATION.md`. Cite them by
-name; do not restate them here.
+It defines nothing another file already defines. The terminal sets `T1`-`T6` and `D1`-`D4`,
+survivorship, and the chain predicate live in `references/METHOD.md`. The quality classes `Q1`-`Q8`
+and the tier names live in `references/QUALITY.md`. The unit and slug derivation and the
+subtree-state vocabulary live in `references/SCOPE.md`. Tiers, the annotation vocabulary `READ` /
+`INFERRED` / `ASSUMED`, the caps, and the emission-bar rules live in `SKILL.md`. The KB router, the
+`confidence` values, and what `kb.py validate` requires live in
+`references/KNOWLEDGE-INTEGRATION.md`. Cite them by name; do not restate them here.
 
 The single deliberate exception is the killer vocabulary, enumerated below as a second normative
 copy of the closed list in `references/METHOD.md`, because the ledger schema has to be readable on
@@ -28,6 +30,42 @@ Markdown with YAML frontmatter, matching the KB and `cases/` conventions. JSON i
 is markdown-only with no scripts, so nothing validates or round-trips it; LLM-rewritten JSON
 silently corrupts; and `git diff` on a re-serialized JSON blob is unreadable, which destroys the
 main reason for putting it in git.
+
+## Repo mode: one manifest, one file per unit
+
+Repo mode reviews units rather than versions, so the store is a manifest plus one findings file per
+unit:
+
+```
+reviews/repo-<slug>.md          the manifest
+reviews/repo-<slug>/<unit>.md   findings, one file per unit
+```
+
+`<slug>` and `<unit>` are derived by `references/SCOPE.md`'s `### Unit filenames and the slug`. The
+manifest sits directly in `reviews/` so the calibration-window glob below reads its frontmatter with
+no change, and the unit files sit one level down, where that non-recursive glob cannot double-count
+them. The rendered report is written to `reviews/repo-<slug>-report.md` **without frontmatter**,
+which is what keeps a file matching the same glob out of the calibration window.
+
+Manifest frontmatter:
+
+| Key | Content |
+|---|---|
+| `repo` | the repository under review |
+| `repo_root` | the absolute path the declared scope was resolved against |
+| `commits_reviewed` | every HEAD monk has reviewed this repository at, in order |
+| `head_at_last_review` | the commit the inventory hashes were computed against, so resume can re-check them |
+| `last_review` | ISO date of the most recent run. **Required.** It is the calibration glob's sort key, and a manifest without it cannot be sorted at all |
+| `subtrees` | `{complete: [...], deferred: [...], skipped: [...]}`, the closed vocabulary `references/SCOPE.md`'s `## Subtree states` owns |
+| `inventory` | one row per unit: path, content hash, and rank. A unit whose hash changed returns to the queue on resume, with its ancestors |
+| `open_ends` | open ends left unresolved because the root review was deferred, carried across runs and re-presented when it runs |
+| `counts` | the outcome tally, same keys as a diff ledger, plus `mode: repo` |
+
+The per-unit files carry findings only, in the same per-finding schema as a diff ledger. Everything
+durable lands in them regardless of what the report's ranked digest shows.
+
+`commits_reviewed` **replaces** `versions_reviewed` in repo mode. There are no diff versions to
+enumerate, and the commit a review ran against is the thing a later run has to compare itself with.
 
 ## The ledger schema
 
@@ -77,15 +115,20 @@ killer: unsatisfiable-trigger
 ### Per-finding keys
 
 Every key below is written on every surviving finding, with `null` or `false` where it does not
-apply. A killed chain carries `anchor`, `terminal_class`, `predicate`, its reasoning, and `killer`.
+apply, except the four keys whose row states the condition under which they exist at all. A killed
+chain carries `anchor`, `terminal_class`, `predicate`, its reasoning, and `killer`.
 
 | Key | Content |
 |---|---|
 | `anchor` | `<repo-relative path> :: <fully qualified symbol>`. Two thirds of the identity triple |
-| `terminal_class` | `T1`-`T6` from `references/METHOD.md`. The third element of the identity triple |
+| `terminal_class` | on a chain: `T1`-`T6` or `D1`-`D4`, the two terminal sets `references/METHOD.md` owns. The third element of the identity triple |
+| `quality_class` | on a quality finding: `Q1`-`Q8`, owned by `references/QUALITY.md`. It takes the same slot, and **exactly one** of it and `terminal_class` is present, so the triple stays total |
 | `predicate` | the one falsifiable sentence about the new code. The cross-version matching key |
 | `waypoints` | the ordered `<path>::<symbol> (L)` citations between anchor and terminal, as `references/REPORT-TEMPLATE.md` defines them. Stored so a stitched cross-file chain is re-checkable at the next version without re-deriving it |
-| `tier` | lowercase-hyphenated: `must-fix`, `human-judgment`, `decisions-to-validate` |
+| `tier` | lowercase-hyphenated: `must-fix`, `human-judgment`, `decisions-to-validate`, `improvements`, `outside-review-scope`. The tokens and their report headings are owned by `references/QUALITY.md`'s `## Tier names` |
+| `why_not_yet` | `newly-reachable`, `has-fired`, or `silent`, per `references/METHOD.md`'s `## Survivorship`. Required **only** on a chain reaching a code terminal in repo mode; absent on a `D1`-`D4` chain, on a quality finding, on a killed chain, and everywhere in diff mode |
+| `fix` | the named alternative, specific enough to act on. Required on **every** quality finding, in the ledger and on its report line. It is the contract with the downstream apply-skill |
+| `owned_at` | optional: the tree node that held the chain under the lowest-common-ancestor rule, recorded for audit |
 | `annotations` | the per-link `READ` / `INFERRED` / `ASSUMED` vector, in link order |
 | `decisive_question` | for a Human Judgment finding, the one fact no experiment can settle |
 | `settler` | who can settle that fact |
@@ -97,7 +140,7 @@ apply. A killed chain carries `anchor`, `terminal_class`, `predicate`, its reaso
 | `ask` | `{asked_at, asked_version, answer}` |
 | `pending_ask` | `true` when an Asked-tier confirmation was deferred by a non-interactive run |
 | `pending_kb` | `true` when an `addressed` finding could not be written to the KB |
-| `killer` | on a killed chain only, exactly one of the five tokens below |
+| `killer` | on a killed chain only, exactly one of the six tokens below |
 | `reanchored_from` | the previous `anchor` when a rename or move fallback re-anchored the finding |
 
 `proof: {dexter_case, fact, fact_anchor}` exists so a dexter verdict is not re-bought on every
@@ -111,8 +154,9 @@ and let the user supply them or route the finding to `LESSONS.md`.
 ## Killed chains and the killer vocabulary
 
 Killed chains are persisted next to surviving findings, each tagged with its killer (`grade-E-root`,
-`unsatisfiable-trigger`, `negation-held`, `two-residual-unknowns`, `dexter-refutation`), so a
-re-review neither re-derives the chain nor pays the same escalation twice [A-D10].
+`unsatisfiable-trigger`, `negation-held`, `two-residual-unknowns`, `dexter-refutation`,
+`survivorship-unexplained`), so a re-review neither re-derives the chain nor pays the same
+escalation twice [A-D10].
 
 The list is closed and the spelling is normative. This is the second normative copy of the same
 closed list in `references/METHOD.md`, and the two must agree character for character:
@@ -125,16 +169,22 @@ closed list in `references/METHOD.md`, and the two must agree character for char
 - `two-residual-unknowns` - 2 or more residual grade D / ASSUMED links stood at report time.
 - `dexter-refutation` - an escalation returned a verdict refuting a load-bearing fact, so the
   finding disappears.
+- `survivorship-unexplained` - a loud terminal with no answer to `why_not_yet`: a T1 or T6 chain
+  that cannot say why the failure has never been seen, or a T4 chain already at its demotion floor.
 
 ## Stable identity [B-D10][C-D3]
 
 ```
-identity = (file path, enclosing symbol, terminal failure class)
+identity = (path, enclosing symbol, terminal_class OR quality_class)
 ```
+
+Exactly one of `terminal_class` and `quality_class` is present, so the triple is total and a chain
+and a quality finding sharing one anchor do not collide.
 
 **Never `file:line`.** Lines shift between diff versions and would make every carried finding look
 new. `anchor: <repo-relative path> :: <fully qualified symbol>` plus `predicate` disambiguates two
-distinct defects in the same symbol. `id: F<n>` is assigned at first sighting, monotonic per diff,
+distinct defects in the same symbol. In a document unit the enclosing symbol is the nearest
+enclosing heading, per the anchor definition in `SKILL.md`. `id: F<n>` is assigned at first sighting, monotonic per diff,
 never reused; it is a label, not the match key. `line_at_raise` is stored for the report only and
 is explicitly marked as never used for matching.
 
@@ -147,6 +197,12 @@ the finding `unobservable` and routes to the ask.
 Re-evaluate the persisted predicate and the trigger conjunction against the new version. Do not
 line-diff the cited `file:line`. "The author fixed it" is not observable; "the defect assertion is
 now false at the anchor" is.
+
+The classification is unchanged in repo mode. The predicate is still the matching key and the table
+below still decides; only the thing being compared against changes, from the next diff version to
+the current HEAD. Suppressions (`status: declined`) are worth more in repo mode than in diff mode,
+because the same repository is audited repeatedly and a declined finding would otherwise return on
+every run.
 
 | Observation | Classification |
 |---|---|
@@ -200,6 +256,13 @@ The **calibration window** is a second, cheap read over the other ledgers: glob
 and read only the frontmatter `counts:` map of each until roughly 20 emitted findings are
 accumulated. `counts:` is in frontmatter precisely so this is a header read, not a full parse, and
 so it still needs no index file.
+
+The window **filters on `mode`**: a run accumulates only ledgers of its own mode, and a `counts:`
+map with no `mode` key is a diff ledger. Repo tallies therefore never pool into the diff-mode base
+rate. Without the filter one repo run emitting dozens of findings would swamp a window sized at
+roughly 20, and the emission bar would swing on evidence from a different kind of review. The glob
+stays unchanged: the repo manifest is `reviews/repo-<slug>.md`, so it matches, carries `last_review`
+so it sorts, and is separated by `mode: repo` rather than by filename.
 
 ## The ask protocol [C-D6]
 
@@ -255,7 +318,8 @@ is no decline channel, so monk has to ask its own user and remember the answer.
 ## Single writer [C-D10]
 
 **Single writer, multiple writes.** The top-level monk run is the only process that ever writes
-`reviews/D<n>.md`, but it writes more than once per run, sequentially:
+`reviews/D<n>.md`, and in repo mode the only one that writes the manifest or any file beneath
+`reviews/repo-<slug>/`, but it writes more than once per run, sequentially:
 
 | Phase | What it writes |
 |---|---|
@@ -271,7 +335,9 @@ Phase 0 (`load reviews/D<n>.md if present, apply suppressions, seed carried find
 ## Auto-commit
 
 monk commits the findings file to the `~/workspace/investigations` git repo, one commit per review
-run, with the message `review: D<n> v<k> - <a> addressed / <c> carried`. This matches the repo's
+run, with the message `review: D<n> v<k> - <a> addressed / <c> carried`. A repo-mode run commits its
+manifest and every unit file it touched in that same single commit, with the message
+`review: repo-<slug> <n> units - <a> addressed / <c> carried`. This matches the repo's
 commit-at-every-state-change convention; an uncommitted ledger forfeits the version-over-version
 audit that justified choosing a git-backed location in the first place. Tell the user this happens:
 a skill labelled read-only that auto-commits to a local repo is a surprise worth naming.
