@@ -10,7 +10,8 @@ prose and protocols that get loaded into a Claude Code session as instructions.
 
 The skills are `auto-plan/` (an autonomous planning orchestrator), `auto-research/` (an
 autonomous experimentation loop, ported from github/awesome-copilot), `diff-authoring/`
-(Phabricator diff conventions), `i-have-adhd/` (an output-shaping style skill, ported from
+(Phabricator diff conventions), `diff-comment-authoring/` (Phabricator diff comment and
+reply conventions), `i-have-adhd/` (an output-shaping style skill, ported from
 ayghri/i-have-adhd), `monk/` (whole-chain diff review), `pr-authoring/` (GitHub PR
 conventions), and `sdd/` (spec-to-code pipeline). New skills are added as sibling
 directories.
