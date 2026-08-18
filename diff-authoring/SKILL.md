@@ -39,7 +39,25 @@ Lead with the goal, then add only the sections that matter for this diff. Keep i
 Use a clear visual hierarchy with Remarkup headings (`##` for sections, `###` for sub-points when a section needs them); bullets under each heading.
 
 1. **Goal** (always, first): a `## Goal` section, 1 to 2 plain lines saying what the diff does and why.
-2. Then only the sections that matter, each as its own `##` heading, chosen from: `## Background` (only when the diff leans on a domain concept a general reviewer would not know, see below), `## What it adds`, `## What it changes` / `## What it removes`, `## Why` (only if the choice is non-obvious), `## Risk` (what a reviewer should scrutinize), `## Out of scope`. Add `###` subheadings only when a section genuinely has sub-parts. When present, `## Background` comes first, right after `## Goal`, so the reader has the context before the changes.
+2. Then only the sections that matter. **Choose them to fit what the diff actually is, rather than filling in a fixed template.** The headings are a vocabulary, not a form; a section you have nothing real to put under is noise, and a section the diff needs but the template lacks should be invented.
+
+**Match the shape to the kind of diff.** The most common mistake is describing a bug fix as though it were a feature: `## Background` then `## What it changes` buries the one thing a reviewer needs, which is *why it broke*. Fixes get their own shape:
+
+| Kind of diff | Shape that fits |
+|---|---|
+| **Fixes a bug** | `## Goal`, `## Root cause`, `## Fix`, plus `## Risk` if the fix has a blast radius. Root cause states the defect and the mechanism by which it produced the symptom; Fix states what now happens instead. |
+| **Adds a capability** | `## Goal`, `## Background` (only if a domain concept is load-bearing), `## What it adds`, `## Risk` |
+| **Changes existing behavior** | `## Goal`, `## What it changes`, `## Why` (when the choice is non-obvious), `## Risk` |
+| **Removes something** | `## Goal`, `## What it removes`, `## Why` |
+| **Pure refactor** | `## Goal`, `## What it changes`, and a line stating behavior is unchanged |
+
+For a fix, `## Root cause` earns its place only if it says something the symptom does not: the specific defect, and the causal step from defect to symptom. "The sampler was misconfigured" is not a root cause; "the sampler sharded over the global world group, so ranks inside a TP group each got a different slice, and MoE routing then diverged per rank" is.
+
+Diffs that genuinely do two things (a capability plus a correctness fix that surfaced while building it) can carry both `## What it adds` and `## Root cause` / `## Fix`. If that reads awkwardly, it is usually a sign the diff should be split.
+
+`## Background` comes first when present, right after `## Goal`, so the reader has the context before the change. Add `###` subheadings only when a section genuinely has sub-parts.
+
+**The test plan follows the same principle:** its structure should reflect what was actually verified, not a fixed order. A fix's test plan leads with the regression evidence (the thing that used to fail and now does not); a capability's leads with the exercise of the new path; a refactor's leads with the equivalence check. Do not pad it with sections that verify nothing.
 
 Rules:
 - **Say what it IS in plain English, AND keep it scannable.** Three failure modes to avoid: (1) a symbol inventory (listing the classes/functions/dataclasses it adds), (2) a wall of text (long unbroken paragraphs), and (3) naming specific reader-unknown identifiers only to make a category point (e.g. listing the exact variables a call does or does not touch, when the reviewable fact is what *kind* of thing they are). A reviewer skims dozens of diffs a day. Target: a 1-2 line `## Goal` plus a few short bullets, each a single tight plain-English point (about one line). Explain the concept in words, not a table of contents of the file; name a specific type only when it carries meaning, then say what it is in a few words. Never a multi-line paragraph; tighten any bullet that runs past ~1.5 lines or names 3+ identifiers.
@@ -116,6 +134,27 @@ The diff's own comments and docstrings follow the same hygiene: keep technical r
 Also remove bare internal project acronyms and labels that only make sense against the planning docs: counter-metric tags like `C1`/`C2`/`C3`/`C4`, gate labels like `Gate-1`/`Gate-2`/`G1`, and perf labels like `P1`..`P5`. Either say what it is in plain words (e.g. `C4 numerical-stability guard` becomes `NaN/Inf guard`, `C3 validity` becomes `answer-extraction validity rate`, `Gate-1` becomes `the GSM8K reproduction check`) or drop the label. This applies to code comments AND the title/summary/test plan.
 
 Exception: keep required external attribution that the tooling expects, such as Citrine ML-efficiency lint tags (e.g. `# Citrine C7: use .to("cuda")`). Those are not project jargon.
+
+### Hold a high bar for what earns a comment
+
+**The default is no comment.** A comment earns its place only by saying something the code cannot: a non-obvious invariant, an external constraint, a gotcha a future reader would otherwise "clean up" and break. Naming and structure carry the rest. Most comments an AI wants to write are restating the line below them, and they read as slop.
+
+Delete a comment if any of these is true:
+
+- **It restates what the line plainly does.** `# Warning rather than info` above `logger.warning(...)`, `# Increment the counter` above `count += 1`, `# Loop over the parameters` above a `for param in ...`. The code already said it.
+- **It explains the change rather than the code.** "Fixed per review", "switched from X to Y because the old way double-counted", "this used to use the bool flag". That rationale belongs in the diff summary, and it goes stale the moment the diff lands: a reader a year from now has no "before" to compare against.
+- **It repeats a nearby docstring.** If the function's docstring already states the rule, do not restate it at the call site.
+- **It justifies a decision to a reviewer.** Comments are for the next engineer reading the file, not for the person reviewing the diff today. Answer reviewers on the thread, not in the source.
+- **It says something obvious from types or names.** `# config is optional` above `config: Config | None`.
+
+When a comment IS warranted, write it as tightly as possible: usually one line, rarely more than two. Say the constraint, not the story. Prefer the load-bearing clause over the full explanation.
+
+- Bloated: `# A replicated parameter has to hold identical values on every rank, so its seed must not depend on the rank. A sharded one holds a distinct slice, so it varies by rank. Seeding per parameter rather than once keeps this correct even when ranks hold uneven shard sizes and would otherwise desynchronise.` (the first two sentences are visible in the branch directly below)
+- Tight: `# Seeded per parameter rather than once, because uneven shard sizes desynchronise a shared stream.`
+
+Smell tests, in order of how often they fire: a comment whose first words echo the identifier on the next line; a comment containing "rather than", "instead of", or "used to" about the code's own history; a comment longer than the code it describes; a comment that would still be true and useful if deleted.
+
+Apply the same bar to test comments. A test name should carry the intent; a comment is for the non-obvious reason a specific value or case was chosen (`# 3, not 6: the suggestion has to be usable at the requested tp`), not a restatement of the assertion.
 
 ## No references to things that do not exist in fbcode
 
