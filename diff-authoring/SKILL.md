@@ -41,15 +41,21 @@ Use a clear visual hierarchy with Remarkup headings (`##` for sections, `###` fo
 1. **Goal** (always, first): a `## Goal` section, 1 to 2 plain lines saying what the diff does and why.
 2. Then only the sections that matter. **Choose them to fit what the diff actually is, rather than filling in a fixed template.** The headings are a vocabulary, not a form; a section you have nothing real to put under is noise, and a section the diff needs but the template lacks should be invented.
 
+**State the current state before explaining it.** `## Goal` says what the diff is for, in a line or two. It is not the place to also carry the symptom. Immediately after it, before any root cause or background, give the reader the situation as it stands today: what is broken, what is missing, what today's behavior is. A reviewer cannot judge a cause or a fix without first knowing what is wrong.
+
+Name that section for what it actually holds - `## What is broken`, `## What is missing`, `## Today` - and make it concrete: the observable symptom, who or what it affects, and what it currently costs. "The pipeline does not work" is not a symptom; "the release stalls in the test node and the package is never tagged, so every launch still pays a 20 minute build" is.
+
 **Match the shape to the kind of diff.** The most common mistake is describing a bug fix as though it were a feature: `## Background` then `## What it changes` buries the one thing a reviewer needs, which is *why it broke*. Fixes get their own shape:
 
 | Kind of diff | Shape that fits |
 |---|---|
-| **Fixes a bug** | `## Goal`, `## Root cause`, `## Fix`, plus `## Risk` if the fix has a blast radius. Root cause states the defect and the mechanism by which it produced the symptom; Fix states what now happens instead. |
-| **Adds a capability** | `## Goal`, `## Background` (only if a domain concept is load-bearing), `## What it adds`, `## Risk` |
-| **Changes existing behavior** | `## Goal`, `## What it changes`, `## Why` (when the choice is non-obvious), `## Risk` |
-| **Removes something** | `## Goal`, `## What it removes`, `## Why` |
-| **Pure refactor** | `## Goal`, `## What it changes`, and a line stating behavior is unchanged |
+| **Fixes a bug** | `## Goal`, `## What is broken`, `## Root cause`, `## Fix`, plus `## Risk` if the fix has a blast radius. Root cause states the defect and the mechanism by which it produced the symptom; Fix states what now happens instead. |
+| **Adds a capability** | `## Goal`, `## What is missing` (the gap today, and its cost), `## Background` (only if a domain concept is load-bearing), `## What it adds`, `## Risk` |
+| **Changes existing behavior** | `## Goal`, `## Today` (the behavior being replaced), `## What it changes`, `## Why` (when the choice is non-obvious), `## Risk` |
+| **Removes something** | `## Goal`, `## Why it is unused`, `## What it removes` |
+| **Pure refactor** | `## Goal`, `## Today` (only when the current shape is the point), `## What it changes`, and a line stating behavior is unchanged |
+
+Skip the current-state section only when the title and goal already make it obvious and a sentence would add nothing. That is rarer than it feels: the author knows what is wrong and forgets the reviewer does not.
 
 For a fix, `## Root cause` earns its place only if it says something the symptom does not: the specific defect, and the causal step from defect to symptom. "The sampler was misconfigured" is not a root cause; "the sampler sharded over the global world group, so ranks inside a TP group each got a different slice, and MoE routing then diverged per rank" is.
 
