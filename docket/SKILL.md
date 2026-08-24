@@ -157,7 +157,8 @@ mismatches, an "Also" list of bare facts, one line each.>
 
 ### Inline comments
 <Per comment: a one-line note on what it covers so the reviewer can triage without
-reading it, then the anchor, then the comment text in a fenced block.>
+reading it, then the anchor, then the code at that line as a short snippet, then the
+comment text in a fenced block.>
 ````
 
 **"Checked, not commenting on"** is required even when short. It is where a refuted candidate
@@ -220,6 +221,37 @@ the reader has to see a second place before the question means anything.
 negation fails — all of that belongs in the card's Risks slot, written for the reviewer
 deciding whether to post. In the comment it does the author's thinking for them, on their own
 code. Name what you saw, point once if a pointer is needed, and ask.
+
+### Show the code
+
+Every inline comment carries a snippet of the anchor line plus just enough around it to be
+legible — one to five lines, language-tagged, with the anchor line marked when it is not
+obvious which one it is:
+
+````markdown
+**`preselected_scores_cache.py`, line 225** — inside `_read_snapshot_into`
+
+```python
+for sid, pairs in payload.items():
+    out[int(sid)] = {int(a): float(s) for a, s in pairs}   # <-- line 225
+```
+
+```
+is the per-SID assignment here meant to replace rather than merge?
+```
+````
+
+The snippet is **for the card, not for the comment.** Phabricator already renders the code
+beside an inline comment, so pasting it into the comment is noise the author has to scroll
+past. It is in the card because the reviewer is deciding whether to post without opening the
+file, and a comment about a line you cannot see is a comment you cannot judge — which is how a
+wrong comment gets posted.
+
+Pull it at the reviewed revision so it matches the permalinks:
+
+```bash
+sl cat -r D<n> <path> --reason "snippet for a review comment - sl help cat" | sed -n '<from>,<to>p'
+```
 
 Permalink form, using the full 40-character hash of the revision reviewed:
 
