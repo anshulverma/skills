@@ -169,8 +169,14 @@ short one.
 Two shapes, and they are not the same shape.
 
 **The topline** is the action plus the single reason for it, on one line. Then, if there are
-smaller mismatches, an `Also` list of bare facts, one line each. No mechanism — the inline
-comments carry the pointers, and repeating them here doubles the length for nothing.
+smaller mismatches, an `Also` line — an enumerated list when the items are crisp, a bare
+gesture when they are not. Both are honest; padding a gesture into a list is not.
+
+```
+Back to you due to the possible loss of cached scores on reload and on restart
+
+Also some things in the diff summary didn't line up with the contents.
+```
 
 ```
 Back to you due to the potential UID leak in logs
@@ -180,26 +186,40 @@ Also, a few things that didn't line up in the diff summary:
 2. test_sid_to_uid_client doesn't exist. Maybe it was removed later?
 ```
 
-**An inline comment is a question and a pointer. Nothing else.**
+**An inline comment asks a question.** That is the whole of it. Three real ones, in ascending
+length — and the length is set by how far the reader has to travel, not by how much you found:
 
 ```
-could this be logging UID downstream? Example: [here](https://www.internalfb.com/code/fbsource/[<full-hash>]/fbcode/path/to/file.py?lines=142)
+is the per-SID assignment here meant to replace rather than merge?
 ```
 
-That is the whole comment. It names what was seen, links the one other place that matters, and
-stops. **Do not trace the mechanism.** Which handler catches what, which sink formats it, why
-the negation fails — all of that belongs in the card's Risks slot, written for the human
-deciding whether to post. In the comment it does the author's thinking for them, on their own
-code. A reader handed a conclusion argues with it; a reader handed a thread-end pulls it.
+```
+I believe if this fails it would get classified as a scoring failure downstream right? Is that intentional?
+```
+
+```
+Wondering if there is a race condition here since `_rank_records` is cleared first [here](https://www.internalfb.com/code/fbsource/[<full-hash>]/fbcode/path/to/file.py?lines=135). So could a restart or a second job on the same ds, overwrite what an earlier flush wrote?
+```
+
+The first needs no link: the thing it asks about is at the anchor. The third needs one, because
+the reader has to see a second place before the question means anything.
 
 | Rule | Why |
 |---|---|
-| Question first, pointer second | An assertion invites a defence; a question invites a look |
-| Hedge where you are hedging — "could this", "maybe", "is this intentional?" | Most findings rest on a residual unknown, so certainty would be false |
-| One `fbsource` permalink, not a `file:line` in prose | One click instead of a search, and it pins the revision |
+| Ask, never assert | The author knows this code; a question gets an answer, an assertion gets a defence |
+| Ask about **intent** — "is this meant to…", "is that intentional?" | Presumes there was a reason, which is usually true and always cheaper than being wrong in public |
+| Hedge in the first person — "wondering if", "I believe … right?" | You are working from a read, not from having run it |
+| **Phrase the consequence as a question too** — "so could a restart overwrite what an earlier flush wrote?" | Stating the consequence is the assertion again, one step later |
+| Link only when the reader must see a **second** location | A link to the line the comment is already attached to is noise |
+| Never name the terminal, the severity or the tier | That is the card's vocabulary, for the reviewer. The author needs the observation |
 | Merge related nits on one file into one comment | Two comments on one docstring reads as pedantry |
-| Fenced code block, never a blockquote | The human pastes this; `>` renders as a left bar and breaks the paste |
-| A one-line note above each comment | Lets the human triage without reading the comment |
+| Fenced code block, never a blockquote | The reviewer pastes this; `>` renders as a left bar and breaks the paste |
+| A one-line note above each comment, in the card | Lets the reviewer triage without reading the comment |
+
+**Do not trace the mechanism.** Which handler catches what, which sink formats it, why the
+negation fails — all of that belongs in the card's Risks slot, written for the reviewer
+deciding whether to post. In the comment it does the author's thinking for them, on their own
+code. Name what you saw, point once if a pointer is needed, and ask.
 
 Permalink form, using the full 40-character hash of the revision reviewed:
 
