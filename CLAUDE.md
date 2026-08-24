@@ -11,7 +11,8 @@ prose and protocols that get loaded into a Claude Code session as instructions.
 The skills are `auto-plan/` (an autonomous planning orchestrator), `auto-research/` (an
 autonomous experimentation loop, ported from github/awesome-copilot), `diff-authoring/`
 (Phabricator diff conventions), `diff-comment-authoring/` (Phabricator diff comment and
-reply conventions), `i-have-adhd/` (an output-shaping style skill, ported from
+reply conventions), `docket/` (per-diff stack review, rendering monk's findings into a
+card and a ruling), `i-have-adhd/` (an output-shaping style skill, ported from
 ayghri/i-have-adhd), `monk/` (whole-chain diff review), `pr-authoring/` (GitHub PR
 conventions), and `sdd/` (spec-to-code pipeline). New skills are added as sibling
 directories.
@@ -171,6 +172,37 @@ Consequences when editing:
   `~/workspace/investigations/`.** Both halves are load-bearing: monk never posts, so there is
   no decline channel, so the local ledger and the batched ask are the only feedback loop it has.
 - monk is markdown-only: no scripts, no plugin manifest, no non-markdown artifact.
+
+## Architecture of the `docket` skill
+
+`docket` is a **presentation and decision layer over `monk`**, not a second reviewer. A single
+`SKILL.md` carries the four-phase flow, the card contract, and the ruling table. It has no
+`references/` directory and dispatches no agents of its own — `monk` does the fan-out.
+
+The split is the whole design: **`monk` decides what is true, `docket` decides what to do about
+it.** `monk` owns chain construction, warrant grades, tiering, the reporting floor and the
+caps; `docket` owns pacing, the card slots, comment rendering and accept-vs-send-back. Adding a
+defect-finding rule to `docket` is always wrong — it belongs in `monk`, and duplicating it
+creates a second authority that will drift from the first.
+
+Consequences when editing:
+
+- **The Iron Rule is the skill.** Every claim on a card traces to a surviving `monk` finding or
+  a command cited in-session. Relaxing it reproduces the measured baseline: three freehand
+  reviews of one 18-line diff gave three different answers (16/17, 8/11, 10/13) to the same
+  countable question and all three led with a claim `monk` had killed.
+- **The card is a positive contract, not a prohibition list.** Per `superpowers:writing-skills`,
+  this is a *shaping* failure, and prohibitions measurably backfire on those — agents negotiate
+  with "don't", but a recipe leaves nothing to negotiate. Express new requirements as slots in
+  the card, never as "do not…" bullets.
+- **Comment text is fenced, never blockquoted.** The deliverable is text the human pastes into
+  Phabricator; a `>` renders as a left bar and breaks the paste. Both baseline runs used
+  blockquotes for all ten of their comments.
+- **`monk` runs once over the whole stack, before the first card.** `still-true-at-stack-top`
+  and trigger-satisfiability both need the top of the stack in view; per-card runs cannot answer
+  either. The Must Fix tripwire must therefore also fire before any card is rendered.
+- **`docket` posts nothing.** It inherits `monk`'s Phabricator-read-only stance and produces
+  comment text for a human to post.
 
 ## Output locations (written into the target project, not this repo)
 
