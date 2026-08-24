@@ -6,7 +6,7 @@ orchestrator merges the returns back into a single report without inventing find
 chains at a file boundary.
 
 This file is the normative owner of the fan-out threshold table, of what counts as a reviewable
-changed file, of the nine-block brief template, of the open-end EXPORT/IMPORT ledger and the
+changed file, of the ten-block brief template, of the open-end EXPORT/IMPORT ledger and the
 stitch, of the dedup key and its tie-break, of the rule that agreement between agents is not
 corroboration, of the coverage ledger, and of the execution parameters including the concurrency
 cap and the diff-inlining budget. `SKILL.md` states that a cap exists and points here for the
@@ -105,7 +105,7 @@ are no changed lines to make "the root file" the obvious owner in the first plac
 keep the same underlying principle, which is that exactly one holder must report a chain and no
 holder's reading is narrowed by owning it.
 
-## Brief template: nine blocks [E-D2]
+## Brief template: ten blocks [E-D2]
 
 | # | Block | Content |
 |---|---|---|
@@ -118,9 +118,22 @@ holder's reading is narrowed by owning it.
 | 7 | Rubric | tier definitions from `SKILL.md`'s `### The tier lookup [B-D3]`, warrant grades from `METHOD.md`, annotation definitions from `SKILL.md`'s Phase 4a, pasted into the brief at assembly time from those sections, so merged tiers are comparable |
 | 8 | Output contract | the response schema below |
 | 9 | Prohibitions | no `/dexter:solve`; no recursive fan-out; no quota; no writes; no tier assignment (stage-1 only, relaxed for stage 2 as noted in the stage-2 brief below) |
+| 10 | Baseline | the path to the codebase baseline plus the citation conditional, verbatim from `references/BASELINE.md`'s `## How it reaches an agent`. Omitted entirely when there is no baseline |
 
 Briefs cite paths, never paste file bodies. Anything not shared makes agents incomparable at
 merge, tier definitions especially, since the orchestrator must not have to re-derive them.
+
+Block 10 is the same rule applied to the codebase itself: a path to read, never a paste. It is
+**omitted rather than emptied** when no baseline exists, because an empty block asserts that there
+is no shared context, which is a different claim from "shared context was not loaded".
+`references/BASELINE.md` owns the block's text, the staleness rule that decides whether it ships,
+and the rule that a baseline claim is never a chain's warrant citation.
+
+**Block 10 is what makes the annotation vector comparable across agents.** Without it, a fact one
+agent reads and another assumes yields `READ` for one and `ASSUMED` for the other, and Phase 4a's
+lookup then assigns two different tiers to the same chain, which dedup resolves by tie-break rather
+than by evidence. Measured on a 21-diff stack: five agents independently re-derived one
+`AsyncBridge` default, and two reached different counts of the same config set.
 
 Block 7 ships the rubric text to agents; this file does not become a third normative copy of it.
 The assembly step reads `SKILL.md`'s `### The tier lookup [B-D3]` and Phase 4a annotation definitions, and
@@ -150,7 +163,7 @@ evidence bar, in `references/QUALITY.md`'s `## The evidence bar`. The census is 
 and `SKILL.md` says so, so pasting it into a repo brief would ship a calibration figure the same
 skill calls inapplicable, and an agent given two rates cannot tell which one binds.
 
-Blocks 1, 3, 7, 8, and 9 are unchanged in both modes. Block 7 additionally pastes the tier names
+Blocks 1, 3, 7, 8, 9, and 10 are unchanged in both modes. Block 7 additionally pastes the tier names
 from `references/QUALITY.md`'s `## Tier names`, since every unit can raise a quality finding and a
 merged report needs one spelling of each tier.
 
@@ -202,7 +215,16 @@ depends: <local chain ids>
 
 ### ABANDONED
 chain: <one line> | killer: grade-E-root | unsatisfiable-trigger | negation-held | two-residual-unknowns | survivorship-unexplained
+
+### BASELINE-DRIFT
+claim: <the baseline claim> | now: <what the line actually says> | cite: <path>:<line>
 ```
+
+`### BASELINE-DRIFT` is emitted only when block 10 shipped and a line the baseline cites has moved
+or changed meaning. It is not a finding and never enters a tier; the orchestrator collects the
+records into the report footer, and three or more in one review is the signal to regenerate the
+baseline regardless of its age. An agent with no baseline, or one that found no drift, omits the
+block.
 
 Five of the six killer tokens on the `### ABANDONED` line are the subset an agent can reach on its
 own: `grade-E-root`, `unsatisfiable-trigger`, `negation-held`, `two-residual-unknowns`, and
@@ -260,7 +282,7 @@ closed by an agent that read the consuming side and found nothing.
 
 ## The stage-2 brief
 
-Blocks 2, 3, 6, 7, and 8 of the nine-block template are reused verbatim, which is what keeps
+Blocks 2, 3, 6, 7, 8, and 10 of the ten-block template are reused verbatim, which is what keeps
 stage-1 and stage-2 output comparable at merge. Three blocks are replaced:
 
 | # | Block | Stage-2 content |

@@ -40,10 +40,11 @@ once.
 ## Flow
 
 ```
-Phase 0  Resolve the docket      pin stack order locally, one row per diff
-Phase 1  Run monk, whole stack   once, up front, tripwire before any card
-Phase 2  Render ONE card         then stop and wait
-Phase 3  On "next"               render the next, carry forward what changed
+Phase 0    Resolve the docket    pin stack order locally, one row per diff
+Phase 0.5  Load the baseline     the codebase doc every card's Background is written from
+Phase 1    Run monk, whole stack once, up front, tripwire before any card
+Phase 2    Render ONE card       then stop and wait
+Phase 3    On "next"             render the next, carry forward what changed
 ```
 
 ### Phase 0 — Resolve the docket
@@ -76,6 +77,31 @@ Four things that bite, all seen in real stacks:
 | `A::B` revset explodes | `abort: revset query scanned over 100000 commits` | the diffs are on divergent bases; use `D<top>~N::D<top>` |
 
 Emit the resolved docket as a table before anything else. That table is the agenda.
+
+### Phase 0.5 — Load the codebase baseline
+
+`monk` resolves an anchor for the stack and loads or generates
+`~/.claude/docs/codebase/<slug>.md`. `references/BASELINE.md` in the `monk` skill owns all of it:
+anchor resolution, the schema, generation, and the staleness thresholds. Do not duplicate that
+work — read the file `monk` resolved.
+
+For `docket` it does one specific job: **the Background block is written from the baseline's
+`## Vocabulary`, `## Map`, and `## What this codebase is`, not re-derived per card.** That is
+what makes the vocabulary identical across 21 cards instead of drifting, and it is why the first
+card can carry the base vocabulary and later cards can add only what their own diff introduces.
+
+Two of the baseline's sections change what reaches a card at all:
+
+| Baseline section | Effect on the card |
+|---|---|
+| `## Invariants already held` | A risk the codebase already defends against does not go in `Risks`; it goes in `Checked, not commenting on`, citing the invariant |
+| `## Testing`, the already-red target list | A test failing at the anchor commit is never attributed to the diff. Say it was already red and name the target |
+
+The Iron Rule is unchanged and the baseline does not weaken it: a baseline fact is **background**,
+so it may define a term, orient the reader, or kill a candidate risk, but it may not be the source
+of a claim in `Does it do what it says`, `Risks`, or a posted comment. Those still trace to a
+surviving `monk` finding or to a command run this session. A comment that would cite the baseline
+is a comment citing nothing the author can check.
 
 ### Phase 1 — Run monk once, over the whole stack
 

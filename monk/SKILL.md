@@ -91,6 +91,10 @@ Phase 0  Priors + prior state
          KNOWLEDGE.md (full) + LESSONS.md (headings) + reviews/D<n>.md
          -> applicable priors, carried findings, declined suppressions, outcome window
   |
+Phase 0.5 Baseline        resolve anchor -> ~/.claude/docs/codebase/<slug>.md
+                          present and fresh -> ship as brief block 10
+                          absent or >90d    -> generate by facet fan-out first
+  |
 Phase 1  Intent           author's claim, recorded before any code is read
   |
 Phase 2  Read             full files both versions + dependencies a link needs
@@ -125,7 +129,13 @@ Markdown only, no scripts, no plugin. Lives at `~/workspace/skills/monk/` and sy
     FANOUT.md                     # brief template, open-end ledger, stitch, dedup, coverage
     PERSISTENCE.md                # ledger schemas, matching, ask protocol, suppression
     KNOWLEDGE-INTEGRATION.md      # prior selection/citation, dexter contract, KB + LESSONS authoring
+    BASELINE.md                   # codebase baseline: location, schema, generation, staleness
 ```
+
+The baseline is the one artifact monk writes outside `~/workspace/investigations/`. It lives at
+`~/.claude/docs/codebase/<slug>.md` because it is shared context rather than review state: it
+outlives any single diff, it is reused by `docket` and by any other reviewer, and
+`~/.claude/docs/` is already tracked so it syncs across machines. Review state stays where it was.
 
 ### The seven rules
 
@@ -199,6 +209,8 @@ construction, which is why their composition rules are stated above rather than 
 | `--gchat` | Deliver the report through `meta google.chat.message send` instead of the terminal. A delivery channel only; its one behavioral consequence, the deferred Asked tier, is stated in Delivery |
 | `--stack` | Review every diff base-to-top, each against its own base, one ledger file per diff |
 | `--include-bots` | Review a bot-authored or codemod diff, which is skipped by default |
+| `--refresh-baseline` | Regenerate the codebase baseline before reviewing, at any age |
+| `--no-baseline` | Skip the Phase 0.5 check and omit brief block 10 entirely |
 
 **`--include-bots` is the override the non-goal implies.** Bot and codemod diffs are skipped by
 default because a codemod's causal chains are properties of the codemod, not of the diff, so the
@@ -289,6 +301,38 @@ concrete changes for the current run, not a mood:
 
 The report's `Calibration` block states that the bar was raised and prints the window that
 triggered it.
+
+## Phase 0.5: the codebase baseline
+
+Priors are what monk learned from **reviewing**. The baseline is what is true about the
+**codebase**, independent of any diff. Phase 0 loads the first; this phase loads the second.
+
+`references/BASELINE.md` owns every mechanic: the anchor-resolution table, the slug, the schema,
+the facet fan-out that generates it, the staleness thresholds, and the text of brief block 10.
+Four steps here, all of them cited rather than restated:
+
+1. **Resolve the anchor** — the deepest directory containing every reviewable changed file. When that resolves to the repo root or a bare top-level directory, **ask the human for a base path** rather than anchoring on something as wide as `fbcode/`. A stack resolves one anchor for the whole stack.
+2. **Check `~/.claude/docs/codebase/<slug>.md`** against the staleness table. Fresh, warn-and-use, regenerate, or generate-from-nothing.
+3. **Generate if needed**, by the facet fan-out, which runs under the same concurrency cap as a review and writes exactly one file.
+4. **Ship it as block 10** of every agent brief, as a path plus the citation conditional. Never as a paste.
+
+Two rules are stated here rather than left in the reference, because they are what keep the
+baseline from corrupting the rest of the skill:
+
+**A baseline claim is context, never a warrant citation.** An agent using a baseline fact in a
+graded link cites the underlying `path:line` and is graded on having read it, exactly as if there
+were no baseline. An agent that puts the baseline document in a `cite:` field has produced an
+ungraded link. The consequence is the one that matters: **a stale baseline can waste a read, but it
+cannot manufacture a finding**, which is what makes a refresh cadence measured in weeks safe.
+
+**The baseline never sets the emission bar.** It supplies facts, not priors and not suspicion. Its
+`## Invariants already held` section can only *kill* candidate chains, by naming what the code
+already defends against; nothing in it may raise a tier, satisfy a trigger, or substitute for the
+negation test. A baseline that starts producing findings has become a prior, and belongs in
+`KNOWLEDGE.md` under Phase 4e's rules instead.
+
+Repo mode runs this phase too, with the anchor set to the scope root, which is already resolved by
+Phase -1. `--no-baseline` skips the phase and omits block 10; `--refresh-baseline` forces step 3.
 
 ## Phase 1: intent
 
@@ -733,7 +777,14 @@ depends: <local chain ids>
 
 ### ABANDONED
 chain: <one line> | killer: grade-E-root | unsatisfiable-trigger | negation-held | two-residual-unknowns | survivorship-unexplained
+
+### BASELINE-DRIFT
+claim: <the baseline claim> | now: <what the line actually says> | cite: <path>:<line>
 ```
+
+`### BASELINE-DRIFT` carries no finding and never enters a tier. The orchestrator collects the
+records into the report footer; three or more in one review means regenerate the baseline
+regardless of its age, per `references/BASELINE.md`'s `## Staleness`.
 
 A `### QUALITY` record is emitted only for a candidate that clears the bar in
 `references/QUALITY.md`'s `## The evidence bar`. One that does not is reported in

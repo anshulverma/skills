@@ -113,7 +113,7 @@ Consequences when editing:
 ## Architecture of the `monk` skill
 
 `monk` is a **review protocol**, not an orchestrator with a state file. `SKILL.md` carries the
-phase spine (0 through 4e) and every rule the orchestrator applies itself; the six
+phase spine (0 through 4e) and every rule the orchestrator applies itself; the eight
 `references/` files carry material that is either too long to inline or is pasted verbatim
 into sub-agent briefs.
 
@@ -123,9 +123,10 @@ into sub-agent briefs.
 | `references/METHOD.md` | The seven rules, warrant grades A-E, edge kinds, trigger derivation, the closed terminal-class list T1-T6, the negation test, the residual-unknown bound |
 | `references/ANTI-PATTERNS.md` | Competing reviewers' prompts quoted at `path:line`, the load-bearing negatives, the style-laundering framing, citing `SKILL.md`'s gate 4 |
 | `references/REPORT-TEMPLATE.md` | Exact output structure and both worked examples, byte-identical to the design spec |
-| `references/FANOUT.md` | Fan-out threshold, the nine-block stage-1 brief, the stage-2 brief, the response schema, stitching, dedup, the coverage ledger |
+| `references/FANOUT.md` | Fan-out threshold, the ten-block stage-1 brief, the stage-2 brief, the response schema, stitching, dedup, the coverage ledger |
 | `references/PERSISTENCE.md` | `reviews/D<n>.md` schema, the identity triple, version-over-version classification, the ask protocol, suppression |
 | `references/KNOWLEDGE-INTEGRATION.md` | Phase 0 prior selection, the dexter understand-only contract, the KB router and authoring rules |
+| `references/BASELINE.md` | Phase 0.5: anchor resolution, the `~/.claude/docs/codebase/<slug>.md` location, the baseline schema, the facet fan-out that generates it, the staleness thresholds, and brief block 10 |
 
 **One normative owner per concept.** Seven files that each restate the tier lookup, the warrant
 grades or the terminal classes will drift, and two drifted copies are worse than one missing
@@ -151,10 +152,10 @@ side, extract both blocks and `diff` them again rather than eyeballing it.
 
 Consequences when editing:
 
-- **The response schema is a parsing contract.** Its six headers (`### COVERAGE`, `### DELTA`,
-  `### CHAINS`, `### OPEN-ENDS`, `### UNPROVEN-FACTS`, `### ABANDONED`) must match across both
-  sites. Changing one without the other makes the orchestrator silently drop a whole section of
-  every agent's return.
+- **The response schema is a parsing contract.** Its seven headers (`### COVERAGE`, `### DELTA`,
+  `### CHAINS`, `### OPEN-ENDS`, `### UNPROVEN-FACTS`, `### ABANDONED`, `### BASELINE-DRIFT`)
+  must match across both sites. Changing one without the other makes the orchestrator silently
+  drop a whole section of every agent's return.
 - **Finding identity is `(file path, enclosing symbol, terminal failure class)`**, never
   `file:line`. `line_at_raise` is stored for the report and is never matched on. Changing that
   key is not a refactor: it orphans every ledger entry, every suppression and every
