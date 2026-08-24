@@ -119,7 +119,14 @@ Define every system, acronym and datatype the rest of the card uses. Assume zero
 codebase knowledge.>
 
 ## Diff Summary
-<What the change actually does, mechanically. 3-6 lines.>
+<Bullets, one per thing the diff does. Plain language: NO file paths, NO symbol
+names, NO line numbers. A reader who has never seen this code should understand
+each bullet. Save the citations for the Risks slot.>
+
+## Responsibilities: N
+<The count of bullets above, then one line: is this one job or several, and if
+several, where the natural seam is. A diff doing 4+ unrelated things is worth
+saying so even when every one of them is correct.>
 
 ## Intent
 <What the author says it is for. 1-3 lines.>
@@ -144,31 +151,67 @@ where the reviewer is stopped from wasting the author's time.>
 ## Ruling: Accept | Accept with comments | Request changes
 <Two or three lines of reasoning, tied to the table below.>
 
-### Comments to post
-<Per comment: an anchor line, then the text in a fenced block, ready to paste.>
+### Topline comment
+<One line: the action and the single reason for it. Then, if there are smaller
+mismatches, an "Also" list of bare facts, one line each.>
+
+### Inline comments
+<Per comment: a one-line note on what it covers so the reviewer can triage without
+reading it, then the anchor, then the comment text in a fenced block.>
 ````
-
-Two slots carry most of the value and are the ones agents drop:
-
-**Comment text goes in a fenced code block, never a blockquote.** The reviewer pastes it into
-Phabricator; a `>` renders as a left bar and breaks the paste. Anchor each one:
-
-````markdown
-**`path/to/file.py`, inline on `enclosing_symbol`** (~line N)
-
-```
-The branch above reduces this to type(e).__name__, but this branch re-raises the
-object unmodified, and rollout_buffer.py:142 formats it with {e}.
-```
-````
-
-Follow `diff-comment-authoring`: lead with the point, one sentence where one will do, no praise
-opener, no restating what the author wrote. Line numbers drift between versions — anchor on the
-symbol and mark the line approximate.
 
 **"Checked, not commenting on"** is required even when short. It is where a refuted candidate
 goes at no cost to the author, and it is the only thing distinguishing a careful review from a
 short one.
+
+## Writing the comments
+
+Two shapes, and they are not the same shape.
+
+**The topline** is the action plus the single reason for it, on one line. Then, if there are
+smaller mismatches, an `Also` list of bare facts, one line each. No mechanism — the inline
+comments carry the pointers, and repeating them here doubles the length for nothing.
+
+```
+Back to you due to the potential UID leak in logs
+
+Also, a few things that didn't line up in the diff summary:
+1. the components list names two files that aren't in this diff
+2. test_sid_to_uid_client doesn't exist. Maybe it was removed later?
+```
+
+**An inline comment is a question and a pointer. Nothing else.**
+
+```
+could this be logging UID downstream? Example: [here](https://www.internalfb.com/code/fbsource/[<full-hash>]/fbcode/path/to/file.py?lines=142)
+```
+
+That is the whole comment. It names what was seen, links the one other place that matters, and
+stops. **Do not trace the mechanism.** Which handler catches what, which sink formats it, why
+the negation fails — all of that belongs in the card's Risks slot, written for the human
+deciding whether to post. In the comment it does the author's thinking for them, on their own
+code. A reader handed a conclusion argues with it; a reader handed a thread-end pulls it.
+
+| Rule | Why |
+|---|---|
+| Question first, pointer second | An assertion invites a defence; a question invites a look |
+| Hedge where you are hedging — "could this", "maybe", "is this intentional?" | Most findings rest on a residual unknown, so certainty would be false |
+| One `fbsource` permalink, not a `file:line` in prose | One click instead of a search, and it pins the revision |
+| Merge related nits on one file into one comment | Two comments on one docstring reads as pedantry |
+| Fenced code block, never a blockquote | The human pastes this; `>` renders as a left bar and breaks the paste |
+| A one-line note above each comment | Lets the human triage without reading the comment |
+
+Permalink form, using the full 40-character hash of the revision reviewed:
+
+```
+https://www.internalfb.com/code/fbsource/[<full-hash>]/<repo-relative-path>?lines=<N>
+```
+
+Line numbers drift between versions, so anchor the comment on the enclosing symbol and mark the
+line approximate; the permalink is what stays correct.
+
+`diff-comment-authoring` governs the rest: no praise opener, no restating what the author wrote,
+no verification dump, no volunteered extras.
 
 ## Ruling
 
@@ -229,7 +272,23 @@ reply with the link plus a 3-line digest:
 
 ```bash
 <render card to /tmp/docket-D<n>.md>
-pastry --title "docket: D<n>" < /tmp/docket-D<n>.md
+pastry --md --private --title "docket: D<n>" < /tmp/docket-D<n>.md
 ```
+
+**Both flags are required.** `--private` restricts the paste to its author: a card names
+unposted findings, refuted candidates and a send-back recommendation about someone else's work,
+and none of that should be world-readable before the reviewer decides what to say. `--md`
+uploads it as markdown; without it every table, heading and fenced block renders as literal
+source and the card is harder to read than the terminal output it replaced.
+
+Hand back the returned URL with `?view=markdown` appended:
+
+```
+https://www.internalfb.com/phabricator/paste/view/P<number>?view=markdown
+```
+
+When rendering a whole stack, dispatch one agent per diff so each card is built in its own
+context, and return a table of `D<number> | verdict | paste URL` for the human to work through
+one at a time.
 
 `docket` posts nothing to Phabricator. It produces the text; the human posts it.
