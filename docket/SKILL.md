@@ -137,7 +137,23 @@ The output **is** these slots, in this order. Fill every one.
 ````markdown
 # D<number> — `<title>`
 
-<files>, +<added>/-<removed>. <how it was reviewed>
+<files>, +<added>/-<removed>. <how it was reviewed, one line>
+
+## Ruling: Accept | Accept with comments | Request changes
+<Two or three lines of reasoning, tied to the ruling table further down this skill.>
+
+### Topline comment
+<One line: the action and the single reason for it. Then, if there are smaller
+mismatches, an "Also" list of bare facts, one line each.>
+
+### Inline comments
+<Per comment: a one-line note on what it covers so the reviewer can triage without
+reading it, then the anchor, then the code at that line as a short snippet, then the
+comment text in a fenced block.>
+
+---
+
+# Why
 
 ## Background you need to read this
 <Only on the first card, and on any later card that introduces new vocabulary.
@@ -173,23 +189,28 @@ live at stack top or inert here.>
 ## Checked, not commenting on
 <Chains pushed and killed, and why. This is where diligence becomes visible and
 where the reviewer is stopped from wasting the author's time.>
-
-## Ruling: Accept | Accept with comments | Request changes
-<Two or three lines of reasoning, tied to the table below.>
-
-### Topline comment
-<One line: the action and the single reason for it. Then, if there are smaller
-mismatches, an "Also" list of bare facts, one line each.>
-
-### Inline comments
-<Per comment: a one-line note on what it covers so the reviewer can triage without
-reading it, then the anchor, then the code at that line as a short snippet, then the
-comment text in a fenced block.>
 ````
+
+### The ruling and the comments come first. Do not reorder this.
+
+The card is read by someone who is about to act: decide, then paste. Everything under `# Why`
+is justification for a decision they have already read. Putting the analysis first buries the
+deliverable under 2000+ words and costs a scroll on every single diff of a long stack.
+
+The pull to write it the other way round is strong, because the analysis is what *produced* the
+ruling and narrative order feels honest. Resist it. **Order the card by what the reader does with
+it, not by how it was derived.** A reviewer working a 19-diff stack opens each card, reads three
+lines, copies a comment block, and moves on; the `# Why` exists for the one card in five where
+they want to check the reasoning before posting.
+
+Two consequences that follow from the order and are easy to get wrong:
+
+- **Every inline comment carries its own one-line triage note**, because the reader reaches the comments before reaching the Risks section that explains them. The note is what makes a comment skimmable in isolation.
+- **A comment may reference a risk by its number** (`Covers Risk 2`), but must still stand on its own. If a comment only makes sense after reading the Risks slot, rewrite the comment.
 
 **"Checked, not commenting on"** is required even when short. It is where a refuted candidate
 goes at no cost to the author, and it is the only thing distinguishing a careful review from a
-short one.
+short one. It sits under `# Why` because it is evidence of diligence, not an action.
 
 ## Writing the comments
 

@@ -206,5 +206,23 @@ The response schema gains one optional line, emitted only when it fires:
 claim: <the baseline claim> | now: <what the line actually says> | cite: <path>:<line>
 ```
 
-The orchestrator collects these and prints them in the report footer. Three or more drift records
-in one review is the signal to regenerate regardless of age.
+**Drift means the baseline is wrong at its own anchor commit. A line the diff under review moves
+is not drift.** The distinction is load-bearing and agents get it wrong by default: a diff that
+inserts a config block shifts every citation below it, and reporting those shifts as drift both
+buries the real records and would trigger a pointless regeneration. Two tests, and the record is
+emitted only if both pass:
+
+| Question | Emit a drift record? |
+|---|---|
+| Is the baseline's claim false when read at `anchor_commit`? | **Yes** — this is drift |
+| Is it true at `anchor_commit` but false at `D<n>` because the diff changed it? | **No** — that is the diff doing its job. It belongs in `### CHAINS` or `### DELTA` |
+| Is it true at `anchor_commit` but false at `D<n>` because a *different* diff in the stack changed it? | **No** — that is a stack fact. Put it in the `still-true-at-stack-top` field of the chain it bears on |
+
+The orchestrator collects genuine records and prints them in the report footer. Three or more in
+one review is the signal to regenerate regardless of age.
+
+**A line-number shift with unchanged semantics is the lowest-value drift record there is.** Prefer
+anchoring a baseline claim on `file :: symbol` rather than `file:line` wherever the symbol name is
+stable, for the same reason the dedup key is line-independent: line anchors drift on every restack,
+and a baseline that has to be regenerated because a config block moved is a baseline nobody will
+keep current.
