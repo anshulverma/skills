@@ -234,8 +234,53 @@ Also, a few things that didn't line up in the diff summary:
 2. test_sid_to_uid_client doesn't exist. Maybe it was removed later?
 ```
 
-**An inline comment asks a question.** That is the whole of it. Three real ones, in ascending
-length — and the length is set by how far the reader has to travel, not by how much you found:
+### What a comment is about
+
+**The comment asks whether the code is doing what it is supposed to do.** That is the only subject.
+
+It is **not** about whether a test exercises a path, whether coverage is complete, or whether the
+verification is thorough. Those are the reviewer's concerns, they belong in the card's
+`Is it well tested` slot, and they do not reach the author. Handing an author *"this path isn't
+exercised"* hands them a chore. Handing them *"these two writes land on different prefixes — is
+that intentional?"* hands them the actual question — and if the answer is no, the test was never
+the point.
+
+A coverage gap is usually how you **noticed** something, not the thing itself. Find the code
+question underneath it and ask that. If there is no code question underneath, there is no comment.
+
+### The shape
+
+**One observation, then one question.** Nothing before, nothing between, nothing after.
+
+    <what you saw, flat, one clause>. <the question>?
+
+State the observation as a fact. Do not build it as an argument: no *"the summary says X but"*,
+no *"I can't find"*, no walking the reader from evidence to inference to conclusion. You saw a
+thing — say the thing.
+
+Worked, from a real card. **Too long, and asking about the wrong subject:**
+
+```
+the summary and the docstring both name `AllowOverwrite` as one of the things this verifies, but
+I can't find a path in here that puts to a key twice - `store` and `flush` land on disjoint
+prefixes, so every put looks like a create. Since flush runs once per reward call in a real run,
+would a second `writer2.flush(ds)` here be worth adding so the overwrite predicate actually gets
+exercised?
+```
+
+**What it should have been:**
+
+```
+the path for store and flush is not the same (different prefixes). Is that intentional?
+```
+
+Four clauses of justification were cut, and the subject moved from the test to the code. The
+author knows this code; if the prefixes are wrong they will see it the moment they are asked.
+The `AllowOverwrite` framing, the "so every put looks like a create" inference, and the proposed
+extra flush call were all reasoning *about* the observation rather than the observation.
+
+Three real comments, in ascending length — and the length is set by how far the reader has to
+travel, not by how much you found:
 
 ```
 is the per-SID assignment here meant to replace rather than merge?
@@ -254,10 +299,13 @@ the reader has to see a second place before the question means anything.
 
 | Rule | Why |
 |---|---|
+| **Ask about the code, never about the test** | Coverage is the reviewer's problem. "Is this write meant to land there?" is the author's |
+| **One observation, one question** | Everything else is you doing the author's thinking on their own code |
+| **State the observation flat** — not as a premise in an argument | An argument invites a rebuttal; a fact invites an answer |
 | Ask, never assert | The author knows this code; a question gets an answer, an assertion gets a defence |
 | Ask about **intent** — "is this meant to…", "is that intentional?" | Presumes there was a reason, which is usually true and always cheaper than being wrong in public |
-| Hedge in the first person — "wondering if", "I believe … right?" | You are working from a read, not from having run it |
-| **Phrase the consequence as a question too** — "so could a restart overwrite what an earlier flush wrote?" | Stating the consequence is the assertion again, one step later |
+| Hedge in **one word** — "I believe", "looks like", "wondering if" — never a clause | A clause of hedging is longer than the question it protects |
+| Add a consequence **only when it is itself a code question** — "so could a restart overwrite what an earlier flush wrote?" | That version is the real ask. "So the predicate isn't exercised" is a test observation wearing a question mark |
 | Link only when the reader must see a **second** location | A link to the line the comment is already attached to is noise |
 | Never name the terminal, the severity or the tier | That is the card's vocabulary, for the reviewer. The author needs the observation |
 | Merge related nits on one file into one comment | Two comments on one docstring reads as pedantry |
@@ -363,6 +411,10 @@ they do not go on the card.
 - About to render a second card without being asked.
 - Must Fix count on one diff is 3+ and no re-verification has run.
 - The "Risks" section is longer than the diff.
+- **A comment whose subject is a test, a coverage gap, or a summary** rather than the code. Find the code question underneath it or drop it.
+- **A comment with the word "but" in it**, or more than one sentence before the question mark. Both mean an argument is being built where an observation belongs.
+- **A comment that proposes the fix.** Naming the fix answers the question you were about to ask; ask it instead.
+- The reader has to scroll to reach the first comment block.
 
 ## Delivery
 
