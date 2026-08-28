@@ -9,14 +9,23 @@ Write each diff so a reviewer who has never seen the project can review it from 
 
 ## Title
 
-- Start every title with two bracketed tags, in this order:
-  1. The top-level project tag (for this stack: `[mitra]`).
-  2. The feature / thing the stack builds (for this stack: `[text-diffusion]`).
-  So a title reads: `[mitra][text-diffusion] masking.py: LLaDA forward corruption`.
-  These tags are NOT the edited file name. If you are unsure what either tag should be, stop and ask the user (offer options), do not guess.
+Start every title with the bracketed tag or tags the surrounding area already uses, then a short specific description.
+
+**Derive the tags from the area. Never carry a tag in from anywhere else.** Every tag in this document is a placeholder: `[myproject]`, `[myfeature]`. A tag copied out of this document, out of another project, or out of a different stack is always wrong, and it is wrong silently, because the title still looks well-formed. Look up what the area actually does before writing a title:
+
+```
+sl log <directory-you-are-touching> -T "{desc|firstline}\n" -l 20 \
+   --reason "read the local diff-title convention - sl help log"
+```
+
+Read what comes back and match it. Conventions differ legitimately by area: some use a single project tag (`[myproject] thing.py: what it does`), some a project tag plus the feature the stack builds (`[myproject][myfeature] thing.py: what it does`). Both are right where they are used. How many tags to use is the area's call, never this document's.
+
+- **If your stack sits on top of someone else's commits, match their titles.** The base commits are the most authoritative sample available, and a stack whose tag changes halfway reads as two unrelated workstreams.
+- The tag is NOT the edited file name.
+- If the area shows no consistent convention, propose two or three options and ask the user. Do not guess.
 - After the tags, a short specific description, matching the area's style.
 - Do NOT put a task ID in the title. Tasks are linked via the Tasks field (below).
-- Do NOT use em-dashes (`—`). Use a colon or plain words: `[mitra][text-diffusion] masking.py: LLaDA forward corruption`, not `... masking.py — LLaDA forward corruption`.
+- Do NOT use em-dashes (`—`). Use a colon or plain words: `[myproject] masking.py: forward corruption`, not `[myproject] masking.py — forward corruption`.
 
 ## Tasks
 
@@ -27,7 +36,8 @@ Write each diff so a reviewer who has never seen the project can review it from 
 ## Reviewers
 
 - Set reviewers via the Reviewers field (a `Reviewers:` commit-message trailer, or `--add-reviewers` on `jf template` / `meta phabricator.diff update`), never in the title or summary.
-- **For a project / group reviewer, ALWAYS use the `#`-prefixed project tag** (e.g. `#mitra`), quoted so the shell does not treat `#` as a comment: `--add-reviewers "#mitra"`. A bare name (`--add-reviewers mitra`) resolves to BOTH the `#mitra` project AND a `mitra` **unixname user**, silently attaching the wrong real account as a reviewer across the whole stack. If the user says "add the X project/team/group as reviewer", that means `#X`, not `X`.
+- **For a project / group reviewer, ALWAYS use the `#`-prefixed project tag**, quoted so the shell does not treat `#` as a comment: `--add-reviewers "#myproject"`. A bare name (`--add-reviewers myproject`) resolves to BOTH the `#myproject` project AND a `myproject` **unixname user**, silently attaching the wrong real account as a reviewer across the whole stack. If the user says "add the X project/team/group as reviewer", that means `#X`, not `X`.
+- `#myproject` here is a placeholder, exactly as in Title above. Use the project the code you are touching belongs to, never one carried in from this document or another stack.
 - Fix a wrongly-attached unixname after the fact, per diff: `meta phabricator.diff update -n D<n> --remove-reviewers <unixname> --add-reviewers "#project"`, then `jf sync -s` so the corrected Reviewers field is pulled back into the local commit messages (otherwise a later `jf submit` re-adds the bad reviewer from the stale local message).
 
 ## Summary
