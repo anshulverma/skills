@@ -152,6 +152,19 @@ Make it specific to THIS diff (not a copy of the stack's overall plan). Pick the
 
    Both the session and the job name link to the session URL; the checkpoint links to the Manifold explorer URL (never a bare `manifold://` path).
 
+**Never reproduce a matrix or an evidence table.** A test plan states what is covered and shows evidence for the one claim a reviewer would otherwise doubt. It is not where the proof gets reproduced. No revert-by-test grid, no per-case table, no per-branch enumeration, and at most one or two pasted failures. Rigor that is worth recording in full belongs in the spec or the task, not in front of every reviewer. A test plan built from tables is the flattest, least readable shape available: the reader cannot tell what is being tested without parsing a grid.
+
+The shape that works, in this order:
+
+1. One line of scope: what kind of exercise this is, and what does not apply (no MAST job, docs only, and so on).
+2. **One** fenced block carrying every command and its result. Not one block per command.
+3. One line naming what the tests cover.
+4. Evidence for the least obvious claim only, and as few lines as that takes.
+
+**Give the reviewer the command, not the proof.** Evidence means the thing they would run to check you, plus its result. It does not mean reproducing the work you did. A claim a reviewer can re-derive in one command needs one command; a claim resting on an absence needs the command plus whatever shows the absence is meaningful. Anything longer is the proof, and the proof belongs in the spec.
+
+**A negative claim needs a control.** "The config does not set X" is only evidence if the reader knows the source would have shown X had it been set. State what makes the absence meaningful, or the sentence proves nothing. Same for a count: a quantitative claim ("7 committed configs", "all 10 flows") carries the search that produced it, or it does not go in.
+
 **Be brief, do not enumerate every case.** State what is covered at a high level and stop; a reviewer reads the tests for the specifics. Write `Covers tier-name determinism and protocol scoping, and all branches.`, NOT `... all branches: absent launches once, READY reuses with no launch, PENDING polls to READY, FAILED tears down and relaunches once, ...`. Listing each branch/case verbatim is noise that restates the test code. The same applies to summaries: name the behavior, do not transcribe the test matrix.
 
 ### Formatting commands and output
