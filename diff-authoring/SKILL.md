@@ -229,6 +229,18 @@ This is about provenance to things outside fbcode. Real Meta/fbcode artifacts (a
 - One diff per logical change. For a stack, apply review fixes to the owning commit and restack (see the `stack-review` skill). Distribute comment-only cleanups across a stack with `sl absorb` after a `--dry-run` and explicit approval.
 - Publishing drafts: publish with `jf submit -s --no-draft`. If it reports diffs as "updated" but `sl ssl` still shows them `Unpublished`, it skipped them as unchanged - re-run with `--no-skip`, or publish explicitly with `meta phabricator.diff publish -n D<n>`, to force the draft->published transition. `meta phabricator.diff action --request-review` does NOT publish a draft (it is rejected on an "unreviewable state" diff); it only re-requests review on an already-published diff. After publishing, verify with `sl ssl` (look for `Needs Review`, not `Unpublished`), not just the `jf submit` output.
 
+## Before you ship: read it back
+
+Following the rules while writing is not the same as having followed them. **Read the rendered summary and test plan back, as a reviewer would, and check five things.** Do this on the actual output, not on your memory of writing it. If you delegated the authoring, this check is yours, not the delegate's, and "the agent reported it applied the skill" is not evidence.
+
+1. **Count the bullets.** More than ~10 across the summary, or any bullet that wraps to a second line? Cut.
+2. **Scan for the arguing tells** — "rather than", "instead of", "would have", "does not mean", "what this buys". Each one is a bullet defending a decision. Cut to the fact.
+3. **Count the fenced blocks in the test plan.** More than one command block, or any table, means it is the wrong shape.
+4. **Ask what is being tested.** Read only the test plan. If you cannot say in one sentence what the tests cover, the reviewer cannot either.
+5. **Grep for em-dashes** (U+2014, U+2013) across title, summary, test plan and every added code line.
+
+Total message length is the cheapest proxy: a diff whose summary plus test plan runs past ~40 lines is almost always carrying an argument, a matrix, or both.
+
 ## After authoring: clear the signals
 
 Writing the diff well is half the job; the other half is getting it to a clean signal state so a reviewer (human or automated) can actually approve it. Once the diff is published, drive every gating signal to green: CI signals, automated AI reviews (Devmate inline comments, Mitra Code Review), Arctic insights, and governance/RADAR rules (the "Code change is eligible" suppression rule, CodeHub coverage, CRS).
