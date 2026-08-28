@@ -120,6 +120,23 @@ Rules:
 - **No planning cruft**: no ADR references, no "part of master T...", no task IDs as stamps, no spec/doc file paths, no "researched <date>", no Spike-N labels.
 - **Sound human, not AI-generated**: no em-dashes (`—`); use `:`, `,`, `(...)`, or ` - `. Do not over-bold, do not over-structure, vary phrasing. Backtick code symbols. Do not hard-wrap. Do not escape backticks.
 
+### Call out production exposure, and name the QRT
+
+**If the diff touches anything a QRT or other production experiment depends on, say so.** A reviewer triaging a queue decides how hard to look based on blast radius, and "this touches the QRT" is the fact that changes that decision. Leaving them to infer it from a flow ID is withholding the thing they needed first.
+
+**Do not give it its own section.** It splits across the two sections that already exist, and putting it in a third breaks the reading order and duplicates a fact:
+
+| What | Where | Why there |
+|---|---|---|
+| **Which** experiment, linked, and **what of it the diff touches** | a bullet in the current-state section (`## What is missing` / `## Today`) | the exposure IS part of what is wrong today, and the reader meets it while learning the problem rather than before it |
+| **Whether it is reachable today** | first bullet of `## Risk` | that is a blast-radius question, and `## Risk` is where a reviewer already looks for one |
+
+The order matters more than the emphasis. A `## QRT exposure` section between `## Goal` and the current-state section reads as though the reviewer already knows what is broken, because it has to describe the exposure in terms of a problem they have not been told about yet. Bold the lead clause instead: **"These are QRT recipe fields."** carries the same triage weight in the right place.
+
+Say it even when the answer is reassuring. "Nothing imports this package yet, so no running job is affected" is worth a Risk bullet, because otherwise the reviewer establishes it themselves and pays for your silence. State the exposure once: if the current-state bullet and the Risk bullet are saying the same thing, the fact belongs in one of them, not both.
+
+**Check, do not assume.** Get the experiment's real config with `meta ai.workflow-run inputs --id <flow>` and compare it against what the diff touches. A committed YAML is not the recipe. Confirm the run is actually current before calling it live: a `SUCCEEDED` run from three weeks ago is production evidence, not a running job, and the two words are not interchangeable.
+
 ## Test plan
 
 The test plan is a **separate Phabricator field**, never a section inside the summary. In a commit message, put it under a `Test Plan:` trailer at the end (jf/arc parse that line into the dedicated field, the same way `Reviewers:` and `Differential Revision:` are parsed); via the CLI, set it with `meta phabricator.diff update -n D<n> --test-plan="..."`. Keep the `Summary:` body and the `Test Plan:` field distinct.
