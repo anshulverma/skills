@@ -43,7 +43,7 @@ once.
 Phase 0    Resolve the docket    pin stack order locally, one row per diff
 Phase 0.5  Load the baseline     the codebase doc every card's Background is written from
 Phase 1    Run monk, whole stack once, up front, tripwire before any card
-Phase 2    Render ONE card       then stop and wait
+Phase 2    Render ONE card       paste it, hand back the link, then stop and wait
 Phase 3    On "next"             render the next, carry forward what changed
 ```
 
@@ -125,10 +125,48 @@ Two rules that are not optional:
    READ, which reads mechanically as zero residual and inflates Human Judgment into Must Fix.
    Count it. This correction was needed twice in one stack.
 
-### Phase 2 — Render one card, then stop
+### Phase 2 — Render one card, paste it, then stop
 
 Present exactly one diff. Do not batch, do not preview the next one, do not summarise the
-stack. Stop and wait for the human.
+stack. Render the card, upload it per `## Delivery` — every card gets a paste, without
+exception — hand back the link, then stop and wait for the human.
+
+## Language
+
+Governs everything this skill emits — the card's prose and the comment text alike.
+
+**One claim per sentence, subject-verb-object, active voice. The subject is the code, never you
+and never your reading of it.** How you came to know a thing is cut before it reaches the page.
+The reader is deciding what to do about the code; a sentence about your search hands them a
+search to evaluate where a fact would have handed them something to act on.
+
+| Indirect | Direct |
+|---|---|
+| "I can't find a path that puts to a key twice" | "nothing writes the same key twice" |
+| "I don't see the empty case handled anywhere" | "the empty case is unhandled" |
+| "it looks like there may be a race here" | "`_rank_records` is cleared before the flush" |
+| "the summary names `AllowOverwrite` as one of the things it verifies" | "the summary says it verifies `AllowOverwrite`" |
+| "since A, and given B, C follows" | "C." |
+| "there does not appear to be any validation on the path" | "nothing validates the path" |
+| "this could potentially cause issues with the cache" | "a restart drops the cached scores" |
+
+Three tells. Each one means the sentence gets rewritten before it is used:
+
+- **`I`** — your search is sitting in the subject slot. Say what is true of the code.
+- **`seems`, `appears`, `may`, `could potentially`** — a hedge spent as a clause. One word
+  ("likely", "I believe") or none.
+- **A category where a name belongs** — "issues with the cache", "some problems in the summary".
+  Name the symbol, the value or the count, or delete the sentence.
+
+Vagueness and length are one fault, not two: a sentence that will not commit to a fact needs the
+extra words to cover the gap.
+
+**In card prose, one claim per sentence means no semicolon chains.** Measured: twelve risk
+bullets written to this skill's own spec came out at 59 to 121 words, and every one of them was
+a single sentence welding what breaks, the mechanism, the evidence and the liveness together
+with semicolons and "so". Write them as separate sentences — what breaks, then the mechanism,
+then the citation and whether it is live at stack top. Same facts, four sentences, and the
+reviewer can stop reading at the first one.
 
 ## The card
 
@@ -297,6 +335,36 @@ Wondering if there is a race condition here since `_rank_records` is cleared fir
 The first needs no link: the thing it asks about is at the anchor. The third needs one, because
 the reader has to see a second place before the question means anything.
 
+### Do not explain the author's own code back to them
+
+The author wrote every file in the diff. Anything they can read off the screen is not news, and
+spending a clause on it buries the one fact that is. **Say only what they cannot already see.**
+
+Worked, from a real card:
+
+```
+BAD: `terms.py:201` applies a component transform as `_TRANSFORMS[kind](scores, **params)`, and
+none of the registered kinds accepts `amplifier` or `bias`. Is an affine transform kind meant to
+land with this?
+
+GOOD: nothing in `_TRANSFORMS` takes `amplifier` or `bias`. Is a transform that takes them coming
+with 4b?
+```
+
+Three separate faults in the bad one, and they compound:
+
+1. **It narrates a line the author wrote.** How `terms.py` applies a transform is not a discovery;
+   it is the mechanism, and the mechanism belongs in the card's Risks slot, written for the
+   reviewer deciding whether to post. In the comment it reads as being talked through your own code.
+2. **`affine`.** Register-shifting vocabulary — `affine`, `altitude`, `invariant`, `idempotent`,
+   `orthogonal` — makes a comment sound like a paper. Use the words already in the file: the code
+   says `amplifier` and `bias`, so say `amplifier` and `bias`.
+3. **The pointer is dead text.** `terms.py:201` is a second location, so it has to be a link the
+   reader can click. See the linking rule above.
+
+The test before posting: **delete every clause the author could have written themselves.** What
+survives is the comment. If nothing survives, there was no comment.
+
 | Rule | Why |
 |---|---|
 | **Ask about the code, never about the test** | Coverage is the reviewer's problem. "Is this write meant to land there?" is the author's |
@@ -403,6 +471,7 @@ they do not go on the card.
 | Dropping "Checked, not commenting on" | The review becomes indistinguishable from a shallow one |
 | Blockquotes for comment text | Breaks the paste, which is the entire deliverable |
 | Hedged Y/N | The two questions are the reason the card exists |
+| Rendering a card only into the conversation | The reviewer loses it to scrollback the moment the next card lands, and re-rendering costs a full review's context. Every card gets a paste |
 
 ## Red flags
 
@@ -413,18 +482,36 @@ they do not go on the card.
 - The "Risks" section is longer than the diff.
 - **A comment whose subject is a test, a coverage gap, or a summary** rather than the code. Find the code question underneath it or drop it.
 - **A comment with the word "but" in it**, or more than one sentence before the question mark. Both mean an argument is being built where an observation belongs.
+- **A sentence whose subject is you** — "I can't find", "I don't see", "I was unable to locate". Anywhere on the card, not only in a comment. State what is true of the code.
+- **"seems", "appears", "may", "there does not appear to be"** — a hedge built as a clause. One word or none.
+- **A category standing in for a name** — "issues with the cache", "a few things in the summary". Name the symbol, the value or the count.
 - **A comment that proposes the fix.** Naming the fix answers the question you were about to ask; ask it instead.
+- **A bare `file.py:NN` in comment text.** Either the reader must go there, and it is a link, or they must not, and it is deleted.
+- **A clause describing what a line in the diff does.** The author wrote it. Delete the clause and see whether a comment remains.
+- **A word not already in the file** — `affine`, `altitude`, `orthogonal`, `idempotent`. Use the code's own vocabulary.
 - The reader has to scroll to reach the first comment block.
+- **About to hand back a card with no paste link.** The card is not delivered until `pastry` has returned a `P<number>`.
 
 ## Delivery
 
-Default: the card in the conversation. For a long card, or on request, write it to a paste and
-reply with the link plus a 3-line digest:
+**Every card goes to a paste. Always, not only when it is long and not only on request.** Write
+the card to a file, upload it, and reply with the link plus a short digest — the ruling line, the
+count of inline comments, and the single highest risk:
 
 ```bash
-<render card to /tmp/docket-D<n>.md>
-pastry --md --private --title "docket: D<n>" < /tmp/docket-D<n>.md
+<render card to $CLAUDE_JOB_DIR/tmp/docket-D<n>.md>   # or any session-scoped tmp dir, never bare /tmp
+pastry --md --private --title "docket: D<n>" < $CLAUDE_JOB_DIR/tmp/docket-D<n>.md
 ```
+
+A card is a paste-shaped artifact, not a chat message. The reviewer works a stack over hours,
+copies comment blocks out of it one at a time, comes back to it after posting, and wants the
+earlier cards still addressable when they reach diff 9. Terminal scrollback gives them none of
+that, and re-rendering a card costs a full review's worth of context. The paste is the deliverable;
+what you type in the conversation is the pointer to it.
+
+Do not skip the paste because the card came out short, because the ruling was `Accept`, or because
+the conversation is already showing the content. A stack of cards must be uniformly retrievable —
+one missing link is the one the reviewer needs.
 
 **Both flags are required.** `--private` restricts the paste to its author: a card names
 unposted findings, refuted candidates and a send-back recommendation about someone else's work,
@@ -432,10 +519,23 @@ and none of that should be world-readable before the reviewer decides what to sa
 uploads it as markdown; without it every table, heading and fenced block renders as literal
 source and the card is harder to read than the terminal output it replaced.
 
+`pastry` can print a stack trace to stderr after a successful upload. Read the FIRST line of its
+output, not the last: success is `P<number>: <url> (private)`. Check for that line before treating
+the upload as failed, and re-run only if it is absent.
+
 Hand back the returned URL with `?view=markdown` appended:
 
 ```
 https://www.internalfb.com/phabricator/paste/view/P<number>?view=markdown
+```
+
+Keep a running table across the session, appending one row per card as it is rendered, so the
+reviewer can navigate back without scrolling:
+
+```
+| Diff | Ruling | Card |
+|---|---|---|
+| D<n> | Accept with comments | P<number> |
 ```
 
 When rendering a whole stack, dispatch one agent per diff so each card is built in its own
