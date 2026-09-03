@@ -59,6 +59,17 @@ Rebuild it whenever you append.
 Track the companion ID and pass it to the cron job as `--companion <id>` so repeat runs append
 rather than creating a new doc each time.
 
+Revising an existing section works the same way — get, edit that section in the exported ghtml,
+replace. Two things to watch on a revision:
+
+- **Leave the other sections byte-identical.** You are rewriting the whole body to change one
+  paragraph; anything you reflow or "tidy" on the way past is an undiffed change to an answer the
+  reader already accepted.
+- **Comment anchors ride on text.** A comment attached to a phrase you rewrite goes orphaned, and
+  the thread the reviewer is watching detaches from the paragraph it was about. If a follow-up asks
+  you to change the exact text it is anchored to, add the correction adjacent rather than editing
+  the anchor out from under it.
+
 ## The three required parts of a section
 
 **Where they commented.** Section heading of the source doc, the highlighted text, and the
@@ -126,6 +137,20 @@ Give each an anchor caption so the insert can find it:
 <p><i>Equation 01.</i></p>
 <p>&nbsp;</p>
 ```
+
+**Size equations at native scale, not to the page.** A figure gets `--width 468` because it should
+fill the column. Do that to an equation and every one lands at text width, so a two-symbol ratio
+renders in 40pt type next to a full loss function in 11pt — the type size becomes noise that looks
+like emphasis. Render at `dpi=220` and insert at the size the point-22 font actually implies:
+
+```python
+w, h = png_size(path)
+width = min(round(w * 72 / 220), 468)      # 220 = the dpi equation() renders at
+height = round(width * h / w)
+```
+
+Short equations then come out small, long ones come out wide, and the glyphs are the same size in
+both — which is what display math looks like on a page.
 
 Inline symbols in running prose stay as `<code>` — do not render a PNG for a lone `theta_t`. Images
 break line flow and cannot be searched or copied.

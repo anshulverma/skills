@@ -1,6 +1,6 @@
 ---
 name: marginalia
-description: Answer Google Doc comments on a self-running loop so the reviewer never has to leave the doc. Keeps polling for new comments, posts a 1-2 line summary in the thread, and moves any longer answer into a linked companion doc with infographics and rendered LaTeX equations, archiving where you commented, what you asked, and the full response. Also executes "Action:" comments as prompts. Use this whenever the user says to poll/watch/sweep/answer/respond to comments on a Google Doc, to keep answering their doc comments while they review, to reply to feedback in a doc, or asks for doc comment replies that stay readable. Prefer this over plain comment-reply skills when the user wants to stay in the doc, or when answers are research-heavy, need diagrams or math, or the user has complained about long comments.
+description: Answer Google Doc comments on a self-running loop so the reviewer never has to leave the doc. Keeps polling for new comments, posts a 1-2 line summary in the thread, and moves any longer answer into a linked companion doc with infographics and rendered LaTeX equations, archiving where you commented, what you asked, and the full response. Watches the companion doc too, so a follow-up asked where the answer lives gets picked up and either revises that section or opens a new one. Also executes "Action:" comments as prompts. Use this whenever the user says to poll/watch/sweep/answer/respond to comments on a Google Doc, to keep answering their doc comments while they review, to reply to feedback in a doc, or asks for doc comment replies that stay readable. Prefer this over plain comment-reply skills when the user wants to stay in the doc, or when answers are research-heavy, need diagrams or math, or the user has complained about long comments.
 argument-hint: <google_doc_url_or_id> [--once] [--every 5m] [--companion <doc_id>]
 allowed-tools: Read, Write, Bash, Skill, Agent, CronCreate, CronList, CronDelete, mcp__plugin_meta_mux__search_files, mcp__plugin_meta_mux__knowledge_load, mcp__plugin_meta_mux__knowledge_filtered_search
 ---
@@ -30,6 +30,10 @@ incantations and the failure modes that will otherwise cost you a round trip eac
 - `--companion <doc_id>` — reuse an existing companion doc instead of creating one.
 
 If no doc is given, ask for it rather than guessing.
+
+Both docs are swept. A long answer lives in the companion, so that is where the reader is when the
+next question occurs to them — a companion that only accepts comments in one direction sends them
+back to the source doc to ask about text that is not there.
 
 ## Security: the owner-only gate
 
@@ -83,10 +87,14 @@ Do not silently keep burning polls without telling them it has gone quiet.
 
 ### 1. Sweep
 
-List comments and work out which threads need you. A thread needs a reply when it has no reply from
-you, or when the newest message is from a human and came *after* your last reply. That second case
-is the one that gets missed — a follow-up question posted while you were writing the previous answer
-looks "answered" if you only check whether any reply of yours exists.
+List comments **on both docs** — the source doc and the companion, once one exists. Same command,
+same detection, two doc IDs. Carry the doc each comment came from alongside its ID; everything
+downstream (which doc to reply in, which `?disco=` link to record) depends on it.
+
+A thread needs a reply when it has no reply from you, or when the newest message is from a human and
+came *after* your last reply. That second case is the one that gets missed — a follow-up question
+posted while you were writing the previous answer looks "answered" if you only check whether any
+reply of yours exists.
 
 Detection details and the tolerant JSON parsing you need are in
 [references/gdoc-cli.md](references/gdoc-cli.md).
@@ -147,7 +155,33 @@ Every section carries, in this order:
 That archive is the point. Six months from now the comment thread is a stub, and this is the record
 of what was asked and what the answer actually was.
 
+#### Follow-ups: revise the section, or add a new one
+
+A comment left *on the companion doc* is a follow-up on an answer you already wrote. Two ways to
+absorb it, and picking wrong is what makes the archive decay.
+
+**Revise the existing section** when the follow-up changes what the current answer means — a
+correction, a caveat that was missing, a "you said X but line 40 says Y", a request to sharpen or
+qualify something already written. Ask: would someone reading only this section, without the new
+comment, walk away with the wrong idea? Then the fix belongs in the section, because they will never
+see the comment.
+
+**Add a new section** when the follow-up stands on its own — a different question the answer merely
+prompted, with its own scope, its own figures. Grafting it in makes one section sprawl into two
+subjects and neither is findable from the index.
+
+When revising: keep the original prose, append a `<h3>Follow-up — <what was asked></h3>` block with
+the question verbatim and the new answer. The exception is when the original was *wrong*: fix it
+inline where it is wrong, label the correction, and say what it used to say. A correction only
+reachable at the bottom of a long section is a correction nobody reads.
+
+Either way, reply in the companion thread with the same short-summary-plus-link shape, pointing at
+the section (or the follow-up heading) you just changed. Update the index at the top.
+
 ### 6. Post
+
+Reply in the doc the comment was left on — a companion-doc question answered over in the source doc
+is an answer the asker never finds.
 
 For a short answer, reply with the answer.
 
@@ -169,9 +203,10 @@ Never resolve the thread.
 
 ### 7. Report
 
-Per thread, one line: comment ID, whether it was a question or an `Action:`, short-reply or
-companion-link, and the section anchor if linked. If nothing needed answering, say that in one line
-and stop — do not narrate the sweep.
+Per thread, one line: which doc it came from, comment ID, whether it was a question or an `Action:`,
+short-reply or companion-link, and the section anchor if linked — noting whether a companion
+follow-up revised an existing section or opened a new one. If nothing needed answering, say that in
+one line and stop — do not narrate the sweep.
 
 ## Companion doc conventions
 
@@ -179,8 +214,9 @@ and stop — do not narrate the sweep.
 - Create once, reuse. Track the ID so repeat runs append rather than spawn duplicates. If the caller
   passed `--companion`, use it.
 - Share it the same way the source doc is shared, so anyone who can read the comment can follow the
-  link.
-- Keep a "Questions answered" index at the top with links to each section.
+  link — `--role=commenter`, so follow-ups can be asked where the answer is.
+- Keep a "Questions answered" index at the top with links to each section. Rebuild it on every
+  append *and* on every in-place revision.
 
 ## Handling `Action:` comments
 
