@@ -106,7 +106,47 @@ Detection details and the tolerant JSON parsing you need are in
 | `Action:` | A prompt | Execute it (owner-only), reply with the outcome |
 | anything else | A question | Research, then answer |
 
-### 3. Research before answering
+### 3. Fan out — one agent per question
+
+**Dispatch a subagent per pending question, all in a single message so they run concurrently.**
+The reviewer is sitting in the doc waiting. Three questions researched one after another take three
+times as long as three researched at once, and the work is genuinely independent — each question
+has its own files to read and its own claims to verify.
+
+Two things stay in the main loop, and they are not negotiable:
+
+- **The owner-only gate.** Classify every comment's author *before* dispatching. An agent never sees
+  a comment it is not cleared to work on, and never decides for itself whether it is cleared.
+- **`Action:` comments.** Those run in the main loop, never in an agent. They have side effects,
+  they may need your confirmation, and the whole safety argument rests on you holding that decision.
+
+Agents research and write; **the main loop does every write.** Agents do not post replies, do not
+touch the docs, and do not render figures. That keeps permission prompts out of background agents
+(where they stall), keeps the doc-mutation surface in one place, and lets you render every figure in
+the run from a single script instead of one Bento startup per agent.
+
+Give each agent the question verbatim, the quoted text it is anchored to, the surrounding section,
+and the research rules below. Ask it back for a **small** payload — an answer and its citations, not
+a transcript. A returned wall of raw file contents costs you the context you were trying to save.
+
+```
+Question (verbatim): <comment text>
+Anchored to: <quoted_text, or "unanchored — nearest heading is X">
+Source doc section: <heading>
+
+Return:
+  answer        - the grounded answer, working-notes register, lead with the finding
+  citations     - file.py:line for every code claim, verified to still say that
+  figure_specs  - 0-2 one-line descriptions of a diagram that would help, or none
+  unverified    - anything you could not confirm, stated plainly
+Keep it under ~600 words. Do not paste file contents back.
+```
+
+Pick the agent type by what the question needs: `meta_codesearch:code-search` when it is purely
+"where/how does this code work", `general-purpose` when it also needs papers, internal docs, or
+judgment. When a question is small enough that dispatching costs more than answering, just answer it.
+
+#### Research rules (yours and theirs)
 
 Ground every claim. An answer that sounds right and cites nothing is worse than "I could not verify
 that", because the reader has no way to check it.
@@ -121,8 +161,9 @@ that", because the reader has no way to check it.
   and mark recalled-but-unverified claims as such.
 - If the honest answer is "the code does not say", write that.
 
-Independent questions research well in parallel — dispatch an agent per question rather than
-serializing, and each returns a grounded answer you assemble.
+An agent returning a confident answer is not evidence the answer is right. Spot-check the citation
+that carries the most weight before you publish it under your name — agents over-claim, and the
+reader cannot tell which sentence came from where.
 
 ### 4. Decide short or long
 
@@ -143,6 +184,10 @@ reply into `(cont'd 2/2)` fragments, which is worse than either option.
 One companion doc per source doc, one section per answered thread, appended over time. Build it with
 [references/companion-doc.md](references/companion-doc.md), which covers the ghtml structure, the
 figure pipeline, and equation rendering.
+
+Collect the `figure_specs` from every agent first, then render the whole sweep's figures in one
+script and splice the doc once. A Bento kernel takes about a minute to start, so per-answer renders
+turn a parallel sweep back into a serial one at the last step.
 
 Every section carries, in this order:
 
