@@ -165,6 +165,22 @@ An agent returning a confident answer is not evidence the answer is right. Spot-
 that carries the most weight before you publish it under your name — agents over-claim, and the
 reader cannot tell which sentence came from where.
 
+#### Write for the reader, not for the codebase
+
+**Define a term the first time you use it.** The reviewer asking the question is often not the person
+who wrote the code — new to the team, from a neighbouring org, or reading to decide something rather
+than to maintain it. An answer dense with unglossed jargon is not a rigorous answer, it is an
+unreadable one, and the reader usually will not say so until several sections have piled up.
+
+An agent researching in the codebase absorbs its vocabulary and hands it back to you unexplained.
+That is the mechanism by which this goes wrong: the jargon arrives from the research, not from you,
+so it does not feel like a choice. It is one.
+
+If the reader says the terms are unfamiliar, do not just simplify the next answer — the ones already
+written stay unreadable. Add a **glossary section** to the companion doc, put it first, and order the
+definitions so none leans on a term defined later. Then say in the glossary that a comment on any
+still-unexplained term will add it, so the invitation outlives the thread that prompted it.
+
 ### 4. Decide short or long
 
 Short answers belong in the thread. The split rule:
