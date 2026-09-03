@@ -46,15 +46,32 @@ the answer actually was. Write it for someone who was not in the conversation.
 The index at the top is what makes the doc usable once it has more than about three sections.
 Rebuild it whenever you append.
 
-## Appending, not replacing
+## Use `apply`, not `replace`
 
-`meta google.docs replace` overwrites the whole body, so to add a section:
+**Once the companion has a single comment on it, `replace` is the wrong command.** It overwrites the
+whole body, which razes the text every comment is anchored to. The Docs API cannot re-anchor a
+comment, so those threads survive as orphans: still open, attached to nothing, invisible in the
+document. The CLI now refuses and offers to delete / resolve / orphan each one — all three are
+wrong, because the human owns those threads.
 
-1. `meta google.docs get --id="$COMPANION"` — export current ghtml
-2. Append the new section, update the index
-3. `replace` with the merged file
-4. Re-insert images for the new section only — existing ones survive the round trip as
-   `<img src="https://lh7-rt.googleusercontent.com/...">` and are preserved
+Use `apply`, which computes the minimal edit from a base snapshot and leaves untouched paragraphs,
+and their anchors, alone:
+
+```bash
+meta google.docs get --id="$COMPANION" > /tmp/comp.html   # base
+# ... append the new section, update the index ...
+meta google.docs apply --id="$COMPANION" --from=file:///tmp/comp.html --dry-run
+meta google.docs apply --id="$COMPANION" --from=file:///tmp/comp.html --conflict-resolution=ours
+```
+
+Without a stored base snapshot `apply` self-fetches the live doc, which it will only do for a real
+write if you pass `--conflict-resolution=ours` — that trades away offline conflict detection, which
+is fine for a doc only this skill writes to. Then re-insert images for the new section only;
+existing ones survive as `<img src="https://lh7-rt.googleusercontent.com/...">`.
+
+This is a direct consequence of the companion being commentable. The moment you invite follow-ups
+where the answer lives, whole-body overwrite stops being available — so reach for `apply` from the
+first append, not after the first orphan warning.
 
 Track the companion ID and pass it to the cron job as `--companion <id>` so repeat runs append
 rather than creating a new doc each time.
