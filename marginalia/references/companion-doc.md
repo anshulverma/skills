@@ -227,6 +227,26 @@ a set of pointers into a moving target.
 Verify one URL per new file with `knowledge_load` before linking a dozen of them — it returns the
 source at that line, which confirms the path, the pin, and the line number in one call.
 
+### Check where each link lands, not that it resolves
+
+A link that opens is not a link that is right. Two checks that feel equivalent and are not:
+
+- *Does the file exist and is the line within it?* Cheap, catches typos, and **misses the errors that
+  matter.** A line number that is wrong for one file is usually still valid in another.
+- *Does the code at that line support the sentence in front of it?* This is the actual claim, and
+  the only way to check it is to read the range and compare it to the prose.
+
+Prose commonly cites a file once and then continues with bare `:1092`, `:1101` for later lines in the
+same file. Resolving those by "inherit the last file named" is wrong wherever the prose has moved on
+without renaming — and it fails *silently*, because the borrowed line number usually exists in the
+wrong file too. On one 173-citation doc that produced 16 confidently wrong links, ten of them
+pointing into a config dataclass instead of the trainer.
+
+So verify the whole set, mechanically: extract every citation with the prose that precedes it and the
+real source at that range, then read the two side by side. It parallelises perfectly — one agent per
+batch of ~15, returning a verdict per citation — and it is the only pass that catches a link that
+resolves cleanly to the wrong thing.
+
 For a **named symbol** with no citation beside it — a function, class, or config field mentioned in
 running prose — link it to its definition site the same way. The research already found where it is
 defined; dropping that on the floor is what forces the reader to go searching.
