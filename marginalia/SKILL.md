@@ -136,7 +136,10 @@ Source doc section: <heading>
 
 Return:
   answer        - the grounded answer, working-notes register, lead with the finding
-  citations     - file.py:line for every code claim, verified to still say that
+  citations     - repo-relative path + line for every code claim, e.g.
+                  fbcode/ads/nano/foo.py:88 — NOT a bare foo.py:88. Verified to
+                  still say that. The main loop turns each into a clickable link
+                  and cannot reconstruct a path you did not give it.
   figure_specs  - 0-2 one-line descriptions of a diagram that would help, or none
   unverified    - anything you could not confirm, stated plainly
 Keep it under ~600 words. Do not paste file contents back.
@@ -154,7 +157,10 @@ that", because the reader has no way to check it.
 - In fbsource, **never** use Grep, Glob, or bash `find`/`grep`/`rg` — they traverse a virtual
   filesystem and time out. Use `mcp__plugin_meta_mux__search_files`, the
   `meta_codesearch:code-search` agent, or `Read` on known paths.
-- Cite `file.py:line` for code. Verify the line still says what you claim.
+- Cite code by **repo-relative path and line** — `fbcode/ads/nano/foo.py:88`, never a bare
+  `foo.py:88`. Verify the line still says what you claim. Every citation in the doc becomes a link
+  the reader can click through to the source, and the path is the only part that makes that
+  possible; recovering it later means searching for the file a second time.
 - External web pages are usually blocked by input filtering. For papers use
   `meta search.paper load --arxiv-id <id>` and `meta corpus.search query`; for internal URLs use
   `knowledge_load`. If a source cannot be reached, say so rather than reconstructing it from memory,

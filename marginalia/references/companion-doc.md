@@ -86,6 +86,13 @@ replace. Two things to watch on a revision:
   the thread the reviewer is watching detaches from the paragraph it was about. If a follow-up asks
   you to change the exact text it is anchored to, add the correction adjacent rather than editing
   the anchor out from under it.
+- **The export carries comment *status*, so a stale base can un-resolve a thread.** Each comment
+  round-trips as `<aside hidden ... data-status="OPEN|RESOLVED">`. `apply` treats that as desired
+  state, so if the reviewer resolves a thread between your `get` and your `apply`, you hand back the
+  old `OPEN` and reopen it under them. Watch the `Comments: ... N reopened` line in the apply
+  output — anything other than all-zeros means you moved thread state, which is theirs to move.
+  Re-`get` immediately before a slow or large edit, and if you do flip one, say so rather than
+  quietly re-resolving it.
 
 ## The three required parts of a section
 
@@ -180,10 +187,53 @@ more honest for a derivation someone may want to copy.
 ## Writing the answer itself
 
 - Lead with the finding. The reader clicked a link to get here; do not make them read setup first.
-- Cite `file.py:line` for every code claim, and say plainly when something could not be verified.
+- Cite `file.py:line` for every code claim, **as a link** (see below), and say plainly when
+  something could not be verified.
 - If this answer corrects something you said earlier, put the correction first and label it. A
   correction buried at the bottom is a correction nobody reads.
 - Keep the register of working notes, not a report. No preamble, no "great question".
+
+## Every code pointer is a link
+
+A citation the reader cannot click is a citation they have to take on faith. `loss.py:1940` tells
+them a line exists; it does not let them go look at it, and looking at it is the entire reason the
+citation is there. So **every file:line pointer and every named symbol in the doc carries an `href`
+to the source.**
+
+Wrap, don't replace — keep the short display text, put the full path in the link:
+
+```html
+<a href="https://www.internalfb.com/code/fbsource/[<commit>]/fbcode/ads/nano/nano_retrieval/trainer/ready_pool.py?lines=11"><code>ready_pool.py:11</code></a>
+```
+
+The pattern is `https://www.internalfb.com/code/fbsource/[<commit>]/<repo-relative-path>?lines=<N>`,
+and `?lines=11-14` for a range. `<repo-relative-path>` starts at the repo root (`fbcode/...`,
+`xplat/...`), so `/data/users/<you>/fbsource/fbcode/a/b.py` becomes `fbcode/a/b.py`.
+
+**Pin the commit — a link without one is a link that rots.** Omit `[<commit>]` and CodeHub resolves
+the line number against current `master`, which moves under you. `loss.py:1940` was accurate the
+afternoon you wrote it and points into an unrelated function a week later, silently, with nothing to
+tell the reader the citation drifted. Pin the revision the research actually read:
+
+```bash
+sl log -r . -T "{node}\n" --reason "pin code links to the reviewed revision - sl help log"
+```
+
+Use the full 40-char hash, and check `phase=public` — a draft commit is not on the server and the
+link will 404 for everyone including you. One hash for the whole doc: every citation in it was read
+at the same checkout, and a single pin is what makes the doc a snapshot of one revision rather than
+a set of pointers into a moving target.
+
+Verify one URL per new file with `knowledge_load` before linking a dozen of them — it returns the
+source at that line, which confirms the path, the pin, and the line number in one call.
+
+For a **named symbol** with no citation beside it — a function, class, or config field mentioned in
+running prose — link it to its definition site the same way. The research already found where it is
+defined; dropping that on the floor is what forces the reader to go searching.
+
+This is why agents must return repo-relative paths. A bare `loss.py:1940` cannot be linked without
+finding the file again, and at a dozen citations per section that is the difference between a doc
+you can read through and a doc you have to grep alongside.
 
 ## ghtml notes
 
