@@ -200,6 +200,13 @@ Delete a comment if any of these is true:
 
 - **It restates what the line plainly does.** `# Warning rather than info` above `logger.warning(...)`, `# Increment the counter` above `count += 1`, `# Loop over the parameters` above a `for param in ...`. The code already said it.
 - **It explains the change rather than the code.** "Fixed per review", "switched from X to Y because the old way double-counted", "this used to use the bool flag". That rationale belongs in the diff summary, and it goes stale the moment the diff lands: a reader a year from now has no "before" to compare against.
+- **It says why the code was added.** This is the same fault wearing a disguise, and it is the one that survives review, because it reads as useful context rather than as history. A comment that assembles background to justify the code's existence is written for the reviewer deciding whether to accept it. Once accepted, the code exists, and the justification has no reader. Put it in the summary's `## Why ...` section, where it is read once by the person it was written for.
+  - Bad: `# The weight alone enables the add-on, so nothing else is read without it. Four fields are still read by the validator, which is ungated.` (background assembled to argue for the gate below it)
+  - Good: delete it. The gate below states the rule, and the raise states the consequence.
+- **It asserts the current state of code this file does not control.** "X is ungated", "only the GPU path implements this", "its declaration is the only occurrence", "the loss returns before reading it". Nothing here fails when that stops being true, so it rots silently and the next reader trusts it. Depend on the other code, do not describe it.
+  - The exception is a constraint that would cause a wrong edit here if it were unknown: `# Do not relax the lower bound: at or below 0.0 the model skips the propagation entirely.` That earns its place because it stops a specific change, not because it is background. Write the instruction, not the survey.
+
+  Test both at once: **would this comment still be worth writing if the code had always been there?** If it only makes sense as an answer to "why are you adding this", it belongs in the summary.
 - **It repeats a nearby docstring.** If the function's docstring already states the rule, do not restate it at the call site.
 - **It justifies a decision to a reviewer.** Comments are for the next engineer reading the file, not for the person reviewing the diff today. Answer reviewers on the thread, not in the source.
 - **It says something obvious from types or names.** `# config is optional` above `config: Config | None`.
@@ -212,6 +219,39 @@ When a comment IS warranted, write it as tightly as possible: usually one line, 
 Smell tests, in order of how often they fire: a comment whose first words echo the identifier on the next line; a comment containing "rather than", "instead of", or "used to" about the code's own history; a comment longer than the code it describes; a comment that would still be true and useful if deleted.
 
 Apply the same bar to test comments. A test name should carry the intent; a comment is for the non-obvious reason a specific value or case was chosen (`# 3, not 6: the suggestion has to be usable at the requested tp`), not a restatement of the assertion.
+
+### Docstrings state the contract, not the reasoning behind it
+
+A docstring is read by someone about to call the function. It answers what it returns, what it refuses, and what surprising thing they must know. It is not where the design gets argued.
+
+**Budget: one summary line, then at most one short paragraph.** Past that you are writing the diff summary again, in a place it will be read on every future visit to the file and where it cannot be checked against anything.
+
+The failure mode is the essay docstring: five paragraphs walking through why an alternative was rejected, what a neighbouring subsystem does, and what a reader might otherwise assume. Every one of those sentences was written for the reviewer of the diff, and the reviewer has the summary. Move them there and delete them here.
+
+Cut a docstring sentence if it:
+
+- **argues against a design that was not chosen** ("a slot on X would not work because...") - that belongs in the summary's `## Why ...` section
+- **narrates another file's behavior at length** - one clause naming the constraint is enough; the reader can open it
+- **restates the type signature** ("returns an Optional, or None when absent")
+- **would have to be rewritten if an unrelated subsystem changed** - it is documenting that subsystem, not this function
+
+Keep the one or two sentences a caller genuinely cannot infer: a non-obvious default, a mutation, a case where this disagrees with something that looks equivalent.
+
+- Bloated: `"""The pinned pair, or a raise when production uses the running average.\n\n<function> pins the pair only when BOTH fields are set. Otherwise it standardizes against a per-rank exponential moving average of the batch mean and std, seeded from the first batch and advanced every step by <field>.\n\nReading the two fields independently, as this used to, mistranslates the half-set case in the dangerous direction: <field>: -3.0 with scale unset becomes a live bias that production never applies, because production ignores both and takes the average."""`
+- Tight: `"""The pinned pair, or a raise when production would use the running average.\n\nProduction pins only when both fields are set, so reading them independently turns a half-set config into arithmetic it never performs."""`
+
+### An error message is one sentence and a next action
+
+An exception string is read in a stack trace by someone who is stuck. It needs the fact and what to do, and nothing else. It is the worst possible place for an explanation, because it is reproduced in full in every log line, every test assertion, and every paste into a task.
+
+**Budget: one sentence stating what is wrong, optionally one naming the fix.** Include the offending values, since those are what the reader cannot see. Exclude the mechanism, the design rationale, and any description of what some other component does.
+
+- Bloated: `"grpo_x and grpo_y must both be set, got x=None y=1.0. With either missing, production standardizes against a per-rank EMA of the batch raw-dot mean and std rather than a fixed affine. That state is carried across steps on the model, is not checkpointed, and has no destination in this schema: TransformSpec is frozen and its apply() is a pure Tensor -> Tensor, and the reward-term stage has no runner to own it. Pin both fields, or keep this config on the sync path."`
+- Tight: `"grpo_x and grpo_y must both be set, got x=None y=1.0: with either missing production uses a running average this schema cannot express. Set both, or keep this config on the legacy path."`
+
+The rationale that got cut is not lost. It belongs in the summary, where a reviewer reads it once, and in a comment above the raise if a future maintainer would otherwise delete the check.
+
+Same bar for a long `raise` that spans more than about four source lines: that is a paragraph wearing an exception's clothes.
 
 ## No references to things that do not exist in fbcode
 
