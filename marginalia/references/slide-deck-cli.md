@@ -185,19 +185,72 @@ slide is 720 × 405 pt, but a branded template need not be, and the `meta` templ
 API reports success, and every figure lands at half scale on top of the title. Two passes were
 wasted on this before a thumbnail showed it.
 
-On the `meta` template at 1440 × 810, with layout `28_Text`: the title occupies roughly y 60–270
-(it wraps to two lines at ~9 words), the body runs to about y 380, and the clear band for a figure
-is **y 430 to 760**. Centring a 2:1 figure there gives `--x 390 --y 430 --width 660 --height 330`.
+**An earlier version of this file said the clear band on layout `28_Text` was "y 430 to 760" and
+gave `--y 430 --height 330` as the recipe. That was wrong and it shipped.** The body placeholder on
+that layout runs to **y 680**, not 380, so every figure placed by that recipe landed on top of the
+body text. It reached twelve slides in one deck before anyone opened one full-screen — the title is
+still legible in the thumbnail strip, so nothing looks wrong until you present it.
 
-Work it out for the deck in front of you rather than copying those numbers:
+Do not place a figure against a remembered band. Read where the body actually ends, put the figure
+below it, and check afterwards. The layout numbers vary per layout, and a deck usually mixes
+several.
+
+**Read geometry from `--output=raw-json`, never from the ghtml.** The ghtml carries `data-width` /
+`data-height` straight off the element's `size` field and drops the transform, so a title reported
+as `3000000 × 3000000` is really `size × scaleX` — on one real slide, `3.99 × 0.57` of it. Reason
+off the ghtml numbers and you will "discover" elements hanging off the canvas that are fine, and
+miss the overlaps that are not.
+
+```bash
+meta google.slides get --id="$DECK" --output=raw-json > /tmp/deck.json
+# rendered box = size.width * transform.scaleX , size.height * transform.scaleY
+#                offset by transform.translateX / translateY   (EMU; 12700 EMU = 1pt)
+```
+
+With that you can check the whole deck at once instead of eyeballing it — compute each element's
+rectangle and assert no text box intersects an image. That catches the failure above in one pass.
+**`google.slides lint` will not**: it checks palette and writing style, not geometry.
+
+Then look at a few anyway:
 
 ```bash
 meta google.slides.slide thumbnail --id="$DECK" --page-id="$PAGE" --save-to=/tmp/s.png
 ```
 
-Then look at it. The thumbnail is the only honest check — the ghtml export's `data-x`/`data-y` on a
-placeholder are inherited layout defaults, not where the text actually renders, so reading geometry
-out of the export will confirm a placement that is visibly broken.
+`--save-to` is worth knowing because the CLI fetches the image server-side. The `contentUrl` it also
+prints is a `googleusercontent.com` link that a devserver usually **cannot** reach directly — `curl`
+fails TLS — and there is generally no `pdftoppm`/`gs` to rasterise the PDF export either, so
+`--save-to` is often the only way to actually see a slide.
+
+Two things only a render will tell you, both found this way after the arithmetic said the deck was
+clean: text that overflows its box (a three-line legend in a two-line strip), and a **figure whose
+own caption contradicts the slide title** because the title was corrected and the figure was not.
+
+**Set the type scale explicitly instead of inheriting it.** Font size on a placeholder is inherited
+from the layout, and a deck that mixes `28_Text` with `52_Points (Three)` renders two titles of the
+same length at visibly different sizes — which also makes any fixed box height wrong for half the
+slides. `google.slides.slide set-layout` cannot help: reassigning a slide's layout is unsupported by
+the API. Pin the sizes instead, in one batch, and derive box heights from the sizes you chose:
+
+```bash
+meta google.slides.content batch --id="$DECK" --ops='[
+  {"op":"format-text","element-id":"slide_x_title","font-size":40},
+  {"op":"format-text","element-id":"slide_x_body","font-size":20}]'
+```
+
+**To set absolute geometry you must drop to the raw API.** `content move` is a *relative* `--dx/--dy`
+and `content resize` is a *uniform* `--scale-percent`; neither can reshape a 1164 × 67 title into a
+1200 × 76 one. Use `updatePageElementTransform` with `applyMode: ABSOLUTE`, where
+`scaleX = target_width_EMU / size.width`:
+
+```bash
+meta google.slides.advanced batch-update --id="$DECK" --requests='[
+  {"updatePageElementTransform":{"objectId":"slide_x_title","applyMode":"ABSOLUTE",
+   "transform":{"scaleX":5.08,"scaleY":0.34,"translateX":1524000,"translateY":1524000,"unit":"EMU"}}}]'
+```
+
+One `batch-update` is one write against the 60/minute limit however many requests it carries, so
+reflowing a whole deck costs one call, not eighty.
 
 Render figkit output at the aspect ratio you will place it at rather than scaling a doc-shaped
 14 × 6.5 figure into a slide.

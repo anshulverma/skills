@@ -67,6 +67,49 @@ three progressive versions you would have drawn on a whiteboard, one per slide, 
 That progressive build *is* the complexity ramp, and it costs nothing but slides, which are cheap
 inside the budget.
 
+## The grid, and why a figure slide breaks without one
+
+**Put every element on a stated grid, and re-place the text every time you add a figure.**
+
+The failure this prevents is specific and it is silent. `content add-image` / `insert-image` drops
+the picture at a default position — in one real build, every single figure landed at the same
+`y=430 h=330` — and it does **not** move the body text out of the way. The body keeps the position
+the layout gave it, the figure covers it, and the slide looks fine in the thumbnail strip because
+the title is still legible. Twelve figure slides had their body text 70–80% underneath the picture
+before anyone opened one full-screen.
+
+Nothing catches this for you. `google.slides lint` checks palette and writing style, not geometry.
+
+So fix the regions once and drive every slide to them. Normalised to a 1440 × 810 pt canvas (the
+common Meta template; scale proportionally if `pageSize` differs — Google's plain 16:9 default is
+720 × 405):
+
+| Archetype | Title | Body | Figure |
+|---|---|---|---|
+| **Text** (title + prose) | 120, 180, 1200 × 80 | 120, 290, 1200 × 440 | — |
+| **Figure** (title + legend + picture) | 120, 150, 1200 × 76 | 120, 238, 1200 × 70 | fit inside 120, 326, 1200 × 424 |
+| **Divider** (centred claim) | 120, 330, 1200 × 150 | — | — |
+| **Section** (eyebrow + big title) | 120, 280, 1200 × 180 | eyebrow stays at 34, 34 | — |
+
+Read as `x, y, w × h` in points. Side margin 120, nothing below y=750.
+
+Three things that make the grid hold rather than drift:
+
+- **The figure is fitted, not placed.** Scale by `min(box_w/img_w, box_h/img_h)` and centre it in the
+  box. Never set width and height independently on an image — it silently stretches the figure, and
+  a stretched axis label is the kind of thing nobody reports and everybody notices.
+- **The body on a figure slide is a legend, not prose.** 70 pt of height is one or two lines on
+  purpose. If the text does not fit, the sentence belongs in the notes, not in a taller box.
+- **Delete duplicate placeholders, keep empty theme slots.** A multi-column layout used for a single
+  point leaves unfilled TITLE/BODY columns behind, and those are what the figure gets laid over —
+  delete them. But the empty eyebrow/footer/presenter slots the template puts on every slide render
+  as nothing and every other slide has them; removing those makes the deck less consistent, not more.
+
+Adopt the template's own layouts rather than inventing a look — `google.slides.layout list` shows
+what the master already has (a corporate template typically ships 20+: title, section, text, two-
+and three-column, big-stat). The grid above is where content goes *within* whichever layout you
+picked; it is not a replacement for the theme.
+
 ## The budget, and what to do when you blow it
 
 Thirty minutes presented. The arithmetic that actually holds:
@@ -142,6 +185,60 @@ change how you *write* a slide, so they belong here too:
 And `meta google.slides lint --id="$DECK"` is free — it catches small fonts, off-palette colours,
 and em-dash overuse. Run it; it is a second opinion that costs one command.
 
+## Review every slide, by looking at it
+
+**A slide is not finished when the text is written. It is finished when someone has looked at the
+rendered picture of it and not found anything wrong.**
+
+Everything in this file up to here can be satisfied by a slide that is unreadable in a room. The
+checklist below catches wording. It does not catch a legend at 8pt, a badge sitting on top of the
+word it labels, or a figure whose own heading contradicts the title above it — and in one real deck
+all three were present on slides that passed every text-level check and a clean geometry audit. They
+were found the first time anybody rendered a PNG and looked.
+
+So: **render the slide, then review the render.** Not the ghtml, not the plan — the image.
+
+```bash
+meta google.slides.slide thumbnail --id="$DECK" --page-id="$PAGE" --save-to=/tmp/shots/slide-07.png
+```
+
+### Dispatch several reviewers per slide, each with the screenshot
+
+One reviewer with a long checklist does all of it badly — it satisfices, finds two things, and
+stops. Separate readers, each with one question and no knowledge of the others' findings, disagree
+productively. **Every reviewer gets the PNG path and is told to actually open it**, because an agent
+handed an image and a text description will quietly review the description.
+
+Run them in parallel, one batch per slide (or per small group of slides), with these angles:
+
+| Angle | The one question it answers |
+|---|---|
+| **Look** | Is anything overlapping, clipped, off-canvas, misaligned, or too small to read from the back of a room? |
+| **Feel** | Does it look like it belongs to the same deck as its neighbours — same margins, same type scale, same density? |
+| **Understandability** | A reader who has not read the doc: what do they take away in eight seconds, and is that the claim the title makes? |
+| **Adversarial** | Attack it. What is the most embarrassing question from the room, what does the slide overclaim, what does the figure quietly assume? |
+| **Truth-vs-source** | Does every number and claim on the slide, *including inside the figure*, match the synthesis section it came from? |
+
+Give each one the image, the slide's title and body text, its speaker notes, and — for the last two
+— the synthesis section behind it. Ask for a short list of concrete defects and nothing else; a
+reviewer that returns prose returns opinions.
+
+Three rules that decide whether this is worth running at all:
+
+- **The figure is part of the slide.** Most defects in practice are *inside* the picture: type that
+  was legible in a doc and is not on a projector, annotation labels that collide once the figure is
+  scaled, and captions that still assert what the slide title was corrected away from. A reviewer
+  told to check "the slide" will check the text; say *including the figure* or it will not look.
+- **A contradiction between the figure and the title is a content bug, not a layout bug.** It means
+  the title was fixed and the figure was not, so the synthesis behind it is probably also stale.
+  Chase it upstream rather than editing the caption.
+- **Do not act on style opinions.** Tell reviewers to report only what they can see, and to leave
+  wording, colour taste, and "could be punchier" alone — otherwise the pass becomes a rewrite and
+  you lose the slide you already agreed on.
+
+Fix, re-render, and re-review the slides you changed. A defect list you did not re-check is a
+defect list.
+
 ## Checks before you call it done
 
 Run these in order; each one is cheap and catches a different failure.
@@ -156,5 +253,12 @@ Run these in order; each one is cheap and catches a different failure.
    slide having introduced it is the most common way a deck loses the room, and it is silent —
    nobody puts their hand up to say they stopped following four slides ago.
 5. **Count and time.** Under the cap, or the overflow is in the appendix.
-6. **Lint.** `meta google.slides lint --id="$DECK"`. Fix the errors; read the warnings.
-7. **Goal.** Read the goal, then the last slide. Did you get there?
+6. **Lint.** `meta google.slides lint --id="$DECK"`. Fix the errors; read the warnings. It checks
+   palette and writing style only — **not geometry, not legibility**, so it passing means nothing
+   about whether the deck can be read.
+7. **Geometry.** Compute every element's rectangle from `--output=raw-json` and assert no text box
+   intersects an image. See the grid section; this is the check that would have caught twelve
+   figure-over-body slides in one pass.
+8. **Render and review.** Screenshot every slide and run the reviewer angles above. Nothing else in
+   this list looks at the actual pixels, and that is where the defects were.
+9. **Goal.** Read the goal, then the last slide. Did you get there?
