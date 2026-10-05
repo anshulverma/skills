@@ -33,7 +33,11 @@ def load_facts(path: str) -> list[tuple[str, str, list[str], str]]:
 
 
 def normalise(text: str) -> str:
+    # Google Docs' markdown export escapes punctuation (nano\_retrieval).
+    text = re.sub(r"\\([\\`*_{}\[\]()#+.!<>|-])", r"\1", text)
     text = re.sub(r"[*_`]", "", text)
+    # "fewer-than-3-scored-beams" matches "fewer than 3 scored beams"; ranges like 2.0-2.3M stay.
+    text = re.sub(r"(?<=[A-Za-z])-(?=\w)|(?<=\d)-(?=[A-Za-z])", " ", text)
     return re.sub(r"\s+", " ", text).lower()
 
 
