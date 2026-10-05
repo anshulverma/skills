@@ -12,7 +12,8 @@ The skills are `auto-plan/` (an autonomous planning orchestrator), `auto-researc
 autonomous experimentation loop, ported from github/awesome-copilot), `diff-authoring/`
 (Phabricator diff conventions), `diff-comment-authoring/` (Phabricator diff comment and
 reply conventions), `docket/` (per-diff stack review, rendering monk's findings into a
-card and a ruling), `i-have-adhd/` (an output-shaping style skill, ported from
+card and a ruling), `humanize/` (rewrites agent-drafted prose to a human shape and
+scores the slop per pass), `i-have-adhd/` (an output-shaping style skill, ported from
 ayghri/i-have-adhd), `monk/` (whole-chain diff review), `pr-authoring/` (GitHub PR
 conventions), and `sdd/` (spec-to-code pipeline). New skills are added as sibling
 directories.
