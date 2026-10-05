@@ -11,7 +11,8 @@ Slop is a shape, not a word list. Asked to "remove the AI slop", an agent strips
 
 The rewrite has these properties. Write toward them; do not edit the original sentence by sentence.
 
-- **An opening paragraph that carries the point.** Two to four sentences: what the doc is for, its conclusion or ask, and who has to act. A reader who stops there has what they need.
+- **A title and a TL;DR at the top.** The title says in plain words what the doc decides or proposes. Under it, a TL;DR callout of three to five one-line bullets gives the problem, the proposal, and the ask with who has to act. A reader who stops there has what they need, so it replaces a separate opening paragraph.
+- **Plain names for things.** Each system, call and component is named by what it does ("score request", "scoring service", "AdFinder request"), never by its RPC, class, tier or config name. Units follow the plain name: "AdFinder requests/min", not "getUnified/min". The real identifiers appear only in a Nomenclature table in the appendix (plain name, real name, what it is), in code pointers, and in tables of literal strings such as error markers. Every plain name the body uses has a Nomenclature row.
 - **Visuals wherever the content has a shape, designed rather than default.** A flow or architecture becomes a styled card diagram with short labels and numbered markers. A rule that changes a value over time becomes an annotated illustration of that value. A trend or comparison becomes a chart. Headline numbers become a small table up top. A risk or decision becomes a callout. `references/visuals.md` says which visual fits which content and how to write it. No visual is decorative.
 - **Sections that answer the reader's questions, in the order they arise.** A two-page doc usually needs three to five. Headings are plain noun phrases naming the content ("Retries today", "When the job fails"), never slogans or imperatives.
 - **Paragraphs that carry reasoning.** Each makes one point in two to five sentences and joins its facts with "because", "so" and "which". Sentence length varies, the way a person's does. No prose run goes past about 300 words without a visual, table, list or heading.
@@ -36,7 +37,7 @@ F39 | After a severe window the hold doubles per consecutive trip, up to 5 min |
 ```
 
 - **The fact** carries its qualifiers: counts ("six buckets"), orderings ("in priority order"), the reason given for it, and any decision it records ("fix the five rather than adding more").
-- **The literals** are the strings that must appear verbatim in every version: numbers, identifiers, names, URLs, and every word in the fact that would change its meaning if dropped ("total", "consecutive", "only", "without also adding", "rather than"). `scripts/fact_check.py` checks them. In testing, every fact a rewrite lost was a dropped qualifier whose literals were only numbers, so the script passed it.
+- **The literals** are the strings that must appear verbatim in every version (an identifier that moves out of the prose survives in the Nomenclature table): numbers, identifiers, names, URLs, and every word in the fact that would change its meaning if dropped ("total", "consecutive", "only", "without also adding", "rather than"). `scripts/fact_check.py` checks them. In testing, every fact a rewrite lost was a dropped qualifier whose literals were only numbers, so the script passed it.
 - **The source** is where the fact can be checked. When the original gives none, look for one in the doc's own links, the code, or the query behind the number. If none exists, write `source: unsourced`, keep the fact, and list it in the final report.
 - Cover decisions, asks, caveats, open questions and cross-references as facts too.
 
@@ -70,7 +71,7 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 1. **Score the original:** `python3 ~/.claude/skills/humanize/scripts/slop_score.py v0.md`.
 2. **Write `facts.md`** from the original, as above.
 3. **Verify the fact sheet with a fresh agent.** Dispatch an agent (Agent tool) that has not seen your work. Give it `v0.md` and `facts.md`, and ask it to list facts the sheet misses or gets wrong. Fix the sheet. Every later check trusts this sheet, so a gap here goes unnoticed for the rest of the run.
-4. **Redraft into the next `vN.md`** from the fact sheet, not the old text. Write the opening paragraph first, then pick sections from the reader's questions, then build each section from its facts, adding the visuals and links the target shape calls for. Working from the sheet is what breaks the old skeleton.
+4. **Redraft into the next `vN.md`** from the fact sheet, not the old text. Pick the plain names first and write the Nomenclature table, then the title and TL;DR, then pick sections from the reader's questions, then build each section from its facts, adding the visuals and links the target shape calls for. Working from the sheet is what breaks the old skeleton.
 5. **Apply the transforms** below to whatever tells the redraft still carries.
 6. **Check the version against the fact sheet, both ways:**
    - `python3 ~/.claude/skills/humanize/scripts/fact_check.py facts.md v1.md ... vN.md` must report every fact intact for `vN.md`.
@@ -97,7 +98,8 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 | An aphorism or moral ("more load buys less signal", "a different experiment") | The concrete fact it gestures at, with its number. |
 | A slogan heading ("Abstain; never default") | A noun phrase naming the content ("Failed rows"). |
 | A goals or summary list that repeats the sections below it | The opening paragraph. |
-| A glossary block before the content | Each definition inline, at first use. |
+| A glossary block before the content | Each definition inline, at first use, and the identifier in the Nomenclature appendix. |
+| An RPC, class, tier, config or metric name in the prose (`getUnified`, `genScorePreselectedAds`, `rl_preselected_ads_scoring`) | The plain name for what it does, with the identifier in the Nomenclature appendix. |
 | A hedge clause ("seems to", "appears to", "may potentially") or process narration ("I found", "I can't find") | The fact. If the uncertainty is real, one word: "likely". |
 | Signposts and AI vocabulary ("importantly", "notably", "it is worth noting", "delve", "robust", "leverage", "pivotal", "underscore", "foster") | Nothing, or the concrete verb. |
 | A run of short sentences of the same length | Related facts joined by "because", "so" or "which". |
@@ -120,6 +122,7 @@ Run these on the finished version, not on your memory of writing it.
 4. Each flow, comparison or trend in the content is shown as a visual, and no prose run passes about 300 words. No diagram box carries more than about 4 words or any arrow more than 3, and every figure was rendered and looked at before use.
 5. The prose word count (as `slop_score.py` prints it) is at most 5 percent above the original's.
 6. Bold spans number no more than the sections. No cross-reference points at a section name or number that no longer exists.
-7. Read the opening paragraph alone. It gives the point and the ask.
+7. Read the title and TL;DR alone. They give the problem, the proposal and the ask.
+8. No raw identifier remains in the body outside code pointers, literal-string tables and the Nomenclature appendix (`slop_score.py --detail` lists them), and every plain name has a Nomenclature row.
 
 For a Google Doc, also run `meta google.docs lint --id=<id> --category=writing_style`.

@@ -127,6 +127,14 @@ def metrics(raw: str) -> tuple[dict[str, float], dict[str, int]]:
     return m, tells
 
 
+def raw_identifiers(raw: str) -> list[str]:
+    """Code-style names in body prose: backticked spans outside tables, fences and the appendix."""
+    body = re.split(r"(?mi)^#+\s*appendix", raw)[0]
+    body = re.sub(r"(?s)```.*?```", "", body)
+    body = re.sub(r"(?m)^\s*\|.*$", "", body)
+    return [s for s in re.findall(r"`([^`\n]+)`", body) if re.search(r"[_.(]|[a-z][A-Z]", s)]
+
+
 def score(m: dict[str, float]) -> float:
     return sum(w * min(1.0, m[k] / sat) for k, (w, sat) in WEIGHTS.items())
 
@@ -142,6 +150,9 @@ def main() -> None:
         results.append((path, score(m), m, tells))
         if detail:
             print(f"== {path}")
+            ids = raw_identifiers(open(path, encoding="utf-8").read())
+            if ids:
+                print(f"  raw identifiers in body (move to Nomenclature): {', '.join(sorted(set(ids)))}")
             for k in WEIGHTS:
                 w, sat = WEIGHTS[k]
                 print(f"  {k:32} {m[k]:8.2f}  -> {w * min(1.0, m[k] / sat):5.1f} / {w}")
