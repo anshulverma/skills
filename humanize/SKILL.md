@@ -53,7 +53,7 @@ v2         9     -60   1280     -12%  v2.md
 v3         6     -63   1291     -11%  v3.md
 ```
 
-Word counts cover prose only: tables, code, images and link targets are left out.
+Word counts cover body prose only: the TL;DR, tables, code, images and link targets are left out.
 
 | Score | Seen in testing |
 |---|---|

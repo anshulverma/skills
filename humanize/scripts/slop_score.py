@@ -60,6 +60,8 @@ NON_PROSE = re.compile(r"\s*(?:[-*#|>]|\d+\.)")
 def prose_only(text: str) -> str:
     """Prose a reader reads: no code blocks, tables, images or link targets."""
     text = re.sub(r"(?s)```.*?```", "", text)
+    # The TL;DR repeats the body by design, so it stays out of the length comparison.
+    text = re.sub(r"\*\*TL;DR\*\*[ \t]*\n(?:[ \t]*\n)?(?:[ \t]*[-*] [^\n]*\n)+", "", text)
     text = re.sub(r"(?m)^\s*\|.*$", "", text)
     text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
     text = re.sub(r"\]\([^)]*\)", "]", text)
