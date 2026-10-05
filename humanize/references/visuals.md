@@ -8,12 +8,18 @@ none is decorative.
 
 | The content is | Use |
 |---|---|
-| A process, request path, retry or decision flow, or state machine | Mermaid flowchart or state diagram |
+| A process, request path or architecture | A card-style Graphviz infographic (`card-diagram.dot`) |
+| A rule that changes a value over time (a controller, a backoff, a retry budget) | A chart of the value over time with each rule annotated where it fires, labelled as an illustration |
+| A decision with a few outcomes | A small table, or a three-to-five box Graphviz flow |
 | Components exchanging messages over time | Mermaid sequence diagram |
 | A trend, or numbers compared across categories | A chart. When the data lives in a Daiquery query, Deltoid experiment or Metric 360 metric, embed it live; otherwise render a PNG following the `dataviz` skill (REQUIRED SUB-SKILL for any chart). |
 | Three to six headline numbers | A small "at a glance" table near the top |
 | A risk, a caveat, or a decision someone must make | A tinted callout |
 | Code the reader has to see | A CodeHub embed, commit-pinned |
+
+**Diagrams carry shape, not sentences.** A box label is at most about 4 words and an arrow label at most 3; anything longer becomes a numbered marker (①, ②) that the caption explains. Keep a diagram to about 7 boxes. A box that needs a sentence to be understood belongs in the prose next to the diagram, not inside it.
+
+**Make it look designed, not default.** Mermaid's default styling renders flat grey boxes, so for any flow or architecture figure render a styled PNG with Graphviz (installed at `/usr/bin/dot`), starting from `card-diagram.dot` in this directory: rounded cards with a coloured header per stage, tinted badges inside each card, and a legend. Use colour to encode one thing the reader needs (owner, or status such as proposed / landed / unpublished), take the colours from the `dataviz` reference palette, and state the encoding in the legend. Look at the rendered PNG before using it, and fix any overlap or cramped label. Keep Mermaid for quick sketches and for diagrams the reader should be able to edit in the doc.
 
 A chart's title states what its data shows and nothing more: if one point breaks the trend, the title does not claim the trend. Do not use a categorical axis for numeric ranges with gaps between them; it hides the gaps. A chart that only repeats a table next to it adds nothing, so keep one of the two.
 

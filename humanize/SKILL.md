@@ -12,7 +12,7 @@ Slop is a shape, not a word list. Asked to "remove the AI slop", an agent strips
 The rewrite has these properties. Write toward them; do not edit the original sentence by sentence.
 
 - **An opening paragraph that carries the point.** Two to four sentences: what the doc is for, its conclusion or ask, and who has to act. A reader who stops there has what they need.
-- **Visuals wherever the content has a shape.** A flow or state machine becomes a diagram. A trend or comparison becomes a chart. Headline numbers become a small table up top. A risk or decision becomes a callout. `references/visuals.md` says which visual fits which content and how to write it. No visual is decorative.
+- **Visuals wherever the content has a shape, designed rather than default.** A flow or architecture becomes a styled card diagram with short labels and numbered markers. A rule that changes a value over time becomes an annotated illustration of that value. A trend or comparison becomes a chart. Headline numbers become a small table up top. A risk or decision becomes a callout. `references/visuals.md` says which visual fits which content and how to write it. No visual is decorative.
 - **Sections that answer the reader's questions, in the order they arise.** A two-page doc usually needs three to five. Headings are plain noun phrases naming the content ("Retries today", "When the job fails"), never slogans or imperatives.
 - **Paragraphs that carry reasoning.** Each makes one point in two to five sentences and joins its facts with "because", "so" and "which". Sentence length varies, the way a person's does. No prose run goes past about 300 words without a visual, table, list or heading.
 - **Lists only for parallel items a reader scans:** steps, options, asks. Three or more items, one line each, each starting with its content rather than a bold label.
@@ -117,7 +117,7 @@ Run these on the finished version, not on your memory of writing it.
 1. `fact_check.py` reports every fact intact, and the fresh-agent check found nothing left unfixed.
 2. The slop score is 15 or below, and each tell `--detail` still lists has been read and is justified.
 3. Every diff, task, SEV, job and `file:line` reference is a link to a target the original gives or a lookup confirmed, never a guess or a local path. Every number has a source the reader can open.
-4. Each flow, comparison or trend in the content is shown as a visual, and no prose run passes about 300 words.
+4. Each flow, comparison or trend in the content is shown as a visual, and no prose run passes about 300 words. No diagram box carries more than about 4 words or any arrow more than 3, and every figure was rendered and looked at before use.
 5. The prose word count (as `slop_score.py` prints it) is at most 5 percent above the original's.
 6. Bold spans number no more than the sections. No cross-reference points at a section name or number that no longer exists.
 7. Read the opening paragraph alone. It gives the point and the ask.
