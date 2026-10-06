@@ -15,7 +15,7 @@ reply conventions), `docket/` (per-diff stack review, rendering monk's findings 
 card and a ruling), `humanize/` (rewrites agent-drafted prose to a human shape and
 scores the slop per pass), `i-have-adhd/` (an output-shaping style skill, ported from
 ayghri/i-have-adhd), `monk/` (whole-chain diff review), `pr-authoring/` (GitHub PR
-conventions), and `sdd/` (spec-to-code pipeline). New skills are added as sibling
+conventions), `sdd/` (spec-to-code pipeline), and `task-authoring/` (Meta Task conventions). New skills are added as sibling
 directories.
 
 ## How skills are deployed

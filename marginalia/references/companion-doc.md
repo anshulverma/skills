@@ -46,18 +46,53 @@ the answer actually was. Write it for someone who was not in the conversation.
 The index at the top is what makes the doc usable once it has more than about three sections.
 Rebuild it whenever you append.
 
-## Appending, not replacing
+## Use `apply`, not `replace`
 
-`meta google.docs replace` overwrites the whole body, so to add a section:
+**Once the companion has a single comment on it, `replace` is the wrong command.** It overwrites the
+whole body, which razes the text every comment is anchored to. The Docs API cannot re-anchor a
+comment, so those threads survive as orphans: still open, attached to nothing, invisible in the
+document. The CLI now refuses and offers to delete / resolve / orphan each one — all three are
+wrong, because the human owns those threads.
 
-1. `meta google.docs get --id="$COMPANION"` — export current ghtml
-2. Append the new section, update the index
-3. `replace` with the merged file
-4. Re-insert images for the new section only — existing ones survive the round trip as
-   `<img src="https://lh7-rt.googleusercontent.com/...">` and are preserved
+Use `apply`, which computes the minimal edit from a base snapshot and leaves untouched paragraphs,
+and their anchors, alone:
+
+```bash
+meta google.docs get --id="$COMPANION" > /tmp/comp.html   # base
+# ... append the new section, update the index ...
+meta google.docs apply --id="$COMPANION" --from=file:///tmp/comp.html --dry-run
+meta google.docs apply --id="$COMPANION" --from=file:///tmp/comp.html --conflict-resolution=ours
+```
+
+Without a stored base snapshot `apply` self-fetches the live doc, which it will only do for a real
+write if you pass `--conflict-resolution=ours` — that trades away offline conflict detection, which
+is fine for a doc only this skill writes to. Then re-insert images for the new section only;
+existing ones survive as `<img src="https://lh7-rt.googleusercontent.com/...">`.
+
+This is a direct consequence of the companion being commentable. The moment you invite follow-ups
+where the answer lives, whole-body overwrite stops being available — so reach for `apply` from the
+first append, not after the first orphan warning.
 
 Track the companion ID and pass it to the cron job as `--companion <id>` so repeat runs append
 rather than creating a new doc each time.
+
+Revising an existing section works the same way — get, edit that section in the exported ghtml,
+replace. Two things to watch on a revision:
+
+- **Leave the other sections byte-identical.** You are rewriting the whole body to change one
+  paragraph; anything you reflow or "tidy" on the way past is an undiffed change to an answer the
+  reader already accepted.
+- **Comment anchors ride on text.** A comment attached to a phrase you rewrite goes orphaned, and
+  the thread the reviewer is watching detaches from the paragraph it was about. If a follow-up asks
+  you to change the exact text it is anchored to, add the correction adjacent rather than editing
+  the anchor out from under it.
+- **The export carries comment *status*, so a stale base can un-resolve a thread.** Each comment
+  round-trips as `<aside hidden ... data-status="OPEN|RESOLVED">`. `apply` treats that as desired
+  state, so if the reviewer resolves a thread between your `get` and your `apply`, you hand back the
+  old `OPEN` and reopen it under them. Watch the `Comments: ... N reopened` line in the apply
+  output — anything other than all-zeros means you moved thread state, which is theirs to move.
+  Re-`get` immediately before a slow or large edit, and if you do flip one, say so rather than
+  quietly re-resolving it.
 
 ## The three required parts of a section
 
@@ -127,6 +162,20 @@ Give each an anchor caption so the insert can find it:
 <p>&nbsp;</p>
 ```
 
+**Size equations at native scale, not to the page.** A figure gets `--width 468` because it should
+fill the column. Do that to an equation and every one lands at text width, so a two-symbol ratio
+renders in 40pt type next to a full loss function in 11pt — the type size becomes noise that looks
+like emphasis. Render at `dpi=220` and insert at the size the point-22 font actually implies:
+
+```python
+w, h = png_size(path)
+width = min(round(w * 72 / 220), 468)      # 220 = the dpi equation() renders at
+height = round(width * h / w)
+```
+
+Short equations then come out small, long ones come out wide, and the glyphs are the same size in
+both — which is what display math looks like on a page.
+
 Inline symbols in running prose stay as `<code>` — do not render a PNG for a lone `theta_t`. Images
 break line flow and cannot be searched or copied.
 
@@ -138,10 +187,73 @@ more honest for a derivation someone may want to copy.
 ## Writing the answer itself
 
 - Lead with the finding. The reader clicked a link to get here; do not make them read setup first.
-- Cite `file.py:line` for every code claim, and say plainly when something could not be verified.
+- Cite `file.py:line` for every code claim, **as a link** (see below), and say plainly when
+  something could not be verified.
 - If this answer corrects something you said earlier, put the correction first and label it. A
   correction buried at the bottom is a correction nobody reads.
 - Keep the register of working notes, not a report. No preamble, no "great question".
+
+## Every code pointer is a link
+
+A citation the reader cannot click is a citation they have to take on faith. `loss.py:1940` tells
+them a line exists; it does not let them go look at it, and looking at it is the entire reason the
+citation is there. So **every file:line pointer and every named symbol in the doc carries an `href`
+to the source.**
+
+Wrap, don't replace — keep the short display text, put the full path in the link:
+
+```html
+<a href="https://www.internalfb.com/code/fbsource/[<commit>]/fbcode/ads/nano/nano_retrieval/trainer/ready_pool.py?lines=11"><code>ready_pool.py:11</code></a>
+```
+
+The pattern is `https://www.internalfb.com/code/fbsource/[<commit>]/<repo-relative-path>?lines=<N>`,
+and `?lines=11-14` for a range. `<repo-relative-path>` starts at the repo root (`fbcode/...`,
+`xplat/...`), so `/data/users/<you>/fbsource/fbcode/a/b.py` becomes `fbcode/a/b.py`.
+
+**Pin the commit — a link without one is a link that rots.** Omit `[<commit>]` and CodeHub resolves
+the line number against current `master`, which moves under you. `loss.py:1940` was accurate the
+afternoon you wrote it and points into an unrelated function a week later, silently, with nothing to
+tell the reader the citation drifted. Pin the revision the research actually read:
+
+```bash
+sl log -r . -T "{node}\n" --reason "pin code links to the reviewed revision - sl help log"
+```
+
+Use the full 40-char hash, and check `phase=public` — a draft commit is not on the server and the
+link will 404 for everyone including you. One hash for the whole doc: every citation in it was read
+at the same checkout, and a single pin is what makes the doc a snapshot of one revision rather than
+a set of pointers into a moving target.
+
+Verify one URL per new file with `knowledge_load` before linking a dozen of them — it returns the
+source at that line, which confirms the path, the pin, and the line number in one call.
+
+### Check where each link lands, not that it resolves
+
+A link that opens is not a link that is right. Two checks that feel equivalent and are not:
+
+- *Does the file exist and is the line within it?* Cheap, catches typos, and **misses the errors that
+  matter.** A line number that is wrong for one file is usually still valid in another.
+- *Does the code at that line support the sentence in front of it?* This is the actual claim, and
+  the only way to check it is to read the range and compare it to the prose.
+
+Prose commonly cites a file once and then continues with bare `:1092`, `:1101` for later lines in the
+same file. Resolving those by "inherit the last file named" is wrong wherever the prose has moved on
+without renaming — and it fails *silently*, because the borrowed line number usually exists in the
+wrong file too. On one 173-citation doc that produced 16 confidently wrong links, ten of them
+pointing into a config dataclass instead of the trainer.
+
+So verify the whole set, mechanically: extract every citation with the prose that precedes it and the
+real source at that range, then read the two side by side. It parallelises perfectly — one agent per
+batch of ~15, returning a verdict per citation — and it is the only pass that catches a link that
+resolves cleanly to the wrong thing.
+
+For a **named symbol** with no citation beside it — a function, class, or config field mentioned in
+running prose — link it to its definition site the same way. The research already found where it is
+defined; dropping that on the floor is what forces the reader to go searching.
+
+This is why agents must return repo-relative paths. A bare `loss.py:1940` cannot be linked without
+finding the file again, and at a dozen citations per section that is the difference between a doc
+you can read through and a doc you have to grep alongside.
 
 ## ghtml notes
 
