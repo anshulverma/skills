@@ -36,7 +36,7 @@ Every reference a reader could want to open is a link with descriptive text:
 | MAST job | `https://www.internalfb.com/mast/job/<job name>` |
 | Docs, dashboards, queries | The URL the original gives |
 
-Link only to a target the original gives or that a lookup confirmed (the file and line exist at that revision). Never guess a line range for code the original does not locate, and never link a local path such as `/home/...` or `/tmp/...`, which no other reader can open.
+Link only to a target the original gives, one built from the patterns above for an ID the original names, or one a lookup confirmed (the file and line exist at that revision). Never guess a line range for code the original does not locate, and never link a local path such as `/home/...` or `/tmp/...`, which no other reader can open.
 
 In text meant to be pasted somewhere else (a terminal, a chat message), write the bare URL instead, because link text hides the address.
 

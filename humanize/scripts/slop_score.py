@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score how much a markdown doc reads as AI-generated: 0 is clean, 100 is all slop.
 
-Usage: slop_score.py ORIGINAL [PASS1 PASS2 ...] [--detail]
+Usage: slop_score.py ORIGINAL [PASS1 PASS2 ...] [--detail] [--type slides]
 
 Pass the files in order (the original first, then each humanize pass) to get
 the score trajectory and the drop from the original. --detail prints every
@@ -10,11 +10,16 @@ tell count and shape metric behind each score.
 The score is normalised per 1,000 words, so a longer doc does not score worse
 for being longer. Every count is a place to look, not a verdict. Code spans and
 fenced blocks are skipped so identifiers do not count as prose.
+
+--type slides scores a deck instead: one slide per block between "---" lines,
+speaker notes in "Notes:" paragraphs or ">" lines. It weighs words and bullets
+on each slide, title length, topic-label titles and slides with no visual, and
+the word count it prints is on-slide words only.
 """
 
+import argparse
 import re
 import statistics
-import sys
 
 TELLS = {
     "em/en dash": r"[—–]",
@@ -25,7 +30,7 @@ TELLS = {
     "hedge clause": r"\b(?:seems? to|appears? to|may potentially|could potentially|it is possible that|arguably)\b",
     "process narration": r"\b(?:I (?:found|noticed|looked|checked|couldn't|can't|could not)|we (?:found|noticed|looked))\b",
     "signpost": r"\b(?:it(?:'s| is) worth noting|importantly|crucially|notably|in short|bottom line|the key (?:insight|point|takeaway)|here's the thing|that said|put simply)\b",
-    "puffery": r"\b(?:robust|seamless(?:ly)?|leverag(?:e|es|ing)|delve|comprehensive|holistic|cutting-edge|tapestry|pivotal|underscores?|showcas(?:e|es|ing)|streamlin(?:e|es|ing)|empower(?:s|ing)?|foster(?:s|ing)?|realm|intricate|in today's)\b",
+    "puffery": r"\b(?:robust|seamless(?:ly)?|leverag(?:e|es|ing)|delve|comprehensive|holistic|cutting-edge|tapestry|pivotal|underscor(?:es|ing)|showcas(?:e|es|ing)|streamlin(?:e|es|ing)|empower(?:s|ing)?|foster(?:s|ing)?|realm|intricate|in today's)\b",
     "-side/-path coinage": r"\b[a-z]+-(?:side|path)\b",
     "semicolon chain": r";",
     "blockquote": r"(?m)^\s*>",
@@ -129,6 +134,79 @@ def metrics(raw: str) -> tuple[dict[str, float], dict[str, int]]:
     return m, tells
 
 
+# Weights sum to 100. Calibrated on agent-drafted decks: see references/slides.md.
+SLIDE_WEIGHTS = {
+    "tells per 1k words": (30, 30.0),
+    "bold spans per 1k words": (5, 15.0),
+    "notes words per slide above 150": (5, 150.0),
+    "on-slide words per slide above 30": (15, 30.0),
+    "title words above 8": (10, 4.0),
+    "topic-label title share": (10, 0.3),
+    "content slides without a visual": (15, 0.5),
+    "unlinked references per 1k words": (10, 10.0),
+}
+TOPIC_TITLE = re.compile(
+    r"^(?:agenda|overview|background|introduction|context|problem(?: statement)?|goals|"
+    r"summary|key takeaways|takeaways|conclusions?|next steps|questions|q&a|thank you|"
+    r"proposed design|design|rollout(?: plan)?|open questions)\b\W*(?::|$)",
+    re.IGNORECASE,
+)
+VISUAL = re.compile(r"!\[|<img\b|<embed\b|```mermaid|^\s*\|", re.MULTILINE)
+
+
+def slides(raw: str) -> list[tuple[str, str, str]]:
+    """(title, on-slide text, notes) per slide; blocks with no text are skipped."""
+    out = []
+    for block in re.split(r"(?m)^---\s*$", re.sub(r"(?s)<!--.*?-->", "", raw)):
+        notes, body = [], []
+        for para in re.split(r"\n\s*\n", block.strip()):
+            if para.lstrip().startswith(("Notes:", ">")):
+                notes.append(re.sub(r"(?m)^\s*>\s?|^\s*Notes:\s*", "", para))
+            else:
+                body.append(para)
+        lines = [ln for ln in "\n\n".join(body).splitlines() if ln.strip()]
+        if lines:
+            title = re.sub(r"^#+\s*|\*\*", "", lines[0]).strip()
+            out.append((title, "\n".join(lines[1:]), "\n\n".join(notes)))
+    return out
+
+
+def slide_metrics(raw: str) -> tuple[dict[str, float], dict[str, int], list[str]]:
+    deck = slides(raw)
+    n = max(len(deck), 1)
+    # Table cells count as words on the slide, so a list laid out as a table scores as text.
+    on_slide = [len(prose_only(re.sub(r"(?m)^\s*\|[-:| ]*$", "", body).replace("|", " ")).split()) for _, body, _ in deck]
+    title_words = [len(t.split()) for t, _, _ in deck]
+    text = prose_only("\n\n".join(f"{t}\n\n{b}\n\n{nt}" for t, b, nt in deck))
+    words = max(len(text.split()), 1)
+    per_k = 1000.0 / words
+    tells = {k: len(re.findall(p, text, flags=re.IGNORECASE)) for k, p in TELLS.items()}
+    content = deck[1:] or deck
+    unfenced = re.sub(r"(?s)```(?!mermaid).*?```", "", raw)
+    m = {
+        "words": sum(on_slide),
+        "tells per 1k words": sum(tells.values()) * per_k,
+        "bold spans per 1k words": len(re.findall(r"\*\*[^*\n]+\*\*", text)) * per_k,
+        "on-slide words per slide above 30": sum(max(0, w - 30) for w in on_slide) / n,
+        "notes words per slide above 150": sum(max(0, len(prose_only(nt).split()) - 150) for _, _, nt in deck) / n,
+        "title words above 8": sum(max(0, w - 8) for w in title_words) / n,
+        "topic-label title share": sum(1 for t, _, _ in deck if TOPIC_TITLE.match(t)) / n,
+        "content slides without a visual": sum(1 for _, b, _ in content if not VISUAL.search(b)) / len(content),
+        "unlinked references per 1k words": len(re.findall(REFERENCE, re.sub(LINK, "", unfenced))) * per_k,
+    }
+    flags = []
+    for i, ((t, b, _), w, tw) in enumerate(zip(deck, on_slide, title_words), 1):
+        issues = [f"{w} words on slide"] if w > 30 else []
+        nw = len(prose_only(deck[i - 1][2]).split())
+        issues += [f"{nw} words of notes"] if nw > 150 else []
+        issues += [f"{tw}-word title"] if tw > 8 else []
+        issues += ["topic-label title"] if TOPIC_TITLE.match(t) else []
+        issues += ["no visual"] if i > 1 and not VISUAL.search(b) else []
+        if issues:
+            flags.append(f"slide {i} ({t[:40]}): {', '.join(issues)}")
+    return m, tells, flags
+
+
 def raw_identifiers(raw: str) -> list[str]:
     """Code-style names in body prose: backticked spans outside tables, fences and the appendix."""
     body = re.split(r"(?mi)^#+\s*appendix", raw)[0]
@@ -137,26 +215,32 @@ def raw_identifiers(raw: str) -> list[str]:
     return [s for s in re.findall(r"`([^`\n]+)`", body) if re.search(r"[_.(]|[a-z][A-Z]", s)]
 
 
-def score(m: dict[str, float]) -> float:
-    return sum(w * min(1.0, m[k] / sat) for k, (w, sat) in WEIGHTS.items())
+def score(m: dict[str, float], weights: dict[str, tuple[int, float]]) -> float:
+    return sum(w * min(1.0, m[k] / sat) for k, (w, sat) in weights.items())
 
 
 def main() -> None:
-    args = [a for a in sys.argv[1:] if a != "--detail"]
-    detail = "--detail" in sys.argv
-    if not args:
-        sys.exit(__doc__)
+    parser = argparse.ArgumentParser(usage=__doc__)
+    parser.add_argument("files", nargs="+")
+    parser.add_argument("--detail", action="store_true")
+    parser.add_argument("--type", choices=["prose", "slides"], default="prose")
+    opts = parser.parse_args()
+    args, detail, is_slides = opts.files, opts.detail, opts.type == "slides"
+    weights = SLIDE_WEIGHTS if is_slides else WEIGHTS
     results = []
     for path in args:
-        m, tells = metrics(open(path, encoding="utf-8").read())
-        results.append((path, score(m), m, tells))
+        raw = open(path, encoding="utf-8").read()
+        m, tells, flags = slide_metrics(raw) if is_slides else (*metrics(raw), [])
+        results.append((path, score(m, weights), m, tells))
         if detail:
             print(f"== {path}")
-            ids = raw_identifiers(open(path, encoding="utf-8").read())
+            ids = raw_identifiers(raw) if not is_slides else []
             if ids:
                 print(f"  raw identifiers in body (move to Nomenclature): {', '.join(sorted(set(ids)))}")
-            for k in WEIGHTS:
-                w, sat = WEIGHTS[k]
+            for f in flags:
+                print(f"  {f}")
+            for k in weights:
+                w, sat = weights[k]
                 print(f"  {k:32} {m[k]:8.2f}  -> {w * min(1.0, m[k] / sat):5.1f} / {w}")
             for k, v in tells.items():
                 if v:
