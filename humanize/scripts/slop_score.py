@@ -232,7 +232,8 @@ def main() -> None:
     weights = SLIDE_WEIGHTS if is_slides else WEIGHTS
     results = []
     for path in args:
-        raw = open(path, encoding="utf-8").read()
+        # The humanize-context block (an HTML comment) is metadata, not prose.
+        raw = re.sub(r"(?s)<!--.*?-->", "", open(path, encoding="utf-8").read())
         m, tells, flags = slide_metrics(raw) if is_slides else (*metrics(raw), [])
         results.append((path, score(m, weights), m, tells))
         if detail:

@@ -51,7 +51,8 @@ def main() -> None:
     print(f"{len(facts)} facts, {len(unsourced)} unsourced{': ' + ', '.join(unsourced) if unsourced else ''}")
     failed = False
     for path in sys.argv[2:]:
-        body = normalise(open(path, encoding="utf-8").read())
+        # A literal that only survives in the humanize-context comment is not in the doc.
+        body = normalise(re.sub(r"(?s)<!--.*?-->", "", open(path, encoding="utf-8").read()))
         missing = [(fid, [lit for lit in lits if normalise(lit) not in body]) for fid, _, lits, _ in facts]
         missing = [(fid, lits) for fid, lits in missing if lits]
         print(f"{path}: {len(facts) - len(missing)}/{len(facts)} facts intact")

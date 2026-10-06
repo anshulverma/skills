@@ -20,7 +20,41 @@ The right shape depends on what the doc is and where it is read, so decide that 
 | A runbook, checklist, reference or README | Numbered steps, commands, flags, tables of values | Runbooks and references, below |
 | A task or bug description | A task ID or template; problem, repro, expected behaviour | Posts and updates, plus a "done when" line |
 
-When two rows fit, pick by where people will meet the doc: projected or presented is a deck, a feed or inbox is a post, a doc people comment on line by line is a proposal or report. When the user names the type or the destination, that wins. Whatever the type, the doc ends with a Nomenclature appendix (see "Plain names" below); only its form changes. Write the type and the readers at the top of `facts.md` (`type: slide deck | readers: GR RL team, presented live`), because the readers decide which terms need defining.
+When two rows fit, pick by where people will meet the doc: projected or presented is a deck, a feed or inbox is a post, a doc people comment on line by line is a proposal or report. When the user names the type or the destination, that wins. Whatever the type, the doc ends with a Nomenclature appendix (see "Plain names" below); only its form changes. The type goes in the humanize context, next.
+
+## The humanize context
+
+The same draft needs a different rewrite depending on who wrote it, who reads it and what it is for, and none of that can be read off the text reliably. So every doc carries a short context block that this skill writes once, confirms with the user, and keeps in the doc, so the next pass starts from it instead of guessing again. One `key: value` line per field:
+
+```
+<!-- humanize-context
+type: report
+purpose: record why nano_retrieval QPS dropped and get the scorer fix approved
+author: Anshul Verma (first person singular)
+readers: GR RL team, who know the trainer but not the scorer internals; define scorer terms
+destination: Google Doc, commented line by line before the Thursday review
+ask: approve the scorer thread-pool fix; owner @anshulverma; by 2026-10-09
+tone: direct, engineer to engineer
+keep: job IDs inline next to each claim; the "Recommended fix" section
+avoid: speculation about other teams' services
+confirmed: 2026-10-05 by anshulverma
+-->
+```
+
+- `type` is a row of the table above. `purpose` is what the doc has to get done: a decision, an approval, a record, an update.
+- `author` is whose name the doc goes out under, and in which person (first singular, first plural, impersonal). `readers` says who they are, what they already know, and so which terms need defining.
+- `destination` is where people meet the doc. `ask` names the action wanted, its owner and its date, or says `none: record only`.
+- `keep` lists what must survive the rewrite: required sections, strings other tools parse, identifiers, citations. It overrides any default in this skill (for example `no Nomenclature appendix`), and a read-back check it overrides counts as passed; say so in the report.
+- `avoid` holds anything the author has ruled out. `confirmed` gives the date and who confirmed, or reads `no (guessed)`.
+
+**Where it lives.**
+
+- **A markdown or text file:** the HTML comment above, at the very top. If the file starts with YAML frontmatter, put it straight after the closing `---`, because frontmatter parsers need it on line 1. No line inside the block starts with `#` or `---`, so tools that split a file on headings or separators never see it, and `slop_score.py` and `fact_check.py` ignore the block.
+- **A Google Doc:** a comment anchored to the title whose text contains `humanize-context`, resolved so it stays out of reviewers' margins. Add it with `meta google.docs.comment add --quoted-text=<title>` and resolve it with `meta google.docs.comment resolve`. Read it back with `meta google.docs.comment list --id=<doc-id> --no-truncate`, which lists resolved comments too.
+- **A Google Slides deck:** a first slide titled "Humanize context (not presented)" with the block as its body. Leave it out of `v0.md` and the scoring, put it back on delivery, and tell the presenter to skip it.
+- **No place to keep it** (a chat message, or a post typed straight into Workplace): `/tmp/humanize/<doc-name>/context.md`, with its path in the report.
+
+**Getting it right.** Look for an existing block first. If one is there and confirmed, reuse it; only when the doc now contradicts a field (a new ask, a different audience) propose the change and confirm that one field. If one is there but reads `confirmed: no`, ask the user to confirm it once when someone can answer, and write the answer back into the block where it lives, so the next pass reuses it instead of asking again; when nobody can answer, reuse it as it is. If there is no block, guess every field from the doc, where it lives, its author or commit history, and the conversation. Show the guessed block to the user and ask them to confirm or correct it, in one message, before redrafting, because the type and readers decide the whole shape. Fields a caller supplies (a plugin that writes the same kind of doc every time) count as confirmed. When nobody can answer (you are a subagent, or the caller said not to ask), go ahead with the guesses, write `confirmed: no (guessed)`, and list the guessed fields in the report.
 
 ## The target shape
 
@@ -104,8 +138,8 @@ The target for a proposal or report is 15 or below. The score sees surface patte
 
 Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each pass as `v1.md`, `v2.md` and so on, `facts.md`, and any figure PNGs. For a Google Doc, `v0.md` is the doc fetched with `meta google.docs get --id=<id> --output=markdown`.
 
-1. **Decide the doc type** from the table above, and **score the original:** `python3 ~/.claude/skills/humanize/scripts/slop_score.py v0.md` (add `--type slides` for a deck).
-2. **Write `facts.md`** from the original, as above, with the type and readers at the top.
+1. **Settle the humanize context** (find it, or guess it and confirm it), which fixes the doc type. Copy the block to the top of `facts.md`. Then **score the original:** `python3 ~/.claude/skills/humanize/scripts/slop_score.py v0.md` (add `--type slides` for a deck).
+2. **Write `facts.md`** from the original, as above, under the context block.
 3. **Verify the fact sheet with a fresh agent.** Dispatch an agent (Agent tool) that has not seen your work (if you are yourself a subagent and cannot, do this and the step 6 check yourself, and say so in the report). Give it `v0.md` and `facts.md`, and ask it to list facts the sheet misses or gets wrong. Fix the sheet. Every later check trusts this sheet, so a gap here goes unnoticed for the rest of the run.
 4. **Redraft into the next `vN.md`** from the fact sheet, not the old text, toward the shape for the doc's type. Pick the plain names first and write the Nomenclature appendix, whatever the type. For a proposal or report, then write the title and TL;DR, then pick sections from the reader's questions, then build each section from its facts, adding the visuals and links the target shape calls for. Working from the sheet is what breaks the old skeleton.
 5. **Apply the transforms** below to whatever tells the redraft still carries.
@@ -116,10 +150,10 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 7. **Score again** with every version so far, and run the read-back checks on `vN.md`.
 8. **Run another pass from `vN.md`** while the score is above 15 or a read-back check fails, as long as the last pass improved one of them, and there have been fewer than three passes. Steps 4 to 7 repeat for each pass, including the fact check.
 9. **Deliver.**
-   - **Local file:** write the final version over the original, with its figures alongside.
-   - **Google Slides deck:** follow the delivery section of `references/slides.md`.
-   - **Google Doc:** follow the Google Docs section of `references/visuals.md`. Fetch ghtml with `meta google.docs get --id=<id> --output=ghtml --dest=file:///tmp/meta-ghtml-<id>.html`, carry the final version into that file, preview with `meta google.docs apply --id=<id> --from=file:///tmp/meta-ghtml-<id>.html --dry-run`, apply, then read the doc back to confirm every diagram and image rendered.
-   - **Report:** the score trajectory as printed, the `fact_check.py` result for each version, any unsourced facts, facts that research showed are now stale (leave the author's wording; say what changed), and anything cut on purpose.
+   - **Local file:** write the final version over the original, with its figures alongside and the context block at the top.
+   - **Google Slides deck:** follow the delivery section of `references/slides.md`, and put the context slide first.
+   - **Google Doc:** follow the Google Docs section of `references/visuals.md`. Fetch ghtml with `meta google.docs get --id=<id> --output=ghtml --dest=file:///tmp/meta-ghtml-<id>.html`, carry the final version into that file, preview with `meta google.docs apply --id=<id> --from=file:///tmp/meta-ghtml-<id>.html --dry-run`, apply, then read the doc back to confirm every diagram and image rendered. Add or update the resolved context comment.
+   - **Report:** the context block and any field still guessed, the score trajectory as printed, the `fact_check.py` result for each version, any unsourced facts, facts that research showed are now stale (leave the author's wording; say what changed), and anything cut on purpose.
 
 ## Transforms
 
