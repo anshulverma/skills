@@ -18,9 +18,10 @@ notes too, so a fact that moves off a slide into its notes still counts as kept.
   case, with its number when it has one: "Three jobs sent 3.2M requests/min", not "Problem
   Statement". Reading the titles alone, in order, tells the whole story.
 - **One point per slide.** A slide that needs two headlines becomes two slides.
-- **At most about 30 words on a slide** below the title, table cells included: up to four
-  bullets, each a fragment of at most 8 words that starts with its content, never a bold
-  label. Full sentences and paragraphs go in the notes.
+- **Bullets for slide text, at most about 30 words** below the title, table cells
+  included. Text on a slide is up to four bullets, each a fragment of at most 8 words that
+  starts with its content, never a bold label. Full sentences and paragraphs go in the
+  notes.
 - **Numbers that stand on their own.** A number on a slide carries its unit, and when a
   decision rests on it, its reason in a few words ("9K rows/s cap: the RCA's coverage
   optimum"), because people read decks again later without the talk.

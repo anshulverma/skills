@@ -31,7 +31,7 @@ This is the shape for a proposal, design doc or report. The rewrite has these pr
 - **Visuals wherever the content has a shape, designed rather than default.** A flow or architecture becomes a styled card diagram with short labels and numbered markers. A rule that changes a value over time becomes an annotated illustration of that value. A trend or comparison becomes a chart. Headline numbers become a small table up top. A risk or decision becomes a callout. `references/visuals.md` says which visual fits which content and how to write it. No visual is decorative.
 - **Sections that answer the reader's questions, in the order they arise.** A two-page doc usually needs three to five. Headings are plain noun phrases naming the content ("Retries today", "When the job fails"), never slogans or imperatives.
 - **Paragraphs that carry reasoning.** Each makes one point in two to five sentences and joins its facts with "because", "so" and "which". Sentence length varies, the way a person's does. No prose run goes past about 300 words without a visual, table, list or heading.
-- **Lists only for parallel items a reader scans:** steps, options, asks. Three or more items, one line each, each starting with its content rather than a bold label.
+- **Bullets where the items stand apart, paragraphs where they build on each other.** A list fits items a reader scans or comments on one at a time: steps, options, asks, rules, findings. It reads well when a sentence before it says what the items are, each item makes one distinct point (a line or two), the items run in an order that flows, and each starts with its content rather than a bold label. When one item explains, causes or qualifies the next, that is reasoning, and it goes in a paragraph. Mix the two: a doc that is mostly bullets reads as notes, so lists usually take under about a third of the body.
 - **Every reference is a clickable link** with descriptive text: diffs, tasks, SEVs, jobs, `file:line` pointers (to CodeHub), docs and dashboards.
 - **Every number has a source** the reader can open: a query, dashboard, job, code pointer or doc.
 - **Terms defined where they first appear,** in a clause of the same sentence. Acronyms are spelled out once. Codes and coined labels (stage numbers, priority tags, "-side" phrases) give way to descriptive names.
@@ -125,7 +125,7 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 | The draft has | Write instead |
 |---|---|
 | Prose that repeats the table or figure beside it | One of the two. |
-| A bold label opening a bullet or paragraph ("**Hold.** The cap...") | A sentence whose subject is the thing: "After a severe window the controller holds..." |
+| A bold label opening a bullet or paragraph ("**Hold.** The cap...") | The same bullet or sentence led by its subject: "After a severe window the controller holds..." |
 | A one-sentence slogan paragraph ("Nothing fails the job.") | That claim as the first clause of the paragraph holding its evidence: "Nothing fails the job today: the three-strike limits are defined but never read." |
 | A paragraph walking through steps, states or a request path | A diagram, with one sentence saying what it shows |
 | Numbers compared in prose ("from 0.29M to 0.14-0.17M per minute") | A chart or table, with the source linked under it |
