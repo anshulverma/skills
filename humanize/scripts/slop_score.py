@@ -58,13 +58,16 @@ WEIGHTS = {
     "share of prose in walls of text": (10, 0.5),
 }
 
+# The required Nomenclature appendix (a heading or bold line, then its rows up to the
+# next heading) is reference material, not prose, so it stays out of every count.
+NOMENCLATURE = re.compile(r"(?ims)^[#*\s]*(?:appendix:?\s*)?nomenclature\b.*?(?=^#|\Z)")
 LIST_LINE = re.compile(r"\s*(?:[-*]|\d+\.)\s")
 NON_PROSE = re.compile(r"\s*(?:[-*#|>]|\d+\.)")
 
 
 def prose_only(text: str) -> str:
     """Prose a reader reads: no code blocks, tables, images or link targets."""
-    text = re.sub(r"(?s)```.*?```", "", text)
+    text = NOMENCLATURE.sub("", re.sub(r"(?s)```.*?```", "", text))
     # The TL;DR repeats the body by design, so it stays out of the length comparison.
     text = re.sub(r"\*\*TL;DR\*\*[ \t]*\n(?:[ \t]*\n)?(?:[ \t]*[-*] [^\n]*\n)+", "", text)
     text = re.sub(r"(?m)^\s*\|.*$", "", text)
@@ -165,8 +168,8 @@ def slides(raw: str) -> list[tuple[str, str, str]]:
             else:
                 body.append(para)
         lines = [ln for ln in "\n\n".join(body).splitlines() if ln.strip()]
-        if lines:
-            title = re.sub(r"^#+\s*|\*\*", "", lines[0]).strip()
+        title = re.sub(r"^#+\s*|\*\*", "", lines[0]).strip() if lines else ""
+        if lines and not re.match(r"(?i)(?:appendix:?\s*)?nomenclature\b", title):
             out.append((title, "\n".join(lines[1:]), "\n\n".join(notes)))
     return out
 

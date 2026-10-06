@@ -20,14 +20,14 @@ The right shape depends on what the doc is and where it is read, so decide that 
 | A runbook, checklist, reference or README | Numbered steps, commands, flags, tables of values | Runbooks and references, below |
 | A task or bug description | A task ID or template; problem, repro, expected behaviour | Posts and updates, plus a "done when" line |
 
-When two rows fit, pick by where people will meet the doc: projected or presented is a deck, a feed or inbox is a post, a doc people comment on line by line is a proposal or report. When the user names the type or the destination, that wins. Write the type and the readers at the top of `facts.md` (`type: slide deck | readers: GR RL team, presented live`), because the readers decide which terms need defining.
+When two rows fit, pick by where people will meet the doc: projected or presented is a deck, a feed or inbox is a post, a doc people comment on line by line is a proposal or report. When the user names the type or the destination, that wins. Whatever the type, the doc ends with a Nomenclature appendix (see "Plain names" below); only its form changes. Write the type and the readers at the top of `facts.md` (`type: slide deck | readers: GR RL team, presented live`), because the readers decide which terms need defining.
 
 ## The target shape
 
 This is the shape for a proposal, design doc or report. The rewrite has these properties. Write toward them; do not edit the original sentence by sentence.
 
 - **A title and a TL;DR at the top.** The title says in plain words what the doc decides or proposes, and a proposal's title says it is one ("Proposal: ..."). Under it, a TL;DR callout of three to five one-line bullets gives the problem, the proposal, and the ask with who has to act. A reader who stops there has what they need, so it replaces a separate opening paragraph.
-- **Plain names for things.** Each system, call and component is named by what it does ("score request", "scoring service", "AdFinder request"), never by its RPC, class, tier or config name. Units follow the plain name: "AdFinder requests/min", not "getUnified/min". The real identifiers appear only in a Nomenclature table in the appendix (plain name, real name, what it is), in code pointers, and in tables of literal strings such as error markers. Every plain name the body uses has a Nomenclature row.
+- **Plain names for things.** Each system, call and component is named by what it does ("score request", "scoring service", "AdFinder request"), never by its RPC, class, tier or config name. Units follow the plain name: "AdFinder requests/min", not "getUnified/min". The real identifiers appear only in a Nomenclature table in the appendix (plain name, real name, what it is), in code pointers, and in tables of literal strings such as error markers. Every plain name the body uses has a Nomenclature row. Every doc gets this appendix, whatever its type and readers, with a row for each identifier the original used.
 - **Visuals wherever the content has a shape, designed rather than default.** A flow or architecture becomes a styled card diagram with short labels and numbered markers. A rule that changes a value over time becomes an annotated illustration of that value. A trend or comparison becomes a chart. Headline numbers become a small table up top. A risk or decision becomes a callout. `references/visuals.md` says which visual fits which content and how to write it. No visual is decorative.
 - **Sections that answer the reader's questions, in the order they arise.** A two-page doc usually needs three to five. Headings are plain noun phrases naming the content ("Retries today", "When the job fails"), never slogans or imperatives.
 - **Paragraphs that carry reasoning.** Each makes one point in two to five sentences and joins its facts with "because", "so" and "which". Sentence length varies, the way a person's does. No prose run goes past about 300 words without a visual, table, list or heading.
@@ -51,16 +51,17 @@ A Workplace post, status update, announcement, chat message or email is read in 
 
 - **The first line is the news or the ask** in plain words, at most about 12 words, bold when the medium shows a headline: "Scorer load-shedding proposal for nano_retrieval: comments by Friday". No greeting, no "excited to share", no emoji headers.
 - **80 to 250 words of body**: two or three short paragraphs, or one paragraph and up to five one-line bullets for parallel items. A bullet may lead with a plain two-word label and a colon ("Hard caps: ..."), never a bold one.
-- **No title block, TL;DR callout, headings, tables, Nomenclature appendix or figures.** Feeds and chat render headings and tables badly, and the linked doc carries the detail. A chart goes in only when the chart is the news, and then from real data.
+- **No title block, TL;DR callout, headings, tables or figures.** Feeds and chat render headings and tables badly, and the linked doc carries the detail. A chart goes in only when the chart is the news, and then from real data.
 - **The team's own terms,** because the readers are the team. Define only what an outside reader of that group would not know.
 - **Links on any diff, task or SEV the post names,** and the link to the full doc in the closing ask.
 - **It ends on the ask**, with the owner (@name) and the date, one line per ask when there are two. At most a one-word thanks after it.
+- **Then a Nomenclature list,** one line per name ("score request: `genScorePreselectedAds`, the call that prices one rollout row"), as a list because feeds render tables badly.
 
 The length rule applies. The prose slop score works for a post, with a target of 15 or below. Read-back checks 1 to 3 and 6 apply, plus these: the first line alone says the news or the ask, the body is at most 250 words, and nothing in it would render badly in the destination (no headings, tables or callouts).
 
 ## Runbooks and references
 
-Keep a runbook's numbered steps, a checklist's items and a reference's tables, and apply the transforms only to the prose around them. Commands, flags and config keys stay verbatim in fenced blocks or backticks: they are the content, so the plain-names rule does not reach them. The slop score's list, heading and one-sentence-paragraph components measure the structure this kind of doc needs, so read the tells in `--detail` and fix those instead of chasing the total.
+Keep a runbook's numbered steps, a checklist's items and a reference's tables, and apply the transforms only to the prose around them. Commands, flags and config keys stay verbatim in fenced blocks or backticks: they are the content, so the plain-names rule does not reach them. The Nomenclature appendix still maps every plain name the prose uses. The slop score's list, heading and one-sentence-paragraph components measure the structure this kind of doc needs, so read the tells in `--detail` and fix those instead of chasing the total.
 
 ## The fact sheet
 
@@ -88,7 +89,7 @@ v2         9     -60   1280     -12%  v2.md
 v3         6     -63   1291     -11%  v3.md
 ```
 
-Word counts cover body prose only: the TL;DR, tables, code, images and link targets are left out. For a slide deck, pass `--type slides`, which scores on-slide words, titles, visuals and notes instead (see `references/slides.md`).
+Word counts cover body prose only: the TL;DR, the Nomenclature appendix, tables, code, images and link targets are left out. For a slide deck, pass `--type slides`, which scores on-slide words, titles, visuals and notes instead (see `references/slides.md`).
 
 | Score | Seen in testing |
 |---|---|
@@ -106,7 +107,7 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 1. **Decide the doc type** from the table above, and **score the original:** `python3 ~/.claude/skills/humanize/scripts/slop_score.py v0.md` (add `--type slides` for a deck).
 2. **Write `facts.md`** from the original, as above, with the type and readers at the top.
 3. **Verify the fact sheet with a fresh agent.** Dispatch an agent (Agent tool) that has not seen your work (if you are yourself a subagent and cannot, do this and the step 6 check yourself, and say so in the report). Give it `v0.md` and `facts.md`, and ask it to list facts the sheet misses or gets wrong. Fix the sheet. Every later check trusts this sheet, so a gap here goes unnoticed for the rest of the run.
-4. **Redraft into the next `vN.md`** from the fact sheet, not the old text, toward the shape for the doc's type. For a proposal or report, pick the plain names first and write the Nomenclature table, then the title and TL;DR, then pick sections from the reader's questions, then build each section from its facts, adding the visuals and links the target shape calls for. Working from the sheet is what breaks the old skeleton.
+4. **Redraft into the next `vN.md`** from the fact sheet, not the old text, toward the shape for the doc's type. Pick the plain names first and write the Nomenclature appendix, whatever the type. For a proposal or report, then write the title and TL;DR, then pick sections from the reader's questions, then build each section from its facts, adding the visuals and links the target shape calls for. Working from the sheet is what breaks the old skeleton.
 5. **Apply the transforms** below to whatever tells the redraft still carries.
 6. **Check the version against the fact sheet, both ways:**
    - `python3 ~/.claude/skills/humanize/scripts/fact_check.py facts.md v1.md ... vN.md` must report every fact intact for `vN.md`.
@@ -151,7 +152,7 @@ Every fact on the sheet, real uncertainty, and the author's decisions, conclusio
 
 ## Read-back checks
 
-Run these on the finished version, not on your memory of writing it. They are written for a proposal or report. A deck replaces checks 4, 5, 7 and 8 with the checks in `references/slides.md`; a post or update keeps 1 to 3 and 6 and adds its own checks above.
+Run these on the finished version, not on your memory of writing it. They are written for a proposal or report. A deck replaces checks 4, 5, 7 and 8 with the checks in `references/slides.md`; a post or update keeps 1 to 3 and 6 and adds its own checks above. Every type, deck and post included, ends with a Nomenclature appendix that has a row for every plain name it uses and every identifier the original used.
 
 1. `fact_check.py` reports every fact intact, and the fresh-agent check found nothing left unfixed.
 2. The slop score is 15 or below, and each tell `--detail` still lists has been read and is justified.

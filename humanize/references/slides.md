@@ -37,7 +37,8 @@ notes too, so a fact that moves off a slide into its notes still counts as kept.
 - **Names the room can read.** Use plain names, or the term the audience already says out
   loud; other identifiers, and any term that needs defining, go in the notes. The exception
   is an identifier an ask or work item names: it stays on that slide, in backticks, because
-  someone acts on it. There is no Nomenclature slide.
+  someone acts on it. A Nomenclature backup slide after the close maps each plain name to
+  its identifier; the scorer leaves that slide out.
 - **References as linked IDs.** A slide shows a diff, task or SEV as its bare ID, linked
   (S712241). Longer links go in the notes, or on one "Links" backup slide after the close.
 - **Speaker notes of 2 to 6 sentences** per slide (about 40 to 120 words), written as the
@@ -117,3 +118,5 @@ slide's `meta google.slides.slide thumbnail`, and fix any overflowing text box.
    questions are written out on a slide of their own.
 6. The only identifiers on slides are ones an ask or work item names, and every number on
    a slide has its unit.
+7. A Nomenclature backup slide after the close has a row for every plain name the deck uses
+   and every identifier the original used.
