@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check every version of a doc against its fact sheet.
 
-Usage: fact_check.py FACTS.md VERSION.md [VERSION.md ...]
+Usage: fact_check.py FACTS.md VERSION.md [VERSION.md ...] [--figures FIG ...]
 
 FACTS.md has one fact per line in this shape (other lines are ignored):
 
@@ -13,7 +13,11 @@ so `20K` matches **20K**. A fact passes when all its literals are present.
 This catches dropped or reworded numbers and links; whether a fact's meaning
 survived still needs a reader, which is what the fresh-agent check is for.
 
-Exit status is 1 when any version is missing a fact, so it can gate a loop.
+A line starting with "assumed F<n>" is a value nobody has confirmed: its
+literals must appear in no version and no figure source passed after --figures.
+
+Exit status is 1 when any version is missing a fact or holds an assumed value,
+so it can gate a loop.
 """
 
 import re
@@ -22,10 +26,12 @@ import sys
 FACT = re.compile(r"^\s*(F\d+)\s*\|\s*(.+?)\s*\|\s*(.*?)\s*\|\s*source:\s*(.*)$")
 
 
-def load_facts(path: str) -> list[tuple[str, str, list[str], str]]:
+def load_facts(path: str, prefix: str = "") -> list[tuple[str, str, list[str], str]]:
     facts = []
     for line in open(path, encoding="utf-8"):
-        m = FACT.match(line)
+        if prefix and not line.lstrip().startswith(prefix):
+            continue
+        m = FACT.match(line[line.find(prefix) + len(prefix):] if prefix else line)
         if m:
             fid, text, lits, src = m.groups()
             facts.append((fid, text, [x.strip() for x in lits.split(";") if x.strip()], src.strip()))
@@ -42,25 +48,39 @@ def normalise(text: str) -> str:
 
 
 def main() -> None:
-    if len(sys.argv) < 3:
+    args = sys.argv[1:]
+    figures = args[args.index("--figures") + 1:] if "--figures" in args else []
+    args = args[:args.index("--figures")] if "--figures" in args else args
+    if len(args) < 2:
         sys.exit(__doc__)
-    facts = load_facts(sys.argv[1])
+    facts = load_facts(args[0])
+    assumed = load_facts(args[0], prefix="assumed ")
     if not facts:
         sys.exit(f"no facts parsed from {sys.argv[1]}: check the 'F<n> | fact | literals | source: ...' shape")
     unsourced = [f[0] for f in facts if f[3].lower() in ("", "unsourced", "none")]
-    cut = [ln.split("|")[0].split()[1] for ln in open(sys.argv[1], encoding="utf-8") if re.match(r"\s*cut F\d+\s*\|", ln)]
+    cut = [ln.split("|")[0].split()[1] for ln in open(args[0], encoding="utf-8") if re.match(r"\s*cut F\d+\s*\|", ln)]
     print(f"{len(facts)} facts, {len(unsourced)} unsourced{': ' + ', '.join(unsourced) if unsourced else ''}"
-          f"{f', {len(cut)} cut by the author: ' + ', '.join(cut) if cut else ''}")
+          f"{f', {len(cut)} cut by the author: ' + ', '.join(cut) if cut else ''}"
+          f"{f', {len(assumed)} assumed: ' + ', '.join(f[0] for f in assumed) if assumed else ''}")
     failed = False
-    for path in sys.argv[2:]:
+    for path in args[1:] + figures:
         # A literal that only survives in the humanize-context comment is not in the doc.
         body = normalise(re.sub(r"(?s)<!--.*?-->", "", open(path, encoding="utf-8").read()))
-        missing = [(fid, [lit for lit in lits if normalise(lit) not in body]) for fid, _, lits, _ in facts]
-        missing = [(fid, lits) for fid, lits in missing if lits]
-        print(f"{path}: {len(facts) - len(missing)}/{len(facts)} facts intact")
+        if path in figures:
+            missing = []
+        else:
+            missing = [(fid, [lit for lit in lits if normalise(lit) not in body]) for fid, _, lits, _ in facts]
+            missing = [(fid, lits) for fid, lits in missing if lits]
+            print(f"{path}: {len(facts) - len(missing)}/{len(facts)} facts intact")
         for fid, lits in missing:
             print(f"  {fid} missing: {'; '.join(lits)}")
-        failed |= bool(missing)
+        # Word boundaries, so an assumed "9K" does not match "19K".
+        present = [(fid, [lit for lit in lits if re.search(rf"(?<![\w.,]){re.escape(normalise(lit))}(?![\w])", body)])
+                   for fid, _, lits, _ in assumed]
+        present = [(fid, lits) for fid, lits in present if lits]
+        for fid, lits in present:
+            print(f"  {path}: assumed {fid} still present: {'; '.join(lits)}")
+        failed |= bool(missing) or bool(present)
     sys.exit(1 if failed else 0)
 
 
