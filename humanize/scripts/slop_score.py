@@ -122,6 +122,9 @@ def metrics(raw: str) -> tuple[dict[str, float], dict[str, int]]:
     paras = paragraphs(text)
     sents = sentences(paras)
     lengths = [len(s.split()) for s in sents]
+    # List items are read sentence by sentence too, so they count toward long sentences.
+    items = [LIST_LINE.sub("", ln, count=1) for ln in lines if LIST_LINE.match(ln)]
+    all_lengths = lengths + [len(s.split()) for s in sentences(items)]
     one_sentence = sum(1 for p in paras if len(sentences([p])) == 1 and not p.rstrip().endswith(":"))
     headings = sum(1 for ln in lines if ln.lstrip().startswith("#"))
     tells = {n: len(re.findall(p, text, flags=re.IGNORECASE)) for n, p in TELLS.items()}
@@ -139,7 +142,7 @@ def metrics(raw: str) -> tuple[dict[str, float], dict[str, int]]:
         "headings per 1k words above 4": max(0.0, headings * per_k - 4),
         "unlinked references per 1k words": unlinked * per_k,
         "share of prose in walls of text": wall_share(raw),
-        "long-sentence share above 15%": max(0.0, sum(1 for n in lengths if n > 25) / max(len(lengths), 1) - 0.15),
+        "long-sentence share above 15%": max(0.0, sum(1 for n in all_lengths if n > 25) / max(len(all_lengths), 1) - 0.15),
     }
     return m, tells
 
@@ -225,6 +228,13 @@ def raw_identifiers(raw: str) -> list[str]:
     return [s for s in re.findall(r"`([^`\n]+)`", body) if re.search(r"[_.(]|[a-z][A-Z]", s)]
 
 
+def long_sentences(raw: str) -> list[str]:
+    """Sentences over 25 words in paragraphs and list items, for the rewrite to split."""
+    text = prose_only(raw)
+    items = [LIST_LINE.sub("", ln, count=1) for ln in text.splitlines() if LIST_LINE.match(ln)]
+    return [x for x in sentences(paragraphs(text) + items) if len(x.split()) > 25]
+
+
 def score(m: dict[str, float], weights: dict[str, tuple[int, float]]) -> float:
     return sum(w * min(1.0, m[k] / sat) for k, (w, sat) in weights.items())
 
@@ -250,6 +260,8 @@ def main() -> None:
                 print(f"  raw identifiers in body (move to Nomenclature): {', '.join(sorted(set(ids)))}")
             for f in flags:
                 print(f"  {f}")
+            for x in long_sentences(raw) if not is_slides else []:
+                print(f"  long sentence ({len(x.split())} words, split it): {x}")
             for k in weights:
                 w, sat = weights[k]
                 print(f"  {k:32} {m[k]:8.2f}  -> {w * min(1.0, m[k] / sat):5.1f} / {w}")
