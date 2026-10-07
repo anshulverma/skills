@@ -17,9 +17,20 @@ none is decorative.
 | A risk, a caveat, or a decision someone must make | A tinted callout |
 | Code the reader has to see | A CodeHub embed, commit-pinned |
 
-**Diagrams carry shape, not sentences.** A box label is at most about 4 words and an arrow label at most 3; anything longer becomes a numbered marker (①, ②) that the caption explains. Keep a diagram to about 7 boxes. A box that needs a sentence to be understood belongs in the prose next to the diagram, not inside it.
+**A figure shows what the text right above it says.** When the paragraph walks a flow, the figure draws that flow: the same steps, with the same names, in the same order, including the way back. Anything the text places on the path (a limit, a check) sits where the text puts it. Write or revise the paragraph and its figure together, and check one against the other.
+
+**Diagrams carry shape, not sentences.** Label each element in place: a box label is at most about 4 words and an arrow label at most 3. Keep a diagram to about 7 boxes. A box that needs a sentence to be understood belongs in the prose next to the diagram, not inside it.
 
 **Make it look designed, not default.** Mermaid's default styling renders flat grey boxes, so for any flow or architecture figure render a styled PNG with Graphviz (installed at `/usr/bin/dot`), starting from `card-diagram.dot` in this directory: rounded cards with a coloured header per stage, tinted badges inside each card, and a legend. Use colour to encode one thing the reader needs (owner, or status such as proposed / landed / unpublished), take the colours from the `dataviz` reference palette, and state the encoding in the legend. Look at the rendered PNG before using it, and fix any overlap or cramped label. Keep Mermaid for quick sketches and for diagrams the reader should be able to edit in the doc.
+
+**Figure slop** is the visual form of AI prose, and a figure with any of these gets redrawn:
+- numbered markers (①, ②) decoded in the caption, which make the reader jump between figure and caption; label in place instead;
+- filler badges and subtitles that add no fact ("non-production, 2 tiers" under a box title);
+- a legend for an encoding the reader does not need;
+- an annotation that makes another section's point;
+- axis labels or titles carrying process notes ("bins the RCA reports");
+- a caption that repeats the values printed in the chart or the paragraph, or that decodes the figure instead of saying what it shows;
+- decoration: shadows, gradients, icons, colour that encodes nothing.
 
 A chart's title states what its data shows and nothing more: if one point breaks the trend, the title does not claim the trend. Do not use a categorical axis for numeric ranges with gaps between them; it hides the gaps. A chart that only repeats a table next to it adds nothing, so keep one of the two.
 

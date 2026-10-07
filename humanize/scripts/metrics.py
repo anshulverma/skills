@@ -2,13 +2,13 @@
 """Counter-metrics for a humanize pass: what a lower slop score must not cost.
 
 Usage:
-  metrics.py --facts FACTS.md --doc VERSION.md [--audit AUDIT.json] [--graded GRADED.json]
+  metrics.py --facts FACTS.md --doc VERSION.md [--audit AUDIT.json] [--graded GRADED.json] [--figures FIGURES.json]
              [--author-pair DELIVERED.md:EDITED.md ...]
 
 Computed here: fact retention (literals), length against the context's `length`
 field, and author rewrite share. Read from the agent-judged JSON files that
 references/counter-metrics.md describes: fact meaning, factual precision,
-cold-read and TL;DR-only comprehension, and unknown terms.
+cold-read and TL;DR-only comprehension, unknown terms, and figures matching their text.
 
 Exit status is 1 when a gating metric (fact retention, fact meaning, factual
 precision) is below 100%.
@@ -58,6 +58,7 @@ def main() -> None:
     ap.add_argument("--doc", required=True)
     ap.add_argument("--audit")
     ap.add_argument("--graded")
+    ap.add_argument("--figures")
     ap.add_argument("--author-pair", action="append", default=[])
     o = ap.parse_args()
 
@@ -82,6 +83,11 @@ def main() -> None:
         bad = a["unsupported_claims"]
         total = a["claims_total"]
         row("factual precision", f"{total - len(bad)}/{total} = {(total - len(bad)) / max(total, 1):.0%}", "100%", not bad, True)
+
+    if o.figures:
+        figs = json.load(open(o.figures))["figures"]
+        bad = [str(f["figure"]) for f in figs if f["mismatches"] or f["slop"]]
+        row("figures matching text, no slop", f"{len(figs) - len(bad)}/{len(figs)}" + (f" (fix: {', '.join(bad)})" if bad else ""), "all", not bad)
 
     if o.graded:
         g = json.load(open(o.graded))

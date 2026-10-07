@@ -10,6 +10,7 @@ The slop score falls when a pass cuts, simplifies or rephrases, and each of thos
 | Cold-read comprehension | a doc cut or compressed past understanding | 90% or more | target |
 | TL;DR-only comprehension | a TL;DR that does not stand alone: problem, proposal, guarantee | 100% | target |
 | Unknown terms | a term the `readers` would not know, used but never made clear | 0 | target |
+| Figures matching text | a figure that draws something other than the paragraph above it, or carries figure slop | all | target |
 | Length vs target | bloat | 1.00 or less | target |
 | Author rewrite share | how much of a delivered version the author rewrote | falls over time | trend |
 
@@ -36,6 +37,14 @@ Two agents, each told not to use any tools, which is how the prompt stands in fo
 ## Grading (per version)
 
 > Here are quiz questions with their answer keys, and two sets of answers: `full`, from a reader of the whole document, and `tldr`, from a reader of the title and TL;DR, who should only be marked on questions with `"tldr": true`. Mark an answer correct when it gives the key's substance; wording does not matter, a missing qualifier that changes the meaning does. Return only JSON: `{"full": [{"id": 1, "correct": true}], "tldr": [{"id": 3, "correct": false}], "unknown_terms": [...]}`, with `unknown_terms` copied from the full-doc reader but kept only where the term appears in the body (appendix code pointers and Nomenclature rows are deliberate reference material) and the `readers` field (given to you) says the audience would not know it. A reader with no context flags everything; the doc is written for its readers, so a term they already know (for an RL team: SEV, rank, reward) does not count.
+
+## Figure check (per version)
+
+One fresh agent per figure, given only the rendered image and the paragraph directly above it (plus the caption). It does not see the rest of the doc.
+
+> Look at this figure and read the paragraph above it and its caption. (1) List every mismatch: a step, name, order, number or rule in the paragraph that the figure draws differently or leaves out, or something the figure shows that the paragraph does not say. (2) List every piece of figure slop from this list: numbered markers decoded in the caption, filler badges or subtitles, a legend for an encoding the reader does not need, an annotation that makes another section's point, process notes in axis labels or titles, a caption that repeats printed values or decodes the figure, decoration. Return only JSON: `{"figure": 1, "mismatches": ["..."], "slop": ["..."]}`.
+
+Collect the results as `{"figures": [...]}` in `figures-vN.json` and pass it with `--figures`.
 
 ## Author rewrite share
 
