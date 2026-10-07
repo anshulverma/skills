@@ -156,6 +156,7 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 7. **Read every sentence with a fresh agent.** Give it `vN.md`, the humanize context and the plain-English rules (the transforms table), and ask it to go through the whole doc, sentence by sentence, as one of the `readers`. It lists every sentence that reader would stumble on, with a rewrite that keeps the sentence's fact-sheet literals:
    - an idiom or jargon verb standing in for a mechanism ("failed fast", "ran at its full budget", "retries overload"): say what happened ("each failed request came back in milliseconds, so the trainer sent the next one at once");
    - a causal link the reader has to supply;
+   - a term or label used before the doc says what it means, or never explained, for the `readers` ("Degraded responses also count as scored." before the doc says these are empty or partial responses): lead with the concrete thing, and drop the label or give it afterwards;
    - a detail that does not serve its paragraph's point, which moves to the appendix or is cut ("...and the three-strike limits are defined but never read" in a paragraph whose point is that failed batches are dropped).
 
    The tells the score counts are a floor: in testing, a doc at score 8 still had all of these, because a word list cannot read. Review the list, apply what holds, and fact-check again. **When the user flags one sentence, treat it as a sample:** fix it, add the pattern to this skill, then rerun this read on the whole doc for that pattern, never only on the flagged sentence.
