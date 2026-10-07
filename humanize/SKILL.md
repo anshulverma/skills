@@ -146,16 +146,22 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 
 1. **Settle the humanize context** (find it, or guess it and confirm it), which fixes the doc type. Copy the block to the top of `facts.md`. Then **score the original:** `python3 ~/.claude/skills/humanize/scripts/slop_score.py v0.md` (add `--type slides` for a deck).
 2. **Write `facts.md`** from the original, as above, under the context block.
-3. **Verify the fact sheet with a fresh agent.** Dispatch an agent (Agent tool) that has not seen your work (if you are yourself a subagent and cannot, do this and the step 6 check yourself, and say so in the report). Give it `v0.md` and `facts.md`, and ask it to list facts the sheet misses or gets wrong. Fix the sheet. Every later check trusts this sheet, so a gap here goes unnoticed for the rest of the run.
+3. **Verify the fact sheet with a fresh agent.** Dispatch an agent (Agent tool) that has not seen your work (if you are yourself a subagent and cannot, do this and the step 6 and 7 checks yourself, and say so in the report). Give it `v0.md` and `facts.md`, and ask it to list facts the sheet misses or gets wrong. Fix the sheet. Every later check trusts this sheet, so a gap here goes unnoticed for the rest of the run.
 4. **Redraft into the next `vN.md`** from the fact sheet, not the old text, toward the shape for the doc's type. Pick the plain names first and write the Nomenclature appendix, whatever the type. For a proposal or report, then write the title and TL;DR, then pick sections from the reader's questions, then build each section from its facts, adding the visuals and links the target shape calls for. Working from the sheet is what breaks the old skeleton.
 5. **Apply the transforms** below to whatever tells the redraft still carries.
 6. **Check the version against the fact sheet, both ways:**
    - `python3 ~/.claude/skills/humanize/scripts/fact_check.py facts.md v1.md ... vN.md` must report every fact intact for `vN.md`.
    - A fresh agent compares `vN.md` with `facts.md`, headings, captions and chart titles included. It lists any fact whose meaning changed (a decision reversed, a qualifier dropped, a reason lost) and any claim in `vN.md` the sheet does not support. In testing, unsupported claims crept in through the opening paragraph, headings and chart titles.
    - Fix every item in `vN.md` before going on.
-7. **Score again** with every version so far, and run the read-back checks on `vN.md`.
-8. **Run another pass from `vN.md`** while the score is above 15 or a read-back check fails, as long as the last pass improved one of them, and there have been fewer than three passes. Steps 4 to 7 repeat for each pass, including the fact check.
-9. **Deliver.**
+7. **Read every sentence with a fresh agent.** Give it `vN.md`, the humanize context and the plain-English rules (the transforms table), and ask it to go through the whole doc, sentence by sentence, as one of the `readers`. It lists every sentence that reader would stumble on, with a rewrite that keeps the sentence's fact-sheet literals:
+   - an idiom or jargon verb standing in for a mechanism ("failed fast", "ran at its full budget", "retries overload"): say what happened ("each failed request came back in milliseconds, so the trainer sent the next one at once");
+   - a causal link the reader has to supply;
+   - a detail that does not serve its paragraph's point, which moves to the appendix or is cut ("...and the three-strike limits are defined but never read" in a paragraph whose point is that failed batches are dropped).
+
+   The tells the score counts are a floor: in testing, a doc at score 8 still had all of these, because a word list cannot read. Review the list, apply what holds, and fact-check again. **When the user flags one sentence, treat it as a sample:** fix it, add the pattern to this skill, then rerun this read on the whole doc for that pattern, never only on the flagged sentence.
+8. **Score again** with every version so far, and run the read-back checks on `vN.md`.
+9. **Run another pass from `vN.md`** while the score is above 15, a read-back check fails or the sentence read finds anything, as long as the last pass improved one of them, and there have been fewer than three passes. Steps 4 to 8 repeat for each pass, including the fact check.
+10. **Deliver.**
    - **Local file:** write the final version over the original, with its figures alongside and the context block at the top.
    - **Google Slides deck:** follow the delivery section of `references/slides.md`, and put the context slide first.
    - **Google Doc:** follow the Google Docs section of `references/visuals.md`. Fetch ghtml with `meta google.docs get --id=<id> --output=ghtml --dest=file:///tmp/meta-ghtml-<id>.html`, carry the final version into that file, preview with `meta google.docs apply --id=<id> --from=file:///tmp/meta-ghtml-<id>.html --dry-run`, apply, then read the doc back to confirm every diagram and image rendered. Add or update the resolved context comment.

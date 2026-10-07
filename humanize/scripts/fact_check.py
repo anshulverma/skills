@@ -74,8 +74,8 @@ def main() -> None:
             print(f"{path}: {len(facts) - len(missing)}/{len(facts)} facts intact")
         for fid, lits in missing:
             print(f"  {fid} missing: {'; '.join(lits)}")
-        # Word boundaries, so an assumed "9K" does not match "19K".
-        present = [(fid, [lit for lit in lits if re.search(rf"(?<![\w.,]){re.escape(normalise(lit))}(?![\w])", body)])
+        # Number boundaries, so an assumed "9K" does not match "19K" and "281" does not match "279-281".
+        present = [(fid, [lit for lit in lits if re.search(rf"(?<![\d.,-]){re.escape(normalise(lit))}(?![\w])", body)])
                    for fid, _, lits, _ in assumed]
         present = [(fid, lits) for fid, lits in present if lits]
         for fid, lits in present:
