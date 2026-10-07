@@ -70,7 +70,7 @@ This is the shape for a proposal, design doc or report. The rewrite has these pr
 - **Bullets where the items stand apart, paragraphs where they build on each other.** A list fits items a reader scans or comments on one at a time: steps, options, asks, rules, findings. It reads well when a sentence before it says what the items are, each item makes one distinct point (a line or two), the items run in an order that flows, and each starts with its content rather than a bold label. When one item explains, causes or qualifies the next, that is reasoning, and it goes in a paragraph. Separate defects, mechanisms or stages that reviewers will discuss one by one stay a list even when each needs two sentences, with the reasoning that ties them together in the sentence before or after. A paragraph holding several such items, or one bold sentence in the middle of a paragraph, is a list that got flattened. Mix the two: a doc that is mostly bullets reads as notes, so lists usually take under about a third of the body.
 - **Every reference is a clickable link** with descriptive text: diffs, tasks, SEVs, jobs, `file:line` pointers (to CodeHub), docs and dashboards.
 - **Every number has a source** the reader can open: a query, dashboard, job, code pointer or doc.
-- **Plain spoken English, numbers included.** Write numbers the way an engineer would in prose: "a job capped at 20,000 rows/s sent about 22,700 requests/s", not "a job budgeted at 20,000 rows/s drew about 22.7K requests/s". In prose that means full numbers or "million" ("22,700", "1.4 million") and everyday verbs ("sent", "was capped at", "limits", "stops") over compressing ones ("drew", "budgeted at", "binds", "trips"). Slash units such as rows/s, requests/s and requests/min are normal notation and stay. Tables, charts and captions may keep K/M numbers ("22.7K"), because there they save space without costing understanding. Keep to about one number per clause, so a sentence never reads as a row of a spreadsheet.
+- **Plain spoken English.** Use the everyday verbs an engineer would use with a colleague ("sent", "was capped at", "limits", "stops") over compressing ones ("drew", "budgeted at", "binds", "trips"): "a job capped at 20K rows/s sent about 22.7K score requests/s", not "a job budgeted at 20K rows/s drew about 22.7K score requests/s". Compact notation people write every day stays: slash units (rows/s, requests/min) and K/M numbers (22.7K, 3.2M). Keep to about one number per clause, so a sentence never reads as a row of a spreadsheet.
 - **Terms defined where they first appear,** in a clause of the same sentence. Acronyms are spelled out once. Codes and coined labels (stage numbers, priority tags, "-side" phrases) give way to descriptive names.
 - **At most one bold phrase per section,** on the one fact a skimmer must not miss.
 - **An ending that stops** once the last fact is stated.
@@ -117,7 +117,7 @@ F39 | After a severe window the hold doubles per consecutive trip, up to 5 min |
 
 ## The slop score
 
-`scripts/slop_score.py` gives each version a score from 0 (clean) to 100 (all slop), normalised per 1,000 words. It weighs AI tells, bold density, list share, one-sentence paragraphs, sentence-length uniformity, long sentences, heading density, unlinked references, walls of text and compressed notation in prose. Pass it the versions in order, and it prints the trajectory; `--detail` shows the components:
+`scripts/slop_score.py` gives each version a score from 0 (clean) to 100 (all slop), normalised per 1,000 words. It weighs AI tells, bold density, list share, one-sentence paragraphs, sentence-length uniformity, long sentences, heading density, unlinked references and walls of text. Pass it the versions in order, and it prints the trajectory; `--detail` shows the components:
 
 ```
 pass    slop  change  words  vs orig  file
@@ -133,7 +133,7 @@ Word counts cover body prose only: the TL;DR, the Nomenclature appendix, tables,
 |---|---|
 | 53-66 | Agent-written proposals and reports, no cleanup |
 | 30-52 | A plain "remove the slop" rewrite, no skill |
-| 10-19 | The same docs after this skill, before the plain-numbers rule (compressed notation kept them above target) |
+| 10-19 | The same docs after this skill, before the short-sentence rule |
 | 11-18 | Hand-written fbcode reference docs |
 
 The target for a proposal or report is 15 or below. The score sees surface patterns only, so the read-back checks cover what it cannot.
@@ -184,7 +184,7 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 | A sentence over about 25 words, or one carrying two ideas, a stacked definition or an aside | One sentence per idea, with definitions in their own sentence: "Rows wait in the trainer's waiting pool until their score arrives. GRPO, the RL loss, then trains each beam on its reward relative to the other beams for the same user." |
 | A triplet kept for rhythm | Only the items that carry a fact. |
 | A coined label or stiff verb for something ordinary ("per-job rate gate", "coverage optimum", "expired-rows change", "retires", "lives in", "first-comes-first-serves") | What it does, in the words an engineer would say to a colleague: "today's per-job rate limit", "the load where the most users get fully scored", "the change that gives rows a deadline", "turns off", "sits in", "serves callers first come, first served". |
-| Compressed phrasing in prose: K/M numbers and compressing verbs ("a job budgeted at 20,000 rows/s drew about 22.7K score requests/s") | Full numbers and everyday verbs: "a job capped at 20,000 rows/s sent about 22,700 score requests/s". Slash units stay; tables and captions may keep K/M. |
+| A compressing verb ("budgeted at", "drew", "binds", "trips") | The everyday verb: "a job capped at 20K rows/s sent about 22.7K score requests/s". |
 | An em or en dash | A colon, a comma, parentheses, or a new sentence. |
 | A semicolon welding two claims | Two sentences. |
 | A blockquote | Quotation marks inline, or a fenced block for text meant to be pasted. |
@@ -204,6 +204,6 @@ Run these on the finished version, not on your memory of writing it. They are wr
 5. The prose word count (as `slop_score.py` prints it) is at most 5 percent above the original's.
 6. Each section's first sentence states its point, and every other sentence in it supports that point. Bold spans number no more than the sections. No cross-reference points at a section name or number that no longer exists.
 7. The title is at most about 8 words or 60 characters, starts with the bracketed doc type, and is a noun phrase, not a sentence. Read the title and TL;DR alone. They give the problem, the fix and what it guarantees, each bullet holds one idea and follows from the one before (the fix is introduced as the fix to the stated problem), and no bullet carries a size, owner, identifier, list of asks or operational detail. Then read only the first sentence of each section in order: they should tell the same story without gaps.
-8. At most about 15% of prose sentences run past 25 words (`slop_score.py --detail` reports the share above that), and none stacks a definition or aside onto a sentence doing other work. No prose sentence uses a K/M-abbreviated number or a compressing verb (`slop_score.py --detail` counts them as compressed notation and compressing verbs); slash units such as rows/s are fine, and tables and captions may keep K/M. No raw identifier remains in the body outside code pointers, literal-string tables and the Nomenclature appendix (`slop_score.py --detail` lists them), and every plain name has a Nomenclature row.
+8. At most about 15% of prose sentences run past 25 words (`slop_score.py --detail` reports the share above that), and none stacks a definition or aside onto a sentence doing other work. No prose sentence uses a compressing verb (`slop_score.py --detail` counts them); slash units and K/M numbers are fine. No raw identifier remains in the body outside code pointers, literal-string tables and the Nomenclature appendix (`slop_score.py --detail` lists them), and every plain name has a Nomenclature row.
 
 For a Google Doc, also run `meta google.docs lint --id=<id> --category=writing_style`.

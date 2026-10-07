@@ -41,10 +41,6 @@ TELLS = {
 # want to click. Counted only outside links.
 REFERENCE = r"\b(?:D\d{7,}|T\d{8,}|S\d{6}|P\d{9,})\b|\b[\w/.-]+\.(?:py|cpp|h|php|thrift|yaml|cconf|md):\d+"
 LINK = r"\[[^\]]*\]\([^)]*\)|<a\b[^>]*>.*?</a>|https?://\S+"
-# K/M-abbreviated numbers ("22.7K", "3.2M") that an agent compresses into prose
-# and a person spells out ("22,700", "3.2 million"). Slash units such as rows/s
-# are normal notation and are not counted. Tables and captions keep K/M.
-NOTATION = r"\b\d+(?:\.\d+)?[KM]\b"
 # A prose run longer than this many words with no heading, list, table,
 # diagram, image or callout between its paragraphs reads as a wall of text.
 WALL_WORDS = 300
@@ -53,7 +49,7 @@ WALL_WORDS = 300
 # Weights sum to 100. Calibrated on argument prose (proposals, reports): see
 # the reference points in SKILL.md.
 WEIGHTS = {
-    "tells per 1k words": (20, 30.0),
+    "tells per 1k words": (25, 30.0),
     "bold spans per 1k words": (10, 15.0),
     "list share above 30%": (10, 0.5),
     "one-sentence paragraph share": (10, 0.6),
@@ -61,10 +57,9 @@ WEIGHTS = {
     "headings per 1k words above 4": (5, 8.0),
     "unlinked references per 1k words": (10, 10.0),
     "share of prose in walls of text": (10, 0.5),
-    "compressed notation per 1k words": (10, 15.0),
     # People rarely write past 25 words a sentence; hand-written fbcode docs
     # keep 0-21% of sentences over it, so only the share above 15% counts.
-    "long-sentence share above 15%": (10, 0.25),
+    "long-sentence share above 15%": (15, 0.25),
 }
 
 # The required Nomenclature appendix (a heading or bold line, then its rows up to the
@@ -144,7 +139,6 @@ def metrics(raw: str) -> tuple[dict[str, float], dict[str, int]]:
         "headings per 1k words above 4": max(0.0, headings * per_k - 4),
         "unlinked references per 1k words": unlinked * per_k,
         "share of prose in walls of text": wall_share(raw),
-        "compressed notation per 1k words": len(re.findall(NOTATION, text)) * per_k,
         "long-sentence share above 15%": max(0.0, sum(1 for n in lengths if n > 25) / max(len(lengths), 1) - 0.15),
     }
     return m, tells
