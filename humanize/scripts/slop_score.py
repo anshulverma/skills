@@ -53,15 +53,18 @@ WALL_WORDS = 300
 # Weights sum to 100. Calibrated on argument prose (proposals, reports): see
 # the reference points in SKILL.md.
 WEIGHTS = {
-    "tells per 1k words": (25, 30.0),
+    "tells per 1k words": (20, 30.0),
     "bold spans per 1k words": (10, 15.0),
     "list share above 30%": (10, 0.5),
     "one-sentence paragraph share": (10, 0.6),
-    "sentence-length uniformity": (10, 0.35),
+    "sentence-length uniformity": (5, 0.35),
     "headings per 1k words above 4": (5, 8.0),
     "unlinked references per 1k words": (10, 10.0),
     "share of prose in walls of text": (10, 0.5),
     "compressed notation per 1k words": (10, 15.0),
+    # People rarely write past 25 words a sentence; hand-written fbcode docs
+    # keep 0-21% of sentences over it, so only the share above 15% counts.
+    "long-sentence share above 15%": (10, 0.25),
 }
 
 # The required Nomenclature appendix (a heading or bold line, then its rows up to the
@@ -142,6 +145,7 @@ def metrics(raw: str) -> tuple[dict[str, float], dict[str, int]]:
         "unlinked references per 1k words": unlinked * per_k,
         "share of prose in walls of text": wall_share(raw),
         "compressed notation per 1k words": len(re.findall(NOTATION, text)) * per_k,
+        "long-sentence share above 15%": max(0.0, sum(1 for n in lengths if n > 25) / max(len(lengths), 1) - 0.15),
     }
     return m, tells
 
