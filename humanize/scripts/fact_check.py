@@ -60,7 +60,7 @@ def main() -> None:
     unsourced = [f[0] for f in facts if f[3].lower() in ("", "unsourced", "none")]
     cut = [ln.split("|")[0].split()[1] for ln in open(args[0], encoding="utf-8") if re.match(r"\s*cut F\d+\s*\|", ln)]
     print(f"{len(facts)} facts, {len(unsourced)} unsourced{': ' + ', '.join(unsourced) if unsourced else ''}"
-          f"{f', {len(cut)} cut by the author: ' + ', '.join(cut) if cut else ''}"
+          f"{f', {len(cut)} cut: ' + ', '.join(cut) if cut else ''}"
           f"{f', {len(assumed)} assumed: ' + ', '.join(f[0] for f in assumed) if assumed else ''}")
     failed = False
     for path in args[1:] + figures:
