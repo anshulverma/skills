@@ -48,7 +48,9 @@ def main() -> None:
     if not facts:
         sys.exit(f"no facts parsed from {sys.argv[1]}: check the 'F<n> | fact | literals | source: ...' shape")
     unsourced = [f[0] for f in facts if f[3].lower() in ("", "unsourced", "none")]
-    print(f"{len(facts)} facts, {len(unsourced)} unsourced{': ' + ', '.join(unsourced) if unsourced else ''}")
+    cut = [ln.split("|")[0].split()[1] for ln in open(sys.argv[1], encoding="utf-8") if re.match(r"\s*cut F\d+\s*\|", ln)]
+    print(f"{len(facts)} facts, {len(unsourced)} unsourced{': ' + ', '.join(unsourced) if unsourced else ''}"
+          f"{f', {len(cut)} cut by the author: ' + ', '.join(cut) if cut else ''}")
     failed = False
     for path in sys.argv[2:]:
         # A literal that only survives in the humanize-context comment is not in the doc.
