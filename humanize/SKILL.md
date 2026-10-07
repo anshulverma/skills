@@ -148,6 +148,15 @@ Word counts cover body prose only: the TL;DR, the Nomenclature appendix, tables,
 
 The target for a proposal or report is 15 or below. The score sees surface patterns only, so the read-back checks cover what it cannot.
 
+## Counter-metrics
+
+A lower slop score can cost the doc a fact, add a claim it cannot support, or cut it past understanding, so every version also gets counter-metrics, defined with their agent prompts in `references/counter-metrics.md`. Three gate delivery: fact retention, fact meaning kept and factual precision, all at 100%. The rest are targets a pass may not trade against each other: cold-read comprehension by a fresh agent with no tools or context (90% or more on a quiz written once from the fact sheet), TL;DR-only comprehension (100% of the executive questions), unknown terms (0), and length against the context's `length` (1.00 or less). Author rewrite share, the part of a delivered version the author rewrote, is the trend that measures the skill itself. `scripts/metrics.py` computes the deterministic ones, reads the agents' JSON, and prints one table:
+
+```
+python3 ~/.claude/skills/humanize/scripts/metrics.py --facts facts.md --doc vN.md \
+  --audit audit-vN.json --graded graded-vN.json --author-pair delivered.md:edited.md
+```
+
 ## The pass
 
 Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each pass as `v1.md`, `v2.md` and so on, `facts.md`, and any figure PNGs. For a Google Doc, `v0.md` is the doc fetched with `meta google.docs get --id=<id> --output=markdown`.
@@ -172,13 +181,13 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
    - a detail deeper than `depth`, or one that pushes the body past `length`: cut it, or move it to the appendix.
 
    The read prefers cutting to explaining. At `decision` depth it ends with fewer body words than it started with, and no pass grows the body past `length`. In testing, a read without `depth` proposed about 80 rewrites that mostly added definitions and "because" clauses, and the author rejected the direction: explaining every internal makes the doc long and hard to read. The tells the score counts are a floor: in testing, a doc at score 8 still had all of these, because a word list cannot read. Review the list, apply what holds, and fact-check again. **When the user flags one sentence, treat it as a sample:** fix it, add the pattern to this skill, then rerun this read on the whole doc for that pattern, never only on the flagged sentence.
-8. **Score again** with every version so far, and run the read-back checks on `vN.md`.
+8. **Score again** with every version so far, compute the counter-metrics (write the quiz once, on the first pass), and run the read-back checks on `vN.md`. A version that fails a gate goes back to step 4.
 9. **Run another pass from `vN.md`** while the score is above 15, a read-back check fails or the sentence read finds anything, as long as the last pass improved one of them, and there have been fewer than three passes. Steps 4 to 8 repeat for each pass, including the fact check.
 10. **Deliver.**
    - **Local file:** write the final version over the original, with its figures alongside and the context block at the top.
    - **Google Slides deck:** follow the delivery section of `references/slides.md`, and put the context slide first.
    - **Google Doc:** follow the Google Docs section of `references/visuals.md`. Fetch ghtml with `meta google.docs get --id=<id> --output=ghtml --dest=file:///tmp/meta-ghtml-<id>.html`, carry the final version into that file, preview with `meta google.docs apply --id=<id> --from=file:///tmp/meta-ghtml-<id>.html --dry-run`, apply, then read the doc back to confirm every diagram and image rendered. Add or update the resolved context comment.
-   - **Report:** the context block and any field still guessed, the score trajectory as printed, the `fact_check.py` result for each version, any unsourced facts, facts that research showed are now stale (leave the author's wording; say what changed), and anything cut on purpose.
+   - **Report:** the context block and any field still guessed, the score trajectory as printed, the `metrics.py` table for the original and the final version, the `fact_check.py` result for each version, any unsourced facts, facts that research showed are now stale (leave the author's wording; say what changed), and anything cut on purpose.
 
 ## Transforms
 
