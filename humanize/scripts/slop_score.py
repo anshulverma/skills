@@ -76,6 +76,8 @@ def prose_only(text: str) -> str:
     # The TL;DR repeats the body by design, so it stays out of the length comparison.
     text = re.sub(r"\*\*TL;DR\*\*[ \t]*\n(?:[ \t]*\n)?(?:[ \t]*[-*] [^\n]*\n)+", "", text)
     text = re.sub(r"(?m)^\s*\|.*$", "", text)
+    # Figure captions may keep compact notation, so they are not prose here.
+    text = re.sub(r"(?m)^\s*[*_]Figure \d+\..*$", "", text)
     text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
     text = re.sub(r"\]\([^)]*\)", "]", text)
     text = re.sub(r"https?://\S+", "", text)
