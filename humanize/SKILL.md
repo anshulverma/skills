@@ -182,6 +182,7 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 | Signposts and AI vocabulary ("importantly", "notably", "it is worth noting", "delve", "robust", "leverage", "pivotal", "underscore", "foster") | Nothing, or the concrete verb. |
 | A run of short sentences of the same length | Related facts joined by "because", "so" or "which". |
 | A triplet kept for rhythm | Only the items that carry a fact. |
+| A coined label or stiff verb for something ordinary ("per-job rate gate", "coverage optimum", "expired-rows change", "retires", "lives in", "first-comes-first-serves") | What it does, in the words an engineer would say to a colleague: "today's per-job rate limit", "the load where the most users get fully scored", "the change that gives rows a deadline", "turns off", "sits in", "serves callers first come, first served". |
 | Compressed notation in prose: slash units, K/M numbers, compressing verbs ("a job budgeted at 20,000 rows/s drew about 22.7K score requests/s") | The spoken form: "a job allowed 20,000 rows a second sent about 22,700 score requests a second". Tables and charts keep the compact form. |
 | An em or en dash | A colon, a comma, parentheses, or a new sentence. |
 | A semicolon welding two claims | Two sentences. |
