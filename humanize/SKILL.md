@@ -134,7 +134,7 @@ Word counts cover body prose only: the TL;DR, the Nomenclature appendix, tables,
 | 53-66 | Agent-written proposals and reports, no cleanup |
 | 30-52 | A plain "remove the slop" rewrite, no skill |
 | 10-19 | The same docs after this skill, before the short-sentence rule |
-| 11-18 | Hand-written fbcode reference docs |
+| 9-20 | Hand-written fbcode reference docs |
 
 The target for a proposal or report is 15 or below. The score sees surface patterns only, so the read-back checks cover what it cannot.
 
