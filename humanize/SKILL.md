@@ -31,8 +31,10 @@ The same draft needs a different rewrite depending on who wrote it, who reads it
 type: report
 purpose: record why nano_retrieval QPS dropped and get the scorer fix approved
 author: Anshul Verma (first person singular)
-readers: GR RL team, who know the trainer but not the scorer internals; define scorer terms
+readers: GR RL team, who know the trainer but not the scorer internals; keep scorer internals out, say their effect
 destination: Google Doc, commented line by line before the Thursday review
+length: 2 pages of body
+depth: decision
 ask: approve the scorer thread-pool fix; owner @anshulverma; by 2026-10-09
 tone: direct, engineer to engineer
 keep: job IDs inline next to each claim; the "Recommended fix" section
@@ -43,6 +45,12 @@ confirmed: 2026-10-05 by anshulverma
 
 - `type` is a row of the table above. `purpose` is what the doc has to get done: a decision, an approval, a record, an update.
 - `author` is whose name the doc goes out under, and in which person (first singular, first plural, impersonal). `readers` says who they are, what they already know, and so which terms need defining.
+- `length` is the body length the doc aims for, in pages or words, outside tables, figures and the appendix. `depth` is how much mechanism the body explains:
+  - `decision`: what is proposed and why, the rules reviewers must agree on, and the evidence each choice rests on. How today's code or another team's system works appears only as the one fact a choice rests on, never with its "because". The default for proposals, RFCs and posts.
+  - `design`: adds the mechanisms a reviewer needs to judge the design.
+  - `reference`: full detail, for runbooks, RCAs and reference docs.
+
+  Together they decide how much detail each sentence carries. When a system is outside the readers' knowledge, keeping its internals out beats defining them: every definition and explanation adds length.
 - `destination` is where people meet the doc. `ask` names the action wanted, its owner and its date, or says `none: record only`.
 - `keep` lists what must survive the rewrite: required sections, strings other tools parse, identifiers, citations. It overrides any default in this skill (for example `no Nomenclature appendix`), and a read-back check it overrides counts as passed; say so in the report.
 - `avoid` holds anything the author has ruled out. `confirmed` gives the date and who confirmed, or reads `no (guessed)`.
@@ -155,13 +163,15 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
    - Fix every item in `vN.md` before going on.
 7. **Read every sentence with a fresh agent.** Give it `vN.md`, the humanize context and the plain-English rules (the transforms table), and ask it to go through the whole doc, sentence by sentence, as one of the `readers`. It lists every sentence that reader would stumble on, with a rewrite that keeps the sentence's fact-sheet literals:
    - an idiom or jargon verb standing in for a mechanism ("failed fast", "ran at its full budget", "retries overload"): say what happened ("each failed request came back in milliseconds, so the trainer sent the next one at once");
-   - a causal link the reader has to supply;
+   - a causal link the reader has to supply, only when the point fails without it; at `decision` depth, a "because" that explains the internals behind a fact is cut instead ("There is no hard ceiling on load today, because the rate budget is per job and configs can override it" keeps only its first clause);
    - a term or label used before the doc says what it means, or never explained, for the `readers` ("Degraded responses also count as scored." before the doc says these are empty or partial responses): lead with the concrete thing, and drop the label or give it afterwards;
    - a word for an internal part of a system the readers do not own ("ranking shards", "in-band drops", tier or service component names), even a plain-sounding one: it reads as a smoke screen. Say the effect on the readers' system instead ("AdFinder skipped half of the servers that score ads, so those ads came back with no value"), and keep the part's name only in the Nomenclature appendix;
    - a clever recast: a point turned into a metaphor or aphorism, or a sentence that describes what happens and leaves the reader to infer the conclusion or the "should". State the consequence and what to do: "A job that silently loses scoring, or trains on partial scores, is running a different experiment, and its results get compared against healthy arms" became, in the author's words, "Getting incomplete scores would mean the experiment integrity of a training run is lost and its results should not be compared against healthy runs.";
    - a detail that does not serve its paragraph's point, which moves to the appendix or is cut ("...and the three-strike limits are defined but never read" in a paragraph whose point is that failed batches are dropped).
 
-   The tells the score counts are a floor: in testing, a doc at score 8 still had all of these, because a word list cannot read. Review the list, apply what holds, and fact-check again. **When the user flags one sentence, treat it as a sample:** fix it, add the pattern to this skill, then rerun this read on the whole doc for that pattern, never only on the flagged sentence.
+   - a detail deeper than `depth`, or one that pushes the body past `length`: cut it, or move it to the appendix.
+
+   The read prefers cutting to explaining. At `decision` depth it ends with fewer body words than it started with, and no pass grows the body past `length`. In testing, a read without `depth` proposed about 80 rewrites that mostly added definitions and "because" clauses, and the author rejected the direction: explaining every internal makes the doc long and hard to read. The tells the score counts are a floor: in testing, a doc at score 8 still had all of these, because a word list cannot read. Review the list, apply what holds, and fact-check again. **When the user flags one sentence, treat it as a sample:** fix it, add the pattern to this skill, then rerun this read on the whole doc for that pattern, never only on the flagged sentence.
 8. **Score again** with every version so far, and run the read-back checks on `vN.md`.
 9. **Run another pass from `vN.md`** while the score is above 15, a read-back check fails or the sentence read finds anything, as long as the last pass improved one of them, and there have been fewer than three passes. Steps 4 to 8 repeat for each pass, including the fact check.
 10. **Deliver.**
@@ -216,6 +226,6 @@ Run these on the finished version, not on your memory of writing it. They are wr
 5. The prose word count (as `slop_score.py` prints it) is at most 5 percent above the original's.
 6. Each section's first sentence states its point, and every other sentence in it supports that point. Bold spans number no more than the sections. No cross-reference points at a section name or number that no longer exists.
 7. The title is at most about 8 words or 60 characters, starts with the bracketed doc type, and is a noun phrase, not a sentence. Read the title and TL;DR alone. They give the problem, the fix and what it guarantees, each bullet holds one idea and follows from the one before (the fix is introduced as the fix to the stated problem), and no bullet carries a size, owner, identifier, list of asks or operational detail. Then read only the first sentence of each section in order: they should tell the same story without gaps.
-8. Every sentence `slop_score.py --detail` lists as a long sentence is split or rewritten, in list items and spec rules as much as in paragraphs; the score only penalises a share above 15%, so a passing score does not mean this check passed. No sentence stacks a definition or aside onto a sentence doing other work, and every body definition is of a term the `readers` field says they do not know, placed at or before its first use. No prose sentence uses a compressing verb (`slop_score.py --detail` counts them); slash units and K/M numbers are fine. No raw identifier remains in the body outside code pointers, literal-string tables and the Nomenclature appendix (`slop_score.py --detail` lists them), and every plain name has a Nomenclature row.
+8. The body fits the context's `length` (`slop_score.py` prints body words; count about 500 per page) and explains no more than its `depth` allows. Every sentence `slop_score.py --detail` lists as a long sentence is split or rewritten, in list items and spec rules as much as in paragraphs; the score only penalises a share above 15%, so a passing score does not mean this check passed. No sentence stacks a definition or aside onto a sentence doing other work, and every body definition is of a term the `readers` field says they do not know, placed at or before its first use. No prose sentence uses a compressing verb (`slop_score.py --detail` counts them); slash units and K/M numbers are fine. No raw identifier remains in the body outside code pointers, literal-string tables and the Nomenclature appendix (`slop_score.py --detail` lists them), and every plain name has a Nomenclature row.
 
 For a Google Doc, also run `meta google.docs lint --id=<id> --category=writing_style`.
