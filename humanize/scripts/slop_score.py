@@ -41,9 +41,10 @@ TELLS = {
 # want to click. Counted only outside links.
 REFERENCE = r"\b(?:D\d{7,}|T\d{8,}|S\d{6}|P\d{9,})\b|\b[\w/.-]+\.(?:py|cpp|h|php|thrift|yaml|cconf|md):\d+"
 LINK = r"\[[^\]]*\]\([^)]*\)|<a\b[^>]*>.*?</a>|https?://\S+"
-# Notation an agent compresses into prose and a person spells out: slash units
-# ("rows/s", "9K/s") and K/M-abbreviated numbers ("22.7K"). Tables keep them.
-NOTATION = r"\b\d[\d.,]*\s?[KkMm]?\s?(?:[A-Za-z]+)?/(?:s|sec|min|h|hr|day|rank|job)\b|\b(?:rows|requests|calls|ops|users|ads|QPS)/(?:s|sec|min|h)\b|\b\d+(?:\.\d+)?[KM]\b"
+# K/M-abbreviated numbers ("22.7K", "3.2M") that an agent compresses into prose
+# and a person spells out ("22,700", "3.2 million"). Slash units such as rows/s
+# are normal notation and are not counted. Tables and captions keep K/M.
+NOTATION = r"\b\d+(?:\.\d+)?[KM]\b"
 # A prose run longer than this many words with no heading, list, table,
 # diagram, image or callout between its paragraphs reads as a wall of text.
 WALL_WORDS = 300
