@@ -22,7 +22,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fact_check import load_facts, normalise  # noqa: E402
+from fact_check import has_literal, load_facts, normalise  # noqa: E402
 from slop_score import metrics as slop_metrics  # noqa: E402
 
 WORDS_PER_PAGE = 500
@@ -35,11 +35,11 @@ def body(path: str) -> str:
 def length_target(facts_path: str) -> int | None:
     """Upper bound of the context's `length` field, in body words."""
     m = re.search(r"(?m)^length:\s*(.*)$", open(facts_path, encoding="utf-8").read())
-    n = m and re.search(r"(\d[\d,]*)(?:\s*-\s*(\d[\d,]*))?\s*(pages?|words?)", m.group(1))
+    n = m and re.search(r"(\d[\d,]*(?:\.\d+)?)(?:\s*-\s*(\d[\d,]*(?:\.\d+)?))?\s*(pages?|words?)", m.group(1))
     if not n:
         return None
-    top = int((n.group(2) or n.group(1)).replace(",", ""))
-    return top * WORDS_PER_PAGE if n.group(3).startswith("page") else top
+    top = float((n.group(2) or n.group(1)).replace(",", ""))
+    return round(top * WORDS_PER_PAGE if n.group(3).startswith("page") else top)
 
 
 def rewrite_share(delivered: str, edited: str) -> float:
@@ -53,7 +53,7 @@ def rewrite_share(delivered: str, edited: str) -> float:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(usage=__doc__)
+    ap = argparse.ArgumentParser(usage=__doc__.replace("%", "%%"))
     ap.add_argument("--facts", required=True)
     ap.add_argument("--doc", required=True)
     ap.add_argument("--audit")
@@ -71,15 +71,17 @@ def main() -> None:
 
     facts = load_facts(o.facts)
     text = normalise(body(o.doc))
-    intact = sum(all(normalise(lit) in text for lit in lits) for _, _, lits, _ in facts)
+    intact = sum(all(has_literal(text, lit) for lit in lits) for _, _, lits, _ in facts)
     row("fact retention (literals)", f"{intact}/{len(facts)} = {intact / max(len(facts), 1):.0%}", "100%", intact == len(facts), True)
 
     if o.audit:
         a = json.load(open(o.audit))
-        changed = [f["id"] for f in a["meaning"] if f["status"] != "kept"]
-        n = len(a["meaning"])
+        # The denominator is the fact sheet, not the audit: a fact the audit leaves out is not kept.
+        status = {f["id"]: f["status"] for f in a["meaning"]}
+        changed = [fid for fid, _, _, _ in facts if status.get(fid, "unaudited") != "kept"]
+        n = len(facts)
         row("fact meaning kept", f"{n - len(changed)}/{n} = {(n - len(changed)) / max(n, 1):.0%}"
-            + (f" (changed: {', '.join(changed)})" if changed else ""), "100%", not changed, True)
+            + (f" (not kept: {', '.join(changed)})" if changed else ""), "100%", not changed, True)
         bad = a["unsupported_claims"]
         total = a["claims_total"]
         row("factual precision", f"{total - len(bad)}/{total} = {(total - len(bad)) / max(total, 1):.0%}", "100%", not bad, True)
@@ -93,6 +95,10 @@ def main() -> None:
         g = json.load(open(o.graded))
         for key, label, target in (("full", "cold-read comprehension", 0.9), ("tldr", "TL;DR-only comprehension", 1.0)):
             qs = g[key]
+            if not qs:
+                # A doc type with no TL;DR and no stand-in has nothing for this reader to read.
+                row(label, "not applicable for this doc type", f"{target:.0%}", None)
+                continue
             right = sum(q["correct"] for q in qs)
             row(label, f"{right}/{len(qs)} = {right / max(len(qs), 1):.0%}", f"{target:.0%}", right / max(len(qs), 1) >= target)
         terms = g.get("unknown_terms", [])

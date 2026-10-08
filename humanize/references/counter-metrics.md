@@ -30,13 +30,13 @@ Generated from the fact sheet, not the doc, so it measures whether the doc conve
 
 ## Cold reads (per version)
 
-Two agents, each told not to use any tools, which is how the prompt stands in for having none. One gets the whole doc, the other only the title and TL;DR. Each gets the quiz questions after the text, without answers.
+Two agents, each told not to use any tools, which is how the prompt stands in for having none. One gets the whole doc, the other only the title and TL;DR. Each gets the quiz questions after the text, without answers. A doc type with no TL;DR by design gets its stand-in instead: a deck's title slide and first content slide, a post's first line. A runbook or reference has none, so skip the second reader and grade `tldr` as an empty list, which `metrics.py` prints as not applicable.
 
 > Read the document below once. Do not use any tools, search, or outside knowledge of these systems: answer only from the text. Then answer each question in one short sentence, or write "not stated" when the text does not say. Finally, list every term or label the text uses that you could not work out from the text itself. Return only JSON: `{"answers": [{"id": 1, "answer": "..."}], "unknown_terms": ["..."]}`.
 
 ## Grading (per version)
 
-> Here are quiz questions with their answer keys, and two sets of answers: `full`, from a reader of the whole document, and `tldr`, from a reader of the title and TL;DR, who should only be marked on questions with `"tldr": true`. Mark an answer correct when it gives the key's substance; wording does not matter, a missing qualifier that changes the meaning does. Return only JSON: `{"full": [{"id": 1, "correct": true}], "tldr": [{"id": 3, "correct": false}], "unknown_terms": [...]}`, with `unknown_terms` copied from the full-doc reader but kept only where the term appears in the body (appendix code pointers and Nomenclature rows are deliberate reference material) and the `readers` field (given to you) says the audience would not know it. A reader with no context flags everything; the doc is written for its readers, so a term they already know (for an RL team: SEV, rank, reward) does not count.
+> Here are the document, quiz questions with their answer keys, and two sets of answers: `full`, from a reader of the whole document, and `tldr`, from a reader of the title and TL;DR, who should only be marked on questions with `"tldr": true`. Mark an answer correct when it gives the key's substance; wording does not matter, a missing qualifier that changes the meaning does. Return only JSON: `{"full": [{"id": 1, "correct": true}], "tldr": [{"id": 3, "correct": false}], "unknown_terms": [...]}`, with `unknown_terms` copied from the full-doc reader but kept only where the term appears in the body (appendix code pointers and Nomenclature rows are deliberate reference material) and the `readers` field (given to you) says the audience would not know it. A reader with no context flags everything; the doc is written for its readers, so a term they already know (for an RL team: SEV, rank, reward) does not count.
 
 ## Figure check (per version)
 
@@ -48,4 +48,4 @@ Collect the results as `{"figures": [...]}` in `figures-vN.json` and pass it wit
 
 ## Author rewrite share
 
-After delivering a version, the next time the doc is fetched, before any new pass, diff the two: `metrics.py --author-pair delivered.md:edited.md`. It counts the share of the delivered doc's words the author changed or removed, tables and TL;DR included. Keep each delivered readback (`liveN.md`) so the pairs exist. Feedback given in chat instead of in the doc does not show up here; tally those flags in the report.
+After delivering a version, the next time the doc is fetched, before any new pass, diff the two: `metrics.py --facts facts.md --doc edited.md --author-pair delivered.md:edited.md` (`--facts` and `--doc` are always required). It counts the share of the delivered doc's words the author changed or removed, tables and TL;DR included. Keep each delivered readback (`liveN.md`) so the pairs exist. Feedback given in chat instead of in the doc does not show up here; tally those flags in the report.

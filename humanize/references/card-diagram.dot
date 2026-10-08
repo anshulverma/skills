@@ -1,6 +1,6 @@
 // Card-style flow infographic for humanize. Copy it, rename the stages and badges, keep the styling.
 // Render: dot -Tpng -Gdpi=170 card-diagram.dot -o figure-N.png, then look at the PNG.
-// Badge text stays within about 4 words; the caption explains each numbered marker.
+// Label each element in place, at most about 4 words; no numbered markers for the caption to decode.
 digraph G {
   graph [rankdir=LR, bgcolor="#fcfcfb", pad=0.3, nodesep=0.5, ranksep=0.9, fontname="Liberation Sans", labelloc=b, label=<<TABLE BORDER="0" CELLSPACING="8" CELLPADDING="5">
       <TR>
@@ -14,16 +14,16 @@ digraph G {
   a [label=<
     <TABLE BORDER="1" COLOR="#2a78d6" CELLBORDER="0" CELLSPACING="6" CELLPADDING="7" STYLE="rounded" BGCOLOR="white">
       <TR><TD BGCOLOR="#2a78d6" STYLE="rounded"><FONT COLOR="white" POINT-SIZE="18"><B>Stage A</B></FONT></TD></TR>
-      <TR><TD BGCOLOR="#e3eefb" STYLE="rounded" ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#0b0b0b">&#9312;  Short label</FONT></TD></TR>
-      <TR><TD BGCOLOR="#e3eefb" STYLE="rounded" ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#0b0b0b">&#9313;  Short label</FONT></TD></TR>
-      <TR><TD BGCOLOR="#e3eefb" STYLE="rounded" ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#0b0b0b">&#9314;  Short label</FONT></TD></TR>
+      <TR><TD BGCOLOR="#e3eefb" STYLE="rounded" ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#0b0b0b">Short label</FONT></TD></TR>
+      <TR><TD BGCOLOR="#e3eefb" STYLE="rounded" ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#0b0b0b">Short label</FONT></TD></TR>
+      <TR><TD BGCOLOR="#e3eefb" STYLE="rounded" ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#0b0b0b">Short label</FONT></TD></TR>
     </TABLE>>];
 
   b [label=<
     <TABLE BORDER="1" COLOR="#eb6834" CELLBORDER="0" CELLSPACING="6" CELLPADDING="7" STYLE="rounded" BGCOLOR="white">
       <TR><TD BGCOLOR="#eb6834" STYLE="rounded"><FONT COLOR="white" POINT-SIZE="18"><B>Stage B</B></FONT></TD></TR>
-      <TR><TD BGCOLOR="#fdf1d6" STYLE="rounded" ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#0b0b0b">&#9315;  Short label</FONT></TD></TR>
-      <TR><TD BGCOLOR="#fdf1d6" STYLE="rounded" ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#0b0b0b">&#9316;  Short label</FONT></TD></TR>
+      <TR><TD BGCOLOR="#fdf1d6" STYLE="rounded" ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#0b0b0b">Short label</FONT></TD></TR>
+      <TR><TD BGCOLOR="#fdf1d6" STYLE="rounded" ALIGN="LEFT"><FONT POINT-SIZE="14" COLOR="#0b0b0b">Short label</FONT></TD></TR>
     </TABLE>>];
 
   c [label=<

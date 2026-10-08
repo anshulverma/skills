@@ -14,6 +14,7 @@ none is decorative.
 | Components exchanging messages over time | Mermaid sequence diagram |
 | A trend, or numbers compared across categories | A chart. When the data lives in a Daiquery query, Deltoid experiment or Metric 360 metric, embed it live; otherwise render a PNG following the `dataviz` skill (REQUIRED SUB-SKILL for any chart). |
 | Three to six headline numbers | A small "at a glance" table near the top |
+| Two to four headline numbers on a slide | Big-number cards, written as a `cards` block (see `slides.md`) |
 | A risk, a caveat, or a decision someone must make | A tinted callout |
 | Code the reader has to see | A CodeHub embed, commit-pinned |
 
@@ -74,7 +75,7 @@ Run `meta google.docs ghtml` for the full reference. The pieces this skill uses:
 ```
 
 - Mermaid source goes in unescaped (`-->` stays as is), with each newline written as `&#10;` and no `<br/>` inside labels. HTML-escaped source or `<br/>` labels land in the doc as a paragraph of plain text instead of a diagram. Confirm on readback that each diagram came back as `<embed type="mermaid" src="https://draw.internalmeta.com/...">`.
-- Title and TL;DR: `<p data-style="TITLE">Plain-words title</p>`, then `<aside style="background-color:#E8F0FE"><b>TL;DR</b><ul><li>problem</li><li>proposal</li><li>ask</li></ul></aside>`. Also set the doc's own title with `meta google.docs update --id=<id> --title="..."`.
+- Title and TL;DR: `<p data-style="TITLE">Plain-words title</p>`, then `<aside style="background-color:#E8F0FE"><b>TL;DR</b><ul><li>problem</li><li>fix</li><li>guarantee</li></ul></aside>`. Also set the doc's own title with `meta google.docs update --id=<id> --title="..."`.
 - Callout tints: info `#E8F0FE`, success `#E6F4EA`, warning `#FEF7E0`, error `#FCE8E6`.
 - A `file:///` image is uploaded automatically on a file-based `apply`. Keep each image or embed in its own `<p>`.
 - After applying, read the doc back (`meta google.docs get --id=<id>`) and confirm every diagram and image rendered. If an image is missing, upload it with `google-mux docs upload-image <png>` and insert it with `meta google.docs insert image --id <doc> --image <url>`.

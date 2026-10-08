@@ -33,7 +33,9 @@ notes too, so a fact that moves off a slide into its notes still counts as kept.
   there is no "Figure N" caption and no "Figure 1 shows" sentence. A drawing of a rule rather
   than of data is marked "Illustration" on the slide and obeys the rule it draws.
 - **Big-number cards:** the number, a label of 2 to 4 words, and a consequence tagline under
-  it ("3.2M requests/min" / "on 10-01" / "tiers fall over at 2.0M").
+  it ("3.2M requests/min" / "on 10-01" / "tiers fall over at 2.0M"). In the working format,
+  write them as a fenced `cards` block, one card per line: `3.2M requests/min | on 10-01 |
+  tiers fall over at 2.0M`. The scorer counts that block as the slide's visual.
 - **Names the room can read.** Use plain names, or the term the audience already says out
   loud; other identifiers, and any term that needs defining, go in the notes. The exception
   is an identifier an ask or work item names: it stays on that slide, in backticks, because

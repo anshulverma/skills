@@ -68,12 +68,14 @@ WEIGHTS = {
 # next heading) is reference material, not prose, so it stays out of every count.
 NOMENCLATURE = re.compile(r"(?ims)^[#*\s]*(?:appendix:?\s*)?nomenclature\b.*?(?=^#|\Z)")
 LIST_LINE = re.compile(r"\s*(?:[-*]|\d+\.)\s")
-NON_PROSE = re.compile(r"\s*(?:[-*#|>]|\d+\.)")
+# A bullet, heading, table row or quote; a bold-led paragraph ("**Note:** ...") is prose.
+NON_PROSE = re.compile(r"\s*(?:[-*]\s|#|\||>|\d+\.\s)")
 
 
 def tldr_text(raw: str) -> str:
     """The TL;DR's text, from a markdown callout or a Google Docs table cell, for counting tells."""
-    m = re.search(r"\*\*TL;DR\*\*(.*?)(?:\n\s*\n|\Z)", raw, re.S)
+    # A blank line may follow the header, as prose_only allows.
+    m = re.search(r"\*\*TL;DR\*\*[ \t]*(?:\n[ \t]*(?=\n))?(.*?)(?:\n\s*\n|\Z)", raw, re.S)
     return re.sub(r"<br>|\|", "\n", m.group(1)) if m else ""
 
 
@@ -92,8 +94,9 @@ def prose_only(text: str) -> str:
 
 
 def paragraphs(text: str) -> list[str]:
-    blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()]
-    return [b for b in blocks if not NON_PROSE.match(b)]
+    # A heading glued to its paragraph is split off, so the paragraph still counts.
+    blocks = [re.sub(r"\A(?:\s*#[^\n]*\n)+", "", b).strip() for b in re.split(r"\n\s*\n", text)]
+    return [b for b in blocks if b and not NON_PROSE.match(b)]
 
 
 def sentences(paras: list[str]) -> list[str]:
@@ -174,7 +177,7 @@ TOPIC_TITLE = re.compile(
     r"proposed design|design|rollout(?: plan)?|open questions)\b\W*(?::|$)",
     re.IGNORECASE,
 )
-VISUAL = re.compile(r"!\[|<img\b|<embed\b|```mermaid|^\s*\|", re.MULTILINE)
+VISUAL = re.compile(r"!\[|<img\b|<embed\b|```(?:mermaid|cards)|^\s*\|", re.MULTILINE)
 
 
 def slides(raw: str) -> list[tuple[str, str, str]]:
@@ -250,7 +253,7 @@ def score(m: dict[str, float], weights: dict[str, tuple[int, float]]) -> float:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(usage=__doc__)
+    parser = argparse.ArgumentParser(usage=__doc__.replace("%", "%%"))
     parser.add_argument("files", nargs="+")
     parser.add_argument("--detail", action="store_true")
     parser.add_argument("--type", choices=["prose", "slides"], default="prose")
@@ -283,7 +286,7 @@ def main() -> None:
     for i, (path, s, m, _) in enumerate(results):
         label = "orig" if i == 0 else f"v{i}"
         change = "" if i == 0 else f"{s - base_score:+.0f}"
-        words = "" if i == 0 else f"{(m['words'] - base_words) / base_words:+.0%}"
+        words = "" if i == 0 or not base_words else f"{(m['words'] - base_words) / base_words:+.0%}"
         print(f"{label:6} {s:5.0f} {change:>7} {m['words']:6d} {words:>8}  {path}")
 
 

@@ -47,6 +47,15 @@ def normalise(text: str) -> str:
     return re.sub(r"\s+", " ", text).lower()
 
 
+def has_literal(body: str, lit: str) -> bool:
+    """A literal may not start mid-word ("only" is not in "Commonly") or extend a number
+    ("5 min" is not in "15 min", "8" is not in "80"). A word stem may take a suffix."""
+    lit = normalise(lit).strip()
+    lead = r"(?<![\w.])" if lit[:1].isdigit() else r"(?<!\w)" if lit[:1].isalnum() else ""
+    trail = r"(?!\d|\.\d)" if lit[-1:].isdigit() else ""
+    return re.search(lead + re.escape(lit) + trail, body) is not None
+
+
 def main() -> None:
     args = sys.argv[1:]
     figures = args[args.index("--figures") + 1:] if "--figures" in args else []
@@ -69,7 +78,7 @@ def main() -> None:
         if path in figures:
             missing = []
         else:
-            missing = [(fid, [lit for lit in lits if normalise(lit) not in body]) for fid, _, lits, _ in facts]
+            missing = [(fid, [lit for lit in lits if not has_literal(body, lit)]) for fid, _, lits, _ in facts]
             missing = [(fid, lits) for fid, lits in missing if lits]
             print(f"{path}: {len(facts) - len(missing)}/{len(facts)} facts intact")
         for fid, lits in missing:
