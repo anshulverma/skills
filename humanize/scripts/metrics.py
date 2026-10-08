@@ -23,13 +23,13 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fact_check import has_literal, load_facts, normalise  # noqa: E402
-from slop_score import metrics as slop_metrics  # noqa: E402
+from slop_score import metrics as slop_metrics, strip_frontmatter  # noqa: E402
 
 WORDS_PER_PAGE = 500
 
 
 def body(path: str) -> str:
-    return re.sub(r"(?s)<!--.*?-->", "", open(path, encoding="utf-8").read())
+    return strip_frontmatter(re.sub(r"(?s)<!--.*?-->", "", open(path, encoding="utf-8").read()))
 
 
 def length_target(facts_path: str) -> int | None:
@@ -104,7 +104,8 @@ def main() -> None:
         terms = g.get("unknown_terms", [])
         row("unknown terms (cold read)", str(len(terms)) + (f": {', '.join(terms)}" if terms else ""), "0", not terms)
 
-    words = int(slop_metrics(body(o.doc))[0]["words"])
+    # `length` covers the body, so everything from the first appendix heading on is left out.
+    words = int(slop_metrics(re.split(r"(?mi)^#+\s*appendix", body(o.doc))[0])[0]["words"])
     target = length_target(o.facts)
     if target:
         row("length vs target", f"{words} / {target} body words = {words / target:.2f}", "<= 1.00", words <= target)

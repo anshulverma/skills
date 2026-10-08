@@ -23,6 +23,6 @@ its author still rewrote it, and the difference is the lesson.
 2. **One idea per bullet.** The bullet that carried two mechanisms (per-rank backoff and the server quota) became two, joined by "Additionally".
 3. **Intent first.** "To keep experiments honest ..., failed rows get no fabricated rewards" became "We ensure integrity of training experiments by not fabricating reward signals ...": the goal, then the means, in "we ensure X by Y" form.
 4. **A short "because".** The cause became the root cause in a few words: "because total load was not capped", not the two mechanisms behind it.
-5. **No restated opposite, no aside.** "Send less traffic, never more" lost "never more", and the quota bullet lost ", one limit for all callers together,", becoming one plain claim.
+5. **No restated opposite, no aside.** "Send less traffic, never more" lost "never more", and the quota bullet lost its aside about callers ("for all callers together"), becoming one plain claim.
 6. **No unconfirmed numbers.** The quota's "about 9K requests/s" came out: the quota's owners had not set it, so it was an assumption, and sizes belong in the body anyway.
 7. **One active guarantee.** The guarantee became one sentence naming the choice ("instead stopping the training job automatically"), and the reporting metric moved to the body.

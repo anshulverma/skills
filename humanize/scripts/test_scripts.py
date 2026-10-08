@@ -12,7 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from fact_check import has_literal, normalise  # noqa: E402
 from metrics import length_target  # noqa: E402
-from slop_score import long_sentences, metrics, tldr_text  # noqa: E402
+from slop_score import long_sentences, metrics, strip_frontmatter, tldr_text, wall_share  # noqa: E402
 
 
 def write(d: str, name: str, text: str) -> str:
@@ -33,6 +33,16 @@ def main() -> None:
     assert has_literal(normalise("Shedding request: x"), "Shedding request:")
     assert not has_literal(normalise("80 jobs"), "8") and has_literal(normalise("the tiers crash-looped"), "crash-loop")
     assert has_literal(normalise("Trainer._handle_host_preempt"), "_handle_host_preempt")
+    assert not has_literal(normalise("took 1,500 ms"), "500 ms") and not has_literal(normalise("10,000 rows"), "10")
+    assert has_literal(normalise("ranges 2.0-2.3M"), "2.3M") and not has_literal(normalise("lines 279-281"), "281", ranges=True)
+
+    # Frontmatter is not prose.
+    fm = "---\nname: x\ndescription: " + " ".join(["word"] * 30) + "\n---\n\nShort body.\n"
+    assert not long_sentences(strip_frontmatter(fm)) and strip_frontmatter(fm).startswith("\nShort")
+
+    # A heading glued to a long paragraph still counts toward walls.
+    para = " ".join(["word"] * 400) + "."
+    assert wall_share("## Heading\n" + para + "\n") == wall_share("## Heading\n\n" + para + "\n") == 1.0
 
     # A blank line after the TL;DR header still counts its bullets.
     assert "never more" in tldr_text("**TL;DR**\n\n- send less, never more.\n")
@@ -52,6 +62,12 @@ def main() -> None:
         audit = write(d, "audit.json", json.dumps({"meaning": [], "claims_total": 1, "unsupported_claims": []}))
         r = run(os.path.join(HERE, "metrics.py"), "--facts", f, "--doc", doc, "--audit", audit)
         assert r.returncode == 1 and "0/1" in r.stdout, r.stdout
+
+        # Length leaves out the appendix.
+        f2 = write(d, "facts2.md", "length: 10 words\nF1 | a | 5 min | source: x\n")
+        doc2 = write(d, "doc2.md", "Holds for 5 min.\n\n## Appendix: notes\n\n" + " ".join(["more"] * 50) + ".\n")
+        r = run(os.path.join(HERE, "metrics.py"), "--facts", f2, "--doc", doc2)
+        assert re.search(r"length vs target\s+4 / 10", r.stdout), r.stdout
 
         # A usage error prints usage, not a traceback.
         r = run(os.path.join(HERE, "metrics.py"), "--author-pair", "a:b")

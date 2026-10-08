@@ -47,12 +47,13 @@ def normalise(text: str) -> str:
     return re.sub(r"\s+", " ", text).lower()
 
 
-def has_literal(body: str, lit: str) -> bool:
-    """A literal may not start mid-word ("only" is not in "Commonly") or extend a number
-    ("5 min" is not in "15 min", "8" is not in "80"). A word stem may take a suffix."""
+def has_literal(body: str, lit: str, ranges: bool = False) -> bool:
+    """A literal may not start mid-word ("only" is not in "Commonly") or inside a number
+    ("5 min" is not in "15 min" or "1,500 min", "8" is not in "80"). A word stem may take a
+    suffix. With ranges=True, the far end of a range does not count either ("281" in "279-281")."""
     lit = normalise(lit).strip()
-    lead = r"(?<![\w.])" if lit[:1].isdigit() else r"(?<!\w)" if lit[:1].isalnum() else ""
-    trail = r"(?!\d|\.\d)" if lit[-1:].isdigit() else ""
+    lead = (r"(?<![\w.,-])" if ranges else r"(?<![\w.,])") if lit[:1].isdigit() else r"(?<!\w)" if lit[:1].isalnum() else ""
+    trail = r"(?!\d|[.,]\d)" if lit[-1:].isdigit() else ""
     return re.search(lead + re.escape(lit) + trail, body) is not None
 
 
@@ -83,8 +84,7 @@ def main() -> None:
             print(f"{path}: {len(facts) - len(missing)}/{len(facts)} facts intact")
         for fid, lits in missing:
             print(f"  {fid} missing: {'; '.join(lits)}")
-        # Number boundaries, so an assumed "9K" does not match "19K" and "281" does not match "279-281".
-        present = [(fid, [lit for lit in lits if re.search(rf"(?<![\d.,-]){re.escape(normalise(lit))}(?![\w])", body)])
+        present = [(fid, [lit for lit in lits if has_literal(body, lit, ranges=True)])
                    for fid, _, lits, _ in assumed]
         present = [(fid, lits) for fid, lits in present if lits]
         for fid, lits in present:

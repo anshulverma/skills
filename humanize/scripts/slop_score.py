@@ -72,6 +72,11 @@ LIST_LINE = re.compile(r"\s*(?:[-*]|\d+\.)\s")
 NON_PROSE = re.compile(r"\s*(?:[-*]\s|#|\||>|\d+\.\s)")
 
 
+def strip_frontmatter(raw: str) -> str:
+    """YAML frontmatter at the top of a file is metadata, not prose."""
+    return re.sub(r"\A---\n(?:[\w-]+:.*\n|[ \t]+.*\n)*---\n", "", raw)
+
+
 def tldr_text(raw: str) -> str:
     """The TL;DR's text, from a markdown callout or a Google Docs table cell, for counting tells."""
     # A blank line may follow the header, as prose_only allows.
@@ -111,7 +116,12 @@ def wall_share(raw: str) -> float:
     text = re.sub(r"(?s)```.*?```", "\n\nBREAK\n\n", raw)
     text = re.sub(r"(?is)<(?:embed|img|aside|table)\b.*?(?:</\w+>|/?>)", "\n\nBREAK\n\n", text)
     run, walls, total = 0, 0, 0
-    for block in [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()] + ["BREAK"]:
+    blocks = []
+    for b in re.split(r"\n\s*\n", text):
+        # A heading glued to its paragraph breaks the run, and the paragraph still counts, as in paragraphs().
+        head = re.match(r"\A(?:\s*#[^\n]*\n)+", b)
+        blocks += ["BREAK", b[head.end():]] if head else [b]
+    for block in [b.strip() for b in blocks if b.strip()] + ["BREAK"]:
         if block == "BREAK" or NON_PROSE.match(block) or block.startswith("!["):
             walls += run if run > WALL_WORDS else 0
             run = 0
@@ -263,7 +273,7 @@ def main() -> None:
     results = []
     for path in args:
         # The humanize-context block (an HTML comment) is metadata, not prose.
-        raw = re.sub(r"(?s)<!--.*?-->", "", open(path, encoding="utf-8").read())
+        raw = strip_frontmatter(re.sub(r"(?s)<!--.*?-->", "", open(path, encoding="utf-8").read()))
         m, tells, flags = slide_metrics(raw) if is_slides else (*metrics(raw), [])
         results.append((path, score(m, weights), m, tells))
         if detail:
