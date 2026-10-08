@@ -34,6 +34,8 @@ def main() -> None:
     assert not has_literal(normalise("80 jobs"), "8") and has_literal(normalise("the tiers crash-looped"), "crash-loop")
     assert has_literal(normalise("Trainer._handle_host_preempt"), "_handle_host_preempt")
     assert not has_literal(normalise("took 1,500 ms"), "500 ms") and not has_literal(normalise("10,000 rows"), "10")
+    assert not any(has_literal(normalise("The shards are scored in nano_retrieval with GRPO"), x) for x in ("AR", "NaN", "GR"))
+    assert has_literal(normalise("GRPO's loss and NaN rows"), "GRPO") and has_literal(normalise("NaN rows"), "NaN")
     assert has_literal(normalise("ranges 2.0-2.3M"), "2.3M") and not has_literal(normalise("lines 279-281"), "281", ranges=True)
 
     # Frontmatter is not prose.
@@ -43,8 +45,12 @@ def main() -> None:
         assert strip_frontmatter("---\n" + shape + "---\nBody.\n") == "Body.\n", shape
 
     # Every appendix heading form ends the body.
-    for head in ("## Appendix: notes", "# Appendices", "## 6. Appendix", "## **Appendix**", "## A. Appendix"):
+    for head in ("## Appendix: notes", "# Appendices", "## 6. Appendix", "## **Appendix**", "## A. Appendix", "**Appendix**", "## Nomenclature"):
         assert metrics("Body words here.\n\n" + head + "\n\n" + " ".join(["more"] * 50) + ".\n")[0]["words"] == 3, head
+
+    # Appendix prose is out of the word count but its tells still count.
+    tells = sum(metrics("Body words here.\n\n## Appendix: details\n\nIt is worth noting that we delve into this.\n")[1].values())
+    assert tells > 0, tells
 
     # A heading glued to a long paragraph still counts toward walls.
     para = " ".join(["word"] * 400) + "."
@@ -89,6 +95,11 @@ def main() -> None:
         deck = write(d, "deck.md", "# Title\n\n---\n\n# Only a title\n\n![x](x.png)\n")
         r = run(os.path.join(HERE, "slop_score.py"), deck, deck, "--type", "slides")
         assert r.returncode == 0, r.stderr
+
+        # A Slides export's leading --- and a colon title is a slide, not frontmatter.
+        deck2 = write(d, "deck2.md", "---\nRollout: three phases\n\nPhase one ships first.\n\n---\n\n# Next\n\n![x](x.png)\n")
+        r = run(os.path.join(HERE, "slop_score.py"), deck2, "--type", "slides", "--detail")
+        assert re.search(r"orig\s+\d+\s+\d+", r.stdout) and " 4 " in r.stdout.splitlines()[-1], r.stdout
 
         # A cards block counts as a slide's visual.
         cards = write(d, "cards.md", "# Title\n\n---\n\n# Three jobs sent 3.2M\n\n```cards\n3.2M requests/min | on 10-01 | tiers fell over\n```\n")

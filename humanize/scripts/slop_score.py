@@ -68,7 +68,8 @@ WEIGHTS = {
 # next heading) is reference material, not prose, so it stays out of every count.
 # Everything from the first appendix heading on ("## Appendix: ...", "## Appendices", "## 6. Appendix",
 # "## **Appendix**") is reference material: out of the body word count and the length check.
-APPENDIX = re.compile(r"(?mi)^#+[ \t]*(?:\*\*)?(?:[a-z0-9]{1,3}[.)][ \t]*)?appendi(?:x|ces)\b")
+# A bold line ("**Appendix**") or a Nomenclature section with more sections after it counts as the start too.
+APPENDIX = re.compile(r"(?mi)^(?:#+[ \t]*(?:\*\*)?|\*\*)(?:[a-z0-9]{1,3}[.)][ \t]*)?(?:appendi(?:x|ces)|nomenclature)\b")
 NOMENCLATURE = re.compile(r"(?ims)^[#*\s]*(?:appendix:?\s*)?nomenclature\b.*?(?=^#|\Z)")
 LIST_LINE = re.compile(r"\s*(?:[-*]|\d+\.)\s")
 # A bullet, heading, table row or quote; a bold-led paragraph ("**Note:** ...") is prose.
@@ -88,9 +89,11 @@ def tldr_text(raw: str) -> str:
     return re.sub(r"<br>|\|", "\n", m.group(1)) if m else ""
 
 
-def prose_only(text: str) -> str:
-    """Prose a reader reads: no code blocks, tables, images or link targets."""
-    text = NOMENCLATURE.sub("", re.sub(r"(?s)```.*?```", "", APPENDIX.split(text, 1)[0]))
+def prose_only(text: str, appendix: bool = False) -> str:
+    """Prose a reader reads: no code blocks, tables, images or link targets. The appendix is
+    left out unless asked for: it is not body, but its prose still gets checked for tells."""
+    text = text if appendix else APPENDIX.split(text, 1)[0]
+    text = NOMENCLATURE.sub("", re.sub(r"(?s)```.*?```", "", text))
     # The TL;DR repeats the body by design, so it stays out of the length comparison.
     text = re.sub(r"\*\*TL;DR\*\*[ \t]*\n(?:[ \t]*\n)?(?:[ \t]*[-*] [^\n]*\n)+", "", text)
     text = re.sub(r"(?m)^\s*\|.*$", "", text)
@@ -153,7 +156,7 @@ def metrics(raw: str) -> tuple[dict[str, float], dict[str, int]]:
     one_sentence = sum(1 for p in paras if len(sentences([p])) == 1 and not p.rstrip().endswith(":"))
     headings = sum(1 for ln in lines if ln.lstrip().startswith("#"))
     # The TL;DR stays out of the word counts, but its tells count: an executive reads it first.
-    told = text + "\n" + re.sub(r"\]\([^)]*\)", "]", tldr_text(raw))
+    told = prose_only(raw, appendix=True) + "\n" + re.sub(r"\]\([^)]*\)", "]", tldr_text(raw))
     tells = {n: len(re.findall(p, told, flags=re.IGNORECASE)) for n, p in TELLS.items()}
     cv = statistics.pstdev(lengths) / statistics.mean(lengths) if len(lengths) > 2 else 1.0
     list_share = bullets / max(bullets + len(paras), 1)
@@ -277,7 +280,9 @@ def main() -> None:
     results = []
     for path in args:
         # The humanize-context block (an HTML comment) is metadata, not prose.
-        raw = strip_frontmatter(re.sub(r"(?s)<!--.*?-->", "", open(path, encoding="utf-8").read()))
+        raw = re.sub(r"(?s)<!--.*?-->", "", open(path, encoding="utf-8").read())
+        # A Slides export starts with "---" before its first title, which is not frontmatter.
+        raw = raw if is_slides else strip_frontmatter(raw)
         m, tells, flags = slide_metrics(raw) if is_slides else (*metrics(raw), [])
         results.append((path, score(m, weights), m, tells))
         if detail:

@@ -138,7 +138,7 @@ v2         9     -60   1280     -12%  v2.md
 v3         6     -63   1291     -11%  v3.md
 ```
 
-Word counts cover body prose only: the TL;DR, the Nomenclature appendix, tables, code, images and link targets are left out. For a slide deck, pass `--type slides`, which scores on-slide words, titles, visuals and notes instead (see `references/slides.md`).
+Word counts cover body prose only: the TL;DR, everything from the first appendix or Nomenclature heading on, tables, code, figure captions, images and link targets are left out. Tells are still counted in the appendix's prose. For a slide deck, pass `--type slides`, which scores on-slide words, titles, visuals and notes instead (see `references/slides.md`).
 
 | Score | Seen in testing |
 |---|---|
@@ -228,7 +228,7 @@ Every fact on the sheet, real uncertainty, and the author's decisions, conclusio
 
 ## Read-back checks
 
-Run these on the finished version, not on your memory of writing it. They are written for a proposal or report. A deck replaces checks 4, 5, 7 and 8 with the checks in `references/slides.md`; a post or update keeps 1 to 3 and 6 and adds its own checks above; a runbook, checklist, reference or README keeps 1, 3, 5, 6 and 8, except check 8's long-sentence clause for its steps and items, which stay as written; it reads check 2's tells instead of chasing its total, because no TL;DR or bracketed title applies to it. Every type, deck and post included, ends with a Nomenclature appendix that has a row for every plain name it uses and every identifier the original used.
+Run these on the finished version, not on your memory of writing it. They are written for a proposal or report. A deck replaces checks 4, 5, 7 and 8 with the checks in `references/slides.md`; a post or update keeps 1 to 3 and 6 and adds its own checks above; a runbook, checklist, reference or README keeps 1, 3, 5, 6 and 8, except check 8's long-sentence and raw-identifier clauses for its steps, items, commands, flags and config keys, which stay as written; it reads check 2's tells instead of chasing its total, because no TL;DR or bracketed title applies to it. Every type, deck and post included, ends with a Nomenclature appendix that has a row for every plain name it uses and every identifier the original used.
 
 1. `fact_check.py` reports every fact intact, and the fresh-agent check found nothing left unfixed.
 2. The slop score is 15 or below, and each tell `--detail` still lists has been read and is justified.

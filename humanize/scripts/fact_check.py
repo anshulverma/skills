@@ -51,9 +51,11 @@ def has_literal(body: str, lit: str, ranges: bool = False) -> bool:
     """A literal may not start mid-word ("only" is not in "Commonly") or inside a number
     ("5 min" is not in "15 min" or "1,500 min", "8" is not in "80"). A word stem may take a
     suffix. With ranges=True, the far end of a range does not count either ("281" in "279-281")."""
+    # An acronym or a short literal ("AR", "NaN", "GR") must end at a word boundary too.
+    whole_word = any(c.isupper() for c in lit) or len(lit.strip()) <= 3
     lit = normalise(lit).strip()
     lead = (r"(?<![\w.,-])" if ranges else r"(?<![\w.,])") if lit[:1].isdigit() else r"(?<!\w)" if lit[:1].isalnum() else ""
-    trail = r"(?!\d|[.,]\d)" if lit[-1:].isdigit() else ""
+    trail = r"(?!\d|[.,]\d)" if lit[-1:].isdigit() else r"(?!\w)" if whole_word and lit[-1:].isalnum() else ""
     return re.search(lead + re.escape(lit) + trail, body) is not None
 
 
