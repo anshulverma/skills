@@ -12,6 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from fact_check import has_literal, normalise  # noqa: E402
 from metrics import length_target  # noqa: E402
+from progress import verdict  # noqa: E402
 from slop_score import long_sentences, metrics, strip_frontmatter, tldr_text, wall_share  # noqa: E402
 
 
@@ -87,6 +88,15 @@ def main() -> None:
         r = run(os.path.join(HERE, "metrics.py"), "--facts", f3, "--doc", doc3)
         assert "1/1 = 100%" in r.stdout, r.stdout
 
+        # --log writes one point per metric; the doc's targets override defaults but never gates.
+        f4 = write(d, "facts4.md", "targets: slop score <= 1; fact retention (literals) >= 50%\nlength: 2 pages\nF1 | a | 5 min | source: x\n")
+        hist = os.path.join(d, "h.jsonl")
+        run(os.path.join(HERE, "metrics.py"), "--facts", f4, "--doc", doc, "--log", hist, "--label", "v1")
+        m = json.loads(open(hist).read())["metrics"]
+        assert m["slop score"]["target"] == 1 and m["fact retention (literals)"]["target"] == 1.0, m
+        r = run(os.path.join(HERE, "metrics.py"), "--facts", f4, "--doc", doc, "--log", hist)
+        assert r.returncode == 2 and "--log needs --label" in r.stderr
+
         # A usage error prints usage, not a traceback.
         r = run(os.path.join(HERE, "metrics.py"), "--author-pair", "a:b")
         assert "Traceback" not in r.stderr and r.returncode == 2, r.stderr
@@ -107,6 +117,14 @@ def main() -> None:
         assert re.search(r"content slides without a visual\s+0\.00", r.stdout), r.stdout
 
     assert metrics("Plain text.\n")[0]["words"] > 0
+
+    # The loop stops on convergence, a plateau or the cap, and continues while something moves.
+    def p(v: float, ok: bool) -> dict:
+        return {"metrics": {"slop score": {"value": v, "goal": "<=", "target": 15, "ok": ok, "gate": False}}, "label": "x"}
+    assert verdict([p(40, False), p(10, True)], 6)[0] == "CONVERGED"
+    assert verdict([p(40, False), p(30, False)], 6)[0] == "CONTINUE"
+    assert verdict([p(30, False), p(30.4, False)], 6)[0] == "PLATEAU"
+    assert verdict([p(50 - i * 5, False) for i in range(7)], 6)[0] == "CAP"
     print("ok")
 
 

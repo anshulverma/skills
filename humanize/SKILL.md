@@ -35,6 +35,8 @@ readers: GR RL team, who know the trainer but not the scorer internals; keep sco
 destination: Google Doc, commented line by line before the Thursday review
 length: 2 pages of body
 depth: decision
+targets: default
+max_passes: 6
 ask: approve the scorer thread-pool fix; owner @anshulverma; by 2026-10-09
 tone: direct, engineer to engineer
 keep: job IDs inline next to each claim; the "Recommended fix" section
@@ -45,6 +47,7 @@ confirmed: 2026-10-05 by anshulverma
 
 - `type` is a row of the table above. `purpose` is what the doc has to get done: a decision, an approval, a record, an update.
 - `author` is whose name the doc goes out under, and in which person (first singular, first plural, impersonal). `readers` says who they are, what they already know, and so which terms need defining.
+- `targets` says when the loop may stop: `default` (the counter-metric targets, slop score at most 15), or overrides such as `slop score <= 12; cold-read comprehension >= 80%`, named as `metrics.py` prints them. The three fact gates stay at 100% whatever it says. `max_passes` caps the loop (default 6).
 - `length` is the body length the doc aims for, in pages or words, outside tables, figures and the appendix. `depth` is how much mechanism the body explains:
   - `decision`: what is proposed and why, the rules reviewers must agree on, and the evidence each choice rests on. How today's code or another team's system works appears only as the one fact a choice rests on, never with its "because". The readers' own pipeline is the exception: one short paragraph walking it end to end is the context every decision rests on, so it stays at any depth. The default for proposals, RFCs and posts.
   - `design`: adds the mechanisms a reviewer needs to judge the design.
@@ -155,8 +158,13 @@ A lower slop score can cost the doc a fact, add a claim it cannot support, or cu
 
 ```
 python3 ~/.claude/skills/humanize/scripts/metrics.py --facts facts.md --doc vN.md \
-  --audit audit-vN.json --graded graded-vN.json --author-pair delivered.md:edited.md
+  --audit audit-vN.json --graded graded-vN.json --figures figures-vN.json \
+  --log history.jsonl --label vN
+~/.cache/humanize-venv/bin/python ~/.claude/skills/humanize/scripts/progress.py history.jsonl \
+  --out progress.png --max-passes 6
 ```
+
+`--log` appends the version's numbers to `history.jsonl` (the original goes in first, as `orig`). `progress.py` draws one line chart per metric across the passes, with its target dashed and every miss drawn hollow, and prints the verdict the loop runs on: `CONVERGED` (every metric meets its target), `PLATEAU` (nothing moved since the last pass), `CAP` (`max_passes` reached) or `CONTINUE`.
 
 ## The pass
 
@@ -182,13 +190,13 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
    - a detail deeper than `depth`, or one that pushes the body past `length`: cut it, or move it to the appendix.
 
    The read prefers cutting to explaining. At `decision` depth it ends with fewer body words than it started with, and no pass grows the body past `length`. In testing, a read without `depth` proposed about 80 rewrites that mostly added definitions and "because" clauses, and the author rejected the direction: explaining every internal makes the doc long and hard to read. The tells the score counts are a floor: in testing, a doc at score 8 still had all of these, because a word list cannot read. Review the list, apply what holds, and fact-check again. **When the user flags one sentence, treat it as a sample:** fix it, add the pattern to this skill, then rerun this read on the whole doc for that pattern, never only on the flagged sentence.
-8. **Score again** with every version so far, compute the counter-metrics (write the quiz once, on the first pass), and run the read-back checks on `vN.md`. A version that fails a gate goes back to step 4.
-9. **Run another pass from `vN.md`** while the score is above 15, a read-back check fails or the sentence read finds anything, as long as the last pass improved one of them, and there have been fewer than three passes. Steps 4 to 8 repeat for each pass, including the fact check.
+8. **Score again** with every version so far, compute the counter-metrics (write the quiz once, on the first pass), log them with `--log history.jsonl --label vN`, redraw `progress.png`, and run the read-back checks on `vN.md`. A version that fails a gate goes back to step 4.
+9. **Run passes until `progress.py` says stop.** While it prints `CONTINUE`, run another pass from `vN.md`, aimed at the metrics it lists as short; steps 4 to 8 repeat each time, fact check included. Do not stop early because one metric looks good, and do not ask the user between passes. `CONVERGED` means deliver. `PLATEAU` or `CAP` means deliver the best version that passes every gate, and name in the report what is still short and why another pass would not move it. A read-back check that fails, or a sentence read that still finds something, counts as short too.
 10. **Deliver.**
    - **Local file:** write the final version over the original, with its figures alongside and the context block at the top.
    - **Google Slides deck:** follow the delivery section of `references/slides.md`, and put the context slide first.
    - **Google Doc:** follow the Google Docs section of `references/visuals.md`. Fetch ghtml with `meta google.docs get --id=<id> --output=ghtml --dest=file:///tmp/meta-ghtml-<id>.html`, carry the final version into that file, preview with `meta google.docs apply --id=<id> --from=file:///tmp/meta-ghtml-<id>.html --dry-run`, apply, then read the doc back to confirm every diagram and image rendered. Add or update the resolved context comment.
-   - **Report:** the context block and any field still guessed, the score trajectory as printed, the `metrics.py` table for the original and the final version, the `fact_check.py` result for each version, any unsourced facts, facts that research showed are now stale (leave the author's wording; say what changed), and anything cut on purpose.
+   - **Report:** the progress chart first: upload `progress.png` with `meta pixelcloud.image upload --file=file://<path>/progress.png` and put the returned `pxl.cl` link and the verdict at the top, so the user sees every metric's path without opening a file. For a Google Doc, also reply on its humanize-context comment with the link. Then the context block and any field still guessed, the score trajectory as printed, the `metrics.py` table for the original and the final version, the `fact_check.py` result for each version, any unsourced facts, facts that research showed are now stale (leave the author's wording; say what changed), and anything cut on purpose.
 
 ## Transforms
 

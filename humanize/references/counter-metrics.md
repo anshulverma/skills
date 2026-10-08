@@ -1,6 +1,6 @@
 # Counter-metrics
 
-The slop score falls when a pass cuts, simplifies or rephrases, and each of those can quietly cost the doc a fact, add a claim, or make it harder to understand. These metrics catch that. Run them on the original and on every version, and print them with `scripts/metrics.py` next to the slop trajectory.
+The slop score falls when a pass cuts, simplifies or rephrases, and each of those can quietly cost the doc a fact, add a claim, or make it harder to understand. These metrics catch that. Run them on the original and on every version, print them with `scripts/metrics.py`, log each version with `--log history.jsonl --label vN`, and chart them with `scripts/progress.py`, whose verdict decides when the loop stops.
 
 | Metric | Catches | Target | Kind |
 |---|---|---|---|
