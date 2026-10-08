@@ -71,6 +71,12 @@ LIST_LINE = re.compile(r"\s*(?:[-*]|\d+\.)\s")
 NON_PROSE = re.compile(r"\s*(?:[-*#|>]|\d+\.)")
 
 
+def tldr_text(raw: str) -> str:
+    """The TL;DR's text, from a markdown callout or a Google Docs table cell, for counting tells."""
+    m = re.search(r"\*\*TL;DR\*\*(.*?)(?:\n\s*\n|\Z)", raw, re.S)
+    return re.sub(r"<br>|\|", "\n", m.group(1)) if m else ""
+
+
 def prose_only(text: str) -> str:
     """Prose a reader reads: no code blocks, tables, images or link targets."""
     text = NOMENCLATURE.sub("", re.sub(r"(?s)```.*?```", "", text))
@@ -129,7 +135,9 @@ def metrics(raw: str) -> tuple[dict[str, float], dict[str, int]]:
     all_lengths = lengths + [len(s.split()) for s in sentences(items)]
     one_sentence = sum(1 for p in paras if len(sentences([p])) == 1 and not p.rstrip().endswith(":"))
     headings = sum(1 for ln in lines if ln.lstrip().startswith("#"))
-    tells = {n: len(re.findall(p, text, flags=re.IGNORECASE)) for n, p in TELLS.items()}
+    # The TL;DR stays out of the word counts, but its tells count: an executive reads it first.
+    told = text + "\n" + re.sub(r"\]\([^)]*\)", "]", tldr_text(raw))
+    tells = {n: len(re.findall(p, told, flags=re.IGNORECASE)) for n, p in TELLS.items()}
     cv = statistics.pstdev(lengths) / statistics.mean(lengths) if len(lengths) > 2 else 1.0
     list_share = bullets / max(bullets + len(paras), 1)
     m = {
