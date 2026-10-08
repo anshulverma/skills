@@ -27,6 +27,12 @@ def run(*args: str) -> subprocess.CompletedProcess:
 
 
 def main() -> None:
+    # The loop stops on convergence, a plateau or the cap, and continues while something moves.
+    def p(v: float, ok: bool, readback: bool = True) -> dict:
+        m = {"slop score": {"value": v, "goal": "<=", "target": 15, "ok": ok, "gate": False}}
+        if readback:
+            m["read-back checks failing"] = {"value": 0, "goal": "<=", "target": 0, "ok": True, "gate": False}
+        return {"metrics": m, "label": "x"}
     # A literal may not start mid-word or extend a number.
     body = normalise("The hold lasts 15 min. Commonly 18 jobs ran.")
     assert not has_literal(body, "5 min") and not has_literal(body, "only") and not has_literal(body, "8")
@@ -37,6 +43,8 @@ def main() -> None:
     assert not has_literal(normalise("took 1,500 ms"), "500 ms") and not has_literal(normalise("10,000 rows"), "10")
     assert not any(has_literal(normalise("The shards are scored in nano_retrieval with GRPO"), x) for x in ("AR", "NaN", "GR"))
     assert has_literal(normalise("GRPO's loss and NaN rows"), "GRPO") and has_literal(normalise("NaN rows"), "NaN")
+    assert not has_literal(normalise("Nevertheless it resets"), "never") and not has_literal(normalise("totally"), "total")
+    assert has_literal(normalise("the job abstains"), "abstain")
     assert has_literal(normalise("ranges 2.0-2.3M"), "2.3M") and not has_literal(normalise("lines 279-281"), "281", ranges=True)
 
     # Frontmatter is not prose.
@@ -89,13 +97,21 @@ def main() -> None:
         assert "1/1 = 100%" in r.stdout, r.stdout
 
         # --log writes one point per metric; the doc's targets override defaults but never gates.
-        f4 = write(d, "facts4.md", "targets: slop score <= 1; fact retention (literals) >= 50%\nlength: 2 pages\nF1 | a | 5 min | source: x\n")
+        f4 = write(d, "facts4.md", "targets: Slop Score <= 1 | fact retention (literals) >= 50%\nlength: 2 pages\nF1 | a | 5 min | source: x\n")
         hist = os.path.join(d, "h.jsonl")
         run(os.path.join(HERE, "metrics.py"), "--facts", f4, "--doc", doc, "--log", hist, "--label", "v1")
         m = json.loads(open(hist).read())["metrics"]
         assert m["slop score"]["target"] == 1 and m["fact retention (literals)"]["target"] == 1.0, m
         r = run(os.path.join(HERE, "metrics.py"), "--facts", f4, "--doc", doc, "--log", hist)
         assert r.returncode == 2 and "--log needs --label" in r.stderr
+        from metrics import target_overrides
+        f5 = write(d, "facts5.md", "targets: TL;DR-only comprehension >= 75%\n")
+        assert target_overrides(f5) == {"tl;dr-only comprehension": (">=", 0.75)}
+
+        # Only the latest run counts, and without matplotlib the verdict still prints.
+        h2 = write(d, "h2.jsonl", "".join(json.dumps(r) + "\n" for r in [dict(p(40, False), label="orig")] * 7 + [dict(p(40, False), label="orig"), dict(p(30, False), label="v1")]))
+        r = run(os.path.join(HERE, "progress.py"), h2, "--out", os.path.join(d, "c.png"))
+        assert r.stdout.strip().endswith("CONTINUE"), r.stdout + r.stderr
 
         # A usage error prints usage, not a traceback.
         r = run(os.path.join(HERE, "metrics.py"), "--author-pair", "a:b")
@@ -111,6 +127,17 @@ def main() -> None:
         r = run(os.path.join(HERE, "slop_score.py"), deck2, "--type", "slides", "--detail")
         assert re.search(r"orig\s+\d+\s+\d+", r.stdout) and " 4 " in r.stdout.splitlines()[-1], r.stdout
 
+        # Compact deck frontmatter (Marp) is stripped; a colon title with a blank line is not.
+        assert strip_frontmatter("---\nmarp: true\ntheme: x\n---\n# T\n", compact=True) == "# T\n"
+        assert strip_frontmatter("---\nRollout: x\n\nbody\n---\n", compact=True).startswith("---")
+
+        # Decks are scored with the slides scorer; runbooks chart slop without a target.
+        deck3 = write(d, "deck3.md", "# Title\n\n---\n\n# Three jobs sent 3.2M\n\n```cards\n3.2M requests/min | on 10-01\n```\n")
+        r = run(os.path.join(HERE, "metrics.py"), "--facts", f, "--doc", deck3, "--type", "slides", "--readback-failing", "")
+        assert re.search(r"slop score\s+0\s+<= 15\s+ok", r.stdout), r.stdout
+        r = run(os.path.join(HERE, "metrics.py"), "--facts", f, "--doc", doc, "--type", "runbook", "--readback-failing", "7")
+        assert re.search(r"slop score\s+\d+\s+read the tells\s+-", r.stdout) and re.search(r"read-back checks failing\s+7\s+none\s+FAIL", r.stdout), r.stdout
+
         # A cards block counts as a slide's visual.
         cards = write(d, "cards.md", "# Title\n\n---\n\n# Three jobs sent 3.2M\n\n```cards\n3.2M requests/min | on 10-01 | tiers fell over\n```\n")
         r = run(os.path.join(HERE, "slop_score.py"), cards, "--type", "slides", "--detail")
@@ -118,9 +145,7 @@ def main() -> None:
 
     assert metrics("Plain text.\n")[0]["words"] > 0
 
-    # The loop stops on convergence, a plateau or the cap, and continues while something moves.
-    def p(v: float, ok: bool) -> dict:
-        return {"metrics": {"slop score": {"value": v, "goal": "<=", "target": 15, "ok": ok, "gate": False}}, "label": "x"}
+    assert verdict([p(40, False), p(10, True, readback=False)], 6)[0] != "CONVERGED"
     assert verdict([p(40, False), p(10, True)], 6)[0] == "CONVERGED"
     assert verdict([p(40, False), p(30, False)], 6)[0] == "CONTINUE"
     assert verdict([p(30, False), p(30.4, False)], 6)[0] == "PLATEAU"

@@ -47,7 +47,7 @@ confirmed: 2026-10-05 by anshulverma
 
 - `type` is a row of the table above. `purpose` is what the doc has to get done: a decision, an approval, a record, an update.
 - `author` is whose name the doc goes out under, and in which person (first singular, first plural, impersonal). `readers` says who they are, what they already know, and so which terms need defining.
-- `targets` says when the loop may stop: `default` (the counter-metric targets, slop score at most 15), or overrides such as `slop score <= 12; cold-read comprehension >= 80%`, named as `metrics.py` prints them. The three fact gates stay at 100% whatever it says. `max_passes` caps the loop (default 6).
+- `targets` says when the loop may stop: `default` (the counter-metric targets, slop score at most 15), or overrides separated by `|`, such as `slop score <= 12 | TL;DR-only comprehension >= 75%`, named as `metrics.py` prints them (case does not matter). The three fact gates stay at 100% whatever it says. `max_passes` caps the loop (default 6).
 - `length` is the body length the doc aims for, in pages or words, outside tables, figures and the appendix. `depth` is how much mechanism the body explains:
   - `decision`: what is proposed and why, the rules reviewers must agree on, and the evidence each choice rests on. How today's code or another team's system works appears only as the one fact a choice rests on, never with its "because". The readers' own pipeline is the exception: one short paragraph walking it end to end is the context every decision rests on, so it stays at any depth. The default for proposals, RFCs and posts.
   - `design`: adds the mechanisms a reviewer needs to judge the design.
@@ -159,12 +159,13 @@ A lower slop score can cost the doc a fact, add a claim it cannot support, or cu
 ```
 python3 ~/.claude/skills/humanize/scripts/metrics.py --facts facts.md --doc vN.md \
   --audit audit-vN.json --graded graded-vN.json --figures figures-vN.json \
+  --type prose --readback-failing "<failed read-back check numbers, or empty>" \
   --log history.jsonl --label vN
 ~/.cache/humanize-venv/bin/python ~/.claude/skills/humanize/scripts/progress.py history.jsonl \
   --out progress.png --max-passes 6
 ```
 
-`--log` appends the version's numbers to `history.jsonl` (the original goes in first, as `orig`). `progress.py` draws one line chart per metric across the passes, with its target dashed and every miss drawn hollow, and prints the verdict the loop runs on: `CONVERGED` (every metric meets its target), `PLATEAU` (nothing moved since the last pass), `CAP` (`max_passes` reached) or `CONTINUE`.
+`--type` is `slides` for a deck, so the slop score is the slides score, and `runbook` for a runbook, checklist, reference or README, whose slop score is charted but is not a target, because their structure carries it. `--readback-failing` logs the read-back checks that failed, so the loop cannot converge past one. `--log` appends the version's numbers to `history.jsonl`; the original goes in first, as `orig`, and an `orig` row starts a new run. `progress.py` draws one line chart per metric across the passes, with its target dashed and every miss drawn hollow, and prints the verdict the loop runs on: `CONVERGED` (every metric meets its target), `PLATEAU` (nothing moved since the last pass), `CAP` (`max_passes` reached) or `CONTINUE`.
 
 ## The pass
 
@@ -190,8 +191,8 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
    - a detail deeper than `depth`, or one that pushes the body past `length`: cut it, or move it to the appendix.
 
    The read prefers cutting to explaining. At `decision` depth it ends with fewer body words than it started with, and no pass grows the body past `length`. In testing, a read without `depth` proposed about 80 rewrites that mostly added definitions and "because" clauses, and the author rejected the direction: explaining every internal makes the doc long and hard to read. The tells the score counts are a floor: in testing, a doc at score 8 still had all of these, because a word list cannot read. Review the list, apply what holds, and fact-check again. **When the user flags one sentence, treat it as a sample:** fix it, add the pattern to this skill, then rerun this read on the whole doc for that pattern, never only on the flagged sentence.
-8. **Score again** with every version so far, compute the counter-metrics (write the quiz once, on the first pass), log them with `--log history.jsonl --label vN`, redraw `progress.png`, and run the read-back checks on `vN.md`. A version that fails a gate goes back to step 4.
-9. **Run passes until `progress.py` says stop.** While it prints `CONTINUE`, run another pass from `vN.md`, aimed at the metrics it lists as short; steps 4 to 8 repeat each time, fact check included. Do not stop early because one metric looks good, and do not ask the user between passes. `CONVERGED` means deliver. `PLATEAU` or `CAP` means deliver the best version that passes every gate, and name in the report what is still short and why another pass would not move it. A read-back check that fails, or a sentence read that still finds something, counts as short too.
+8. **Score again** with every version so far, compute the counter-metrics (write the quiz once, on the first pass), run the read-back checks on `vN.md`, log everything with `--log history.jsonl --label vN` (failing read-back checks included), and redraw `progress.png`. A version that fails a gate goes back to step 4.
+9. **Run passes until `progress.py` says stop.** While it prints `CONTINUE`, run another pass from `vN.md`, aimed at the metrics it lists as short; steps 4 to 8 repeat each time, fact check included. Do not stop early because one metric looks good, and do not ask the user between passes. `CONVERGED` means deliver. `PLATEAU` or `CAP` means deliver the best version that passes every gate, and name in the report what is still short and why another pass would not move it. Failing read-back checks are logged, so `CONVERGED` already means every check passes; a sentence read that still finds something goes in the same list as `sentence read` (for example `--readback-failing "7, sentence read"`).
 10. **Deliver.**
    - **Local file:** write the final version over the original, with its figures alongside and the context block at the top.
    - **Google Slides deck:** follow the delivery section of `references/slides.md`, and put the context slide first.

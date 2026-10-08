@@ -3,7 +3,7 @@
 
 Usage:
   metrics.py --facts FACTS.md --doc VERSION.md [--audit AUDIT.json] [--graded GRADED.json] [--figures FIGURES.json]
-             [--log HISTORY.jsonl --label vN]
+             [--type prose|slides|runbook] [--readback-failing "7,8"] [--log HISTORY.jsonl --label vN]
              [--author-pair DELIVERED.md:EDITED.md ...]
 
 Computed here: fact retention (literals), length against the context's `length`
@@ -12,7 +12,10 @@ references/counter-metrics.md describes: fact meaning, factual precision,
 cold-read and TL;DR-only comprehension, unknown terms, and figures matching their text.
 
 --log appends this pass's numbers to HISTORY.jsonl, which progress.py charts and
-checks for convergence.
+checks for convergence; --label orig starts a new run. --type picks the slop score:
+the slides scorer for decks; for runbooks the score is charted but not a target, since
+their structure carries it. --readback-failing lists the read-back checks that failed
+("" for none), so the loop cannot converge past a failing check.
 
 Exit status is 1 when a gating metric (fact retention, fact meaning, factual
 precision) is below 100%.
@@ -27,7 +30,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fact_check import has_literal, load_facts, normalise  # noqa: E402
-from slop_score import WEIGHTS, metrics as slop_metrics, score, strip_frontmatter  # noqa: E402
+from slop_score import SLIDE_WEIGHTS, WEIGHTS, metrics as slop_metrics, score, slide_metrics, strip_frontmatter  # noqa: E402
 
 WORDS_PER_PAGE = 500
 
@@ -47,9 +50,9 @@ def length_target(facts_path: str) -> int | None:
 
 
 def target_overrides(facts_path: str) -> dict[str, tuple[str, float]]:
-    """The context's `targets:` field, e.g. "slop score <= 12; length vs target <= 1.2"."""
+    """The context's `targets:` field, e.g. "slop score <= 12 | TL;DR-only comprehension >= 75%"."""
     m = re.search(r"(?m)^targets:\s*(.*)$", open(facts_path, encoding="utf-8").read())
-    items = re.findall(r"\s*([^;<>=]+?)\s*(<=|>=)\s*([\d.]+)(%?)", m.group(1)) if m else []
+    items = re.findall(r"\s*([^|<>=]+?)\s*(<=|>=)\s*([\d.]+)(%?)", m.group(1)) if m else []
     return {name.strip().lower(): (goal, float(v) / (100 if pct else 1)) for name, goal, v, pct in items}
 
 
@@ -71,6 +74,8 @@ def main() -> None:
     ap.add_argument("--graded")
     ap.add_argument("--figures")
     ap.add_argument("--author-pair", action="append", default=[])
+    ap.add_argument("--type", choices=["prose", "slides", "runbook"], default="prose")
+    ap.add_argument("--readback-failing")
     ap.add_argument("--log")
     ap.add_argument("--label")
     o = ap.parse_args()
@@ -94,8 +99,17 @@ def main() -> None:
     intact = sum(all(has_literal(text, lit) for lit in lits) for _, _, lits, _ in facts)
     row("fact retention (literals)", f"{intact}/{len(facts)} = {intact / max(len(facts), 1):.0%}", "100%", intact == len(facts), True,
         intact / max(len(facts), 1), (">=", 1.0))
-    slop = score(slop_metrics(body(o.doc))[0], WEIGHTS)
-    row("slop score", f"{slop:.0f}", "<= 15", slop <= 15, num=slop, goal=("<=", 15))
+    raw = re.sub(r"(?s)<!--.*?-->", "", open(o.doc, encoding="utf-8").read())
+    if o.type == "slides":
+        slop = score(slide_metrics(strip_frontmatter(raw, compact=True))[0], SLIDE_WEIGHTS)
+    else:
+        slop = score(slop_metrics(body(o.doc))[0], WEIGHTS)
+    # A runbook's numbered steps and tables carry its score, so its tells are read instead (SKILL.md).
+    ok = None if o.type == "runbook" else slop <= 15
+    row("slop score", f"{slop:.0f}", "<= 15" if ok is not None else "read the tells", ok, num=slop, goal=("<=", 15))
+    if o.readback_failing is not None:
+        failing = [c.strip() for c in o.readback_failing.split(",") if c.strip()]
+        row("read-back checks failing", ", ".join(failing) or "none", "none", not failing, num=len(failing), goal=("<=", 0))
 
     if o.audit:
         a = json.load(open(o.audit))
@@ -146,7 +160,9 @@ def main() -> None:
         row(f"author rewrite share {os.path.basename(d)} -> {os.path.basename(e)}", f"{rewrite_share(d, e):.1%}", "falls over time", None)
 
     # The doc's own targets replace the defaults, except for the fact gates, which stay at 100%.
-    for name, (goal, bound) in target_overrides(o.facts).items():
+    keys = {k.lower(): k for k in history}
+    for low, (goal, bound) in target_overrides(o.facts).items():
+        name = keys.get(low, low)
         h = history.get(name)
         if h and not h["gate"]:
             h.update(goal=goal, target=bound, ok=h["value"] <= bound if goal == "<=" else h["value"] >= bound)

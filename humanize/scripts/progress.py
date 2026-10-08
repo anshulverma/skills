@@ -25,9 +25,15 @@ TOLERANCE = {"slop score": 1.0, "unknown terms (cold read)": 0.5}
 DEFAULT_TOLERANCE = 0.01
 
 
+READBACK = "read-back checks failing"
+
+
 def verdict(rows: list[dict], max_passes: int) -> tuple[str, list[str]]:
     last = rows[-1]["metrics"]
     missing = [k for k, m in last.items() if m["ok"] is False]
+    # The read-back checks cover what no metric does, so the loop cannot converge without them.
+    if READBACK not in last:
+        missing.append(f"{READBACK} (not logged: pass --readback-failing)")
     if not missing:
         return "CONVERGED", []
     if len(rows) >= 2:
@@ -100,15 +106,21 @@ def main() -> None:
     rows = [json.loads(ln) for ln in open(o.history, encoding="utf-8") if ln.strip()]
     if not rows:
         sys.exit(f"{o.history} has no passes yet: run metrics.py --log first")
+    # A rerun appends a new "orig"; only the latest run counts toward the verdict and the chart.
+    starts = [i for i, r in enumerate(rows) if r["label"] == "orig"]
+    rows = rows[starts[-1]:] if starts else rows
     v, missing = verdict(rows, o.max_passes)
     at = rows[-1]["label"]
     title = f"Metrics by pass: converged at {at}" if v == "CONVERGED" else f"Metrics by pass, {at}: {len(missing)} still short of target"
-    if o.out:
-        chart(rows, o.out, title)
-        print(f"chart: {o.out}")
     for k in missing:
-        m = rows[-1]["metrics"][k]
-        print(f"  short: {k} = {m['value']:.3g} (target {m['goal']} {m['target']:g}){' [gate]' if m['gate'] else ''}")
+        m = rows[-1]["metrics"].get(k)
+        print(f"  short: {k} = {m['value']:.3g} (target {m['goal']} {m['target']:g}){' [gate]' if m['gate'] else ''}" if m else f"  short: {k}")
+    if o.out:
+        try:
+            chart(rows, o.out, title)
+            print(f"chart: {o.out}")
+        except ImportError:
+            print("chart: skipped, matplotlib is missing (run with ~/.cache/humanize-venv/bin/python)")
     print(v)
     sys.exit(0 if v != "CONTINUE" else 1)
 

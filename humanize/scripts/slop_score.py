@@ -76,9 +76,13 @@ LIST_LINE = re.compile(r"\s*(?:[-*]|\d+\.)\s")
 NON_PROSE = re.compile(r"\s*(?:[-*]\s|#|\||>|\d+\.\s)")
 
 
-def strip_frontmatter(raw: str) -> str:
-    """YAML frontmatter at the top of a file is metadata, not prose."""
-    # Any YAML shape (lists, blank lines, comments) up to the closing ---, when the first line inside is a key.
+def strip_frontmatter(raw: str, compact: bool = False) -> str:
+    """YAML frontmatter at the top of a file is metadata, not prose. Any YAML shape (lists, blank
+    lines, comments) up to the closing ---, when the first line inside is a key. compact=True, for
+    decks, also requires no blank line inside, since a Slides export opens with "---", a title
+    that may hold a colon, a blank line and the slide's body."""
+    if compact:
+        return re.sub(r"\A---\n(?=[\w-]+:)(?:[^\n]*\S[^\n]*\n)*?---[ \t]*\n", "", raw)
     return re.sub(r"(?s)\A---\n(?=[\w-]+:).*?\n---[ \t]*\n", "", raw)
 
 
@@ -282,7 +286,7 @@ def main() -> None:
         # The humanize-context block (an HTML comment) is metadata, not prose.
         raw = re.sub(r"(?s)<!--.*?-->", "", open(path, encoding="utf-8").read())
         # A Slides export starts with "---" before its first title, which is not frontmatter.
-        raw = raw if is_slides else strip_frontmatter(raw)
+        raw = strip_frontmatter(raw, compact=is_slides)
         m, tells, flags = slide_metrics(raw) if is_slides else (*metrics(raw), [])
         results.append((path, score(m, weights), m, tells))
         if detail:

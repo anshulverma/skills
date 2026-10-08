@@ -55,7 +55,9 @@ def has_literal(body: str, lit: str, ranges: bool = False) -> bool:
     whole_word = any(c.isupper() for c in lit) or len(lit.strip()) <= 3
     lit = normalise(lit).strip()
     lead = (r"(?<![\w.,-])" if ranges else r"(?<![\w.,])") if lit[:1].isdigit() else r"(?<!\w)" if lit[:1].isalnum() else ""
-    trail = r"(?!\d|[.,]\d)" if lit[-1:].isdigit() else r"(?!\w)" if whole_word and lit[-1:].isalnum() else ""
+    # A word may take an inflection ("crash-loop" in "crash-looped"), never a longer word ("never" in "Nevertheless").
+    trail = (r"(?!\d|[.,]\d)" if lit[-1:].isdigit() else r"(?!\w)" if whole_word and lit[-1:].isalnum()
+             else r"(?:s|es|ed|d|ing)?(?!\w)" if lit[-1:].isalpha() else "")
     return re.search(lead + re.escape(lit) + trail, body) is not None
 
 
