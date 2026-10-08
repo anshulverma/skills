@@ -66,6 +66,9 @@ WEIGHTS = {
 
 # The required Nomenclature appendix (a heading or bold line, then its rows up to the
 # next heading) is reference material, not prose, so it stays out of every count.
+# Everything from the first appendix heading on ("## Appendix: ...", "## Appendices", "## 6. Appendix",
+# "## **Appendix**") is reference material: out of the body word count and the length check.
+APPENDIX = re.compile(r"(?mi)^#+[ \t]*(?:\*\*)?(?:[a-z0-9]{1,3}[.)][ \t]*)?appendi(?:x|ces)\b")
 NOMENCLATURE = re.compile(r"(?ims)^[#*\s]*(?:appendix:?\s*)?nomenclature\b.*?(?=^#|\Z)")
 LIST_LINE = re.compile(r"\s*(?:[-*]|\d+\.)\s")
 # A bullet, heading, table row or quote; a bold-led paragraph ("**Note:** ...") is prose.
@@ -74,7 +77,8 @@ NON_PROSE = re.compile(r"\s*(?:[-*]\s|#|\||>|\d+\.\s)")
 
 def strip_frontmatter(raw: str) -> str:
     """YAML frontmatter at the top of a file is metadata, not prose."""
-    return re.sub(r"\A---\n(?:[\w-]+:.*\n|[ \t]+.*\n)*---\n", "", raw)
+    # Any YAML shape (lists, blank lines, comments) up to the closing ---, when the first line inside is a key.
+    return re.sub(r"(?s)\A---\n(?=[\w-]+:).*?\n---[ \t]*\n", "", raw)
 
 
 def tldr_text(raw: str) -> str:
@@ -86,7 +90,7 @@ def tldr_text(raw: str) -> str:
 
 def prose_only(text: str) -> str:
     """Prose a reader reads: no code blocks, tables, images or link targets."""
-    text = NOMENCLATURE.sub("", re.sub(r"(?s)```.*?```", "", text))
+    text = NOMENCLATURE.sub("", re.sub(r"(?s)```.*?```", "", APPENDIX.split(text, 1)[0]))
     # The TL;DR repeats the body by design, so it stays out of the length comparison.
     text = re.sub(r"\*\*TL;DR\*\*[ \t]*\n(?:[ \t]*\n)?(?:[ \t]*[-*] [^\n]*\n)+", "", text)
     text = re.sub(r"(?m)^\s*\|.*$", "", text)
@@ -245,7 +249,7 @@ def slide_metrics(raw: str) -> tuple[dict[str, float], dict[str, int], list[str]
 
 def raw_identifiers(raw: str) -> list[str]:
     """Code-style names in body prose: backticked spans outside tables, fences and the appendix."""
-    body = re.split(r"(?mi)^#+\s*appendix", raw)[0]
+    body = APPENDIX.split(raw, 1)[0]
     body = re.sub(r"(?s)```.*?```", "", body)
     body = re.sub(r"(?m)^\s*\|.*$", "", body)
     return [s for s in re.findall(r"`([^`\n]+)`", body) if re.search(r"[_.(]|[a-z][A-Z]", s)]

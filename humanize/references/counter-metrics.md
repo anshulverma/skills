@@ -30,7 +30,7 @@ Generated from the fact sheet, not the doc, so it measures whether the doc conve
 
 ## Cold reads (per version)
 
-Two agents, each told not to use any tools, which is how the prompt stands in for having none. One gets the whole doc, the other only the title and TL;DR. Each gets the quiz questions after the text, without answers. A doc type with no TL;DR by design gets its stand-in instead: a deck's title slide and first content slide, a post's first line. A runbook or reference has none, so skip the second reader and grade `tldr` as an empty list, which `metrics.py` prints as not applicable.
+Two agents, each told not to use any tools, which is how the prompt stands in for having none. One gets the whole doc, the other only the title and TL;DR. Each gets the quiz questions after the text, without answers. A deck has no TL;DR by design, so it gets a stand-in instead: its title slide and first content slide. A post's first line carries only the news or the ask, and a runbook or reference has no summary at all, so neither has a stand-in: skip the second reader and grade `tldr` as an empty list, which `metrics.py` prints as not applicable.
 
 > Read the document below once. Do not use any tools, search, or outside knowledge of these systems: answer only from the text. Then answer each question in one short sentence, or write "not stated" when the text does not say. Finally, list every term or label the text uses that you could not work out from the text itself. Return only JSON: `{"answers": [{"id": 1, "answer": "..."}], "unknown_terms": ["..."]}`.
 

@@ -39,6 +39,12 @@ def main() -> None:
     # Frontmatter is not prose.
     fm = "---\nname: x\ndescription: " + " ".join(["word"] * 30) + "\n---\n\nShort body.\n"
     assert not long_sentences(strip_frontmatter(fm)) and strip_frontmatter(fm).startswith("\nShort")
+    for shape in ("tags:\n- a\n- b\n", "a: 1\n\nb: 2\n", "a: 1\n# a comment\n"):
+        assert strip_frontmatter("---\n" + shape + "---\nBody.\n") == "Body.\n", shape
+
+    # Every appendix heading form ends the body.
+    for head in ("## Appendix: notes", "# Appendices", "## 6. Appendix", "## **Appendix**", "## A. Appendix"):
+        assert metrics("Body words here.\n\n" + head + "\n\n" + " ".join(["more"] * 50) + ".\n")[0]["words"] == 3, head
 
     # A heading glued to a long paragraph still counts toward walls.
     para = " ".join(["word"] * 400) + "."
@@ -68,6 +74,12 @@ def main() -> None:
         doc2 = write(d, "doc2.md", "Holds for 5 min.\n\n## Appendix: notes\n\n" + " ".join(["more"] * 50) + ".\n")
         r = run(os.path.join(HERE, "metrics.py"), "--facts", f2, "--doc", doc2)
         assert re.search(r"length vs target\s+4 / 10", r.stdout), r.stdout
+
+        # The retention gate reads frontmatter, as fact_check.py does.
+        f3 = write(d, "facts3.md", "F1 | author | Dana Wu | source: x\n")
+        doc3 = write(d, "doc3.md", "---\nauthor: Dana Wu\n---\nBody.\n")
+        r = run(os.path.join(HERE, "metrics.py"), "--facts", f3, "--doc", doc3)
+        assert "1/1 = 100%" in r.stdout, r.stdout
 
         # A usage error prints usage, not a traceback.
         r = run(os.path.join(HERE, "metrics.py"), "--author-pair", "a:b")

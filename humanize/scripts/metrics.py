@@ -70,7 +70,8 @@ def main() -> None:
         rows.append((name, value, target, "-" if ok is None else ("ok" if ok else "FAIL")))
 
     facts = load_facts(o.facts)
-    text = normalise(body(o.doc))
+    # Retention reads the same text fact_check.py does: frontmatter included, comments out.
+    text = normalise(re.sub(r"(?s)<!--.*?-->", "", open(o.doc, encoding="utf-8").read()))
     intact = sum(all(has_literal(text, lit) for lit in lits) for _, _, lits, _ in facts)
     row("fact retention (literals)", f"{intact}/{len(facts)} = {intact / max(len(facts), 1):.0%}", "100%", intact == len(facts), True)
 
@@ -104,8 +105,8 @@ def main() -> None:
         terms = g.get("unknown_terms", [])
         row("unknown terms (cold read)", str(len(terms)) + (f": {', '.join(terms)}" if terms else ""), "0", not terms)
 
-    # `length` covers the body, so everything from the first appendix heading on is left out.
-    words = int(slop_metrics(re.split(r"(?mi)^#+\s*appendix", body(o.doc))[0])[0]["words"])
+    # The same body count check 8 reads: slop_score leaves out everything from the first appendix heading.
+    words = int(slop_metrics(body(o.doc))[0]["words"])
     target = length_target(o.facts)
     if target:
         row("length vs target", f"{words} / {target} body words = {words / target:.2f}", "<= 1.00", words <= target)

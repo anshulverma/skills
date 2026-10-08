@@ -35,7 +35,7 @@ notes too, so a fact that moves off a slide into its notes still counts as kept.
 - **Big-number cards:** the number, a label of 2 to 4 words, and a consequence tagline under
   it ("3.2M requests/min" / "on 10-01" / "tiers fall over at 2.0M"). In the working format,
   write them as a fenced `cards` block, one card per line: `3.2M requests/min | on 10-01 |
-  tiers fall over at 2.0M`. The scorer counts that block as the slide's visual. On delivery, draw each card as a text box in Google Slides, or, for a local markdown deck, write it as one line per card with the number in bold.
+  tiers fall over at 2.0M`. The scorer counts that block as the slide's visual. On delivery, draw each card as a text box in Google Slides, or, for a local markdown deck, write it as a bullet list, one bullet per card with the number in bold, so the cards stay separate when rendered.
 - **Names the room can read.** Use plain names, or the term the audience already says out
   loud; other identifiers, and any term that needs defining, go in the notes. The exception
   is an identifier an ask or work item names: it stays on that slide, in backticks, because
