@@ -33,6 +33,8 @@ TELLS = {
     "puffery": r"\b(?:robust|seamless(?:ly)?|leverag(?:e|es|ing)|delve|comprehensive|holistic|cutting-edge|tapestry|pivotal|underscor(?:es|ing)|showcas(?:e|es|ing)|streamlin(?:e|es|ing)|empower(?:s|ing)?|foster(?:s|ing)?|realm|intricate|in today's)\b",
     "-side/-path coinage": r"\b[a-z]+-(?:side|path)\b",
     "semicolon chain": r";",
+    # "less traffic, never more": a tail restating the opposite of what was just said.
+    "redundant opposite": r",\s+(?:never|not|rather than)\s+(?:more|less|fewer|worse|better|higher|lower|up|down)\b",
     "compressing verb": r"\b(?:drew|draws|budgeted at|binds|trips|tripped|settles at|fires when)\b",
     "blockquote": r"(?m)^\s*>",
 }

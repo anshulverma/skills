@@ -216,6 +216,7 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 | A sentence over about 25 words, or one carrying two ideas, a stacked definition or an aside | One sentence per idea, with definitions in their own sentence: "Rows wait in the trainer's waiting pool until their score arrives. GRPO, the RL loss, then trains each beam on its reward relative to the other beams for the same user." |
 | A triplet kept for rhythm | Only the items that carry a fact. |
 | A coined label or stiff verb for something ordinary ("per-job rate gate", "coverage optimum", "expired-rows change", "retires", "lives in", "first-comes-first-serves") | What it does, in the words an engineer would say to a colleague: "today's per-job rate limit", "the load where the most users get fully scored", "the change that gives rows a deadline", "turns off", "sits in", "serves callers first come, first served". |
+| A tail that restates the opposite ("send less traffic, never more", "fewer requests, not more") | Stop at the claim: "overload makes the trainer send less traffic". |
 | A compressing verb ("budgeted at", "drew", "binds", "trips") | The everyday verb: "a job capped at 20K rows/s sent about 22.7K score requests/s". |
 | An em or en dash | A colon, a comma, parentheses, or a new sentence. |
 | A semicolon welding two claims | Two sentences. |
