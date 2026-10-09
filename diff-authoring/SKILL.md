@@ -151,6 +151,11 @@ Make it specific to THIS diff (not a copy of the stack's overall plan). Pick the
    > Job (MAST): <one line of what ran>. [session](https://www.internalfb.com/mitra/sessions/<id>) (job [<jobname>](https://www.internalfb.com/mitra/sessions/<id>), state COMPLETE / exit 0), <key facts: steps, epochs, parallelism>. Checkpoint at [<short label>](https://www.internalfb.com/manifold/explorer/<bucket>/<path>). Metrics: <e.g. GSM8K 0.6611, MMLU 0.6520>.
 
    Both the session and the job name link to the session URL; the checkpoint links to the Manifold explorer URL (never a bare `manifold://` path).
+5. **Performance fix motivated by a profiler trace**: when the summary points at a trace as the evidence for a problem and claims the diff removes or shrinks it, the test plan carries two images, uploaded to Phabricator and embedded (`{F<id>}`):
+   - **Before**: the step from the source trace the summary cites, with the problem region highlighted and labeled with the count and duration the summary quotes, so a reviewer sees exactly where the time went.
+   - **After**: the same step range from a trace of a run with the fix, rendered the same way, showing that region gone or shorter, with its new count and duration.
+
+   Rendering the images from the trace data (for example a per-lane timeline of the CPU threads and GPU streams) is fine; a Perfetto screenshot is not required. Each image names the job, rank and step it comes from and links the trace. Compare like with like: the same config, host type, rank and profiler settings, or say what differs. If the after-run has not happened yet, say so and add its image when it lands; do not present the improvement as shown.
 
 **Never reproduce a matrix or an evidence table.** A test plan states what is covered and shows evidence for the one claim a reviewer would otherwise doubt. It is not where the proof gets reproduced. No revert-by-test grid, no per-case table, no per-branch enumeration, and at most one or two pasted failures. Rigor that is worth recording in full belongs in the spec or the task, not in front of every reviewer. A test plan built from tables is the flattest, least readable shape available: the reader cannot tell what is being tested without parsing a grid.
 
@@ -271,13 +276,14 @@ This is about provenance to things outside fbcode. Real Meta/fbcode artifacts (a
 
 ## Before you ship: read it back
 
-Following the rules while writing is not the same as having followed them. **Read the rendered summary and test plan back, as a reviewer would, and check five things.** Do this on the actual output, not on your memory of writing it. If you delegated the authoring, this check is yours, not the delegate's, and "the agent reported it applied the skill" is not evidence.
+Following the rules while writing is not the same as having followed them. **Read the rendered summary and test plan back, as a reviewer would, and check these six things.** Do this on the actual output, not on your memory of writing it. If you delegated the authoring, this check is yours, not the delegate's, and "the agent reported it applied the skill" is not evidence.
 
 1. **Count the bullets.** More than ~10 across the summary, or any bullet that wraps to a second line? Cut.
 2. **Scan for the arguing tells** — "rather than", "instead of", "would have", "does not mean", "what this buys". Each one is a bullet defending a decision. Cut to the fact.
 3. **Count the fenced blocks in the test plan.** More than one command block, or any table, means it is the wrong shape.
 4. **Ask what is being tested.** Read only the test plan. If you cannot say in one sentence what the tests cover, the reviewer cannot either.
 5. **Grep for em-dashes** (U+2014, U+2013) across title, summary, test plan and every added code line.
+6. **Trace-motivated performance diff?** The test plan embeds the before image (problem highlighted) and the after image (problem gone or reduced), or says the after-run is pending.
 
 Total message length is the cheapest proxy: a diff whose summary plus test plan runs past ~40 lines is almost always carrying an argument, a matrix, or both.
 
