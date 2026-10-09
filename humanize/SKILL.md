@@ -237,7 +237,7 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 | A compressing verb ("budgeted at", "drew", "binds", "trips") | The everyday verb: "a job capped at 20K rows/s sent about 22.7K score requests/s". |
 | An em or en dash | A colon, a comma, parentheses, or a new sentence. |
 | A semicolon welding two claims | Two sentences. |
-| A comma before "and", in a list ("A, B, and C") or joining two clauses ("Records stay on the GPU, and the thread never waits") | No comma in a list ("A, B and C"). Two clauses become two sentences, or one clause without the comma when the second is short. In testing, the author flagged it as a tell. |
+| A comma before "and", in a list ("A, B, and C") or joining two clauses ("Records stay on the GPU, and the thread never waits") | No comma in a list ("A, B and C"). Two clauses become two sentences, or one clause without the comma when the second is short. Check each fix: dropping a list comma can merge the last two items ("checks against the trainer's step and agreement across ranks"), so reorder them or join the last with "plus". A split must not leave a fragment or move a phrase onto the wrong noun. In testing, the author flagged the comma as a tell. A fresh-agent check then caught three sweep edits that changed meaning. |
 | A blockquote | Quotation marks inline, or a fenced block for text meant to be pasted. |
 
 ## What stays
