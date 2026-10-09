@@ -46,3 +46,23 @@
 {"text": "The controller sends score requests, up to its cap on requests in flight.", "label": "slop", "why": "trailing jargon tail the reader cannot decode", "rewrite": "The controller sends score requests.", "source": "author label"}
 {"text": "The controller sends score requests.", "label": "human", "why": "author's rewrite", "rewrite": "", "source": "author label"}
 {"text": "The breaker watches the service's own AdFinder error rate.", "label": "slop", "why": "names a part the doc never described", "rewrite": "The AdFinder error limit rejects requests while AdFinder's error rate is high.", "source": "author label"}
+{"text": "The tiers crashed at 1.81M that day, but held 2.09M on 09-28.", "label": "slop", "why": "'held' compresses; conclusion about capacity left unstated", "rewrite": "", "source": "author label"}
+{"text": "The server quota gives total load the hard cap it lacked in the SEVs.", "label": "slop", "why": "clever recast; new label 'server quota'", "rewrite": "", "source": "author label"}
+{"text": "It is one limit for all callers together, from the scoring service's diff [D122954381](https://www.internalfb.com/diff/D122954381).", "label": "slop", "why": "appositive-style tail; repeats diff link", "rewrite": "", "source": "author label"}
+{"text": "Error classes tell the trainer which failures mean overload, so it stops resending them.", "label": "slop", "why": "\"it\" has no clear referent", "rewrite": "", "source": "author label"}
+{"text": "The cap begins at the floor at every job start, resume and end of a hold.", "label": "slop", "why": "'hold' used before it is described", "rewrite": "", "source": "author label"}
+{"text": "A trip is the first cut in a series of bad or severe windows.", "label": "slop", "why": "coined term 'trip'", "rewrite": "", "source": "author label"}
+{"text": "The trip level is the cap just before that cut.", "label": "slop", "why": "coined term 'trip level'", "rewrite": "", "source": "author label"}
+{"text": "For 10 min from the latest trip, the cap stays at or under a ceiling: the larger of the floor and half the trip level.", "label": "slop", "why": "plain rule but leans on coined terms", "rewrite": "", "source": "author label"}
+{"text": "Severe windows count as consecutive while no clean window comes between them.", "label": "slop", "why": "\"while\" is a weird choice", "rewrite": "", "source": "author label"}
+{"text": "In GRPO it would create advantage from which requests were shed, not from policy quality.", "label": "slop", "why": "X-not-Y recast", "rewrite": "", "source": "author label"}
+{"text": "The trainer already abstains: failed beams are NaN and masked out of the group statistics.", "label": "slop", "why": "\"abstain\" is a weird word", "rewrite": "", "source": "author label"}
+{"text": "Timeouts depend on request size and empty responses fall on whole hash buckets of users.", "label": "slop", "why": "AdFinder internals; idiom 'fall on'", "rewrite": "", "source": "author label"}
+{"text": "All ranks abort together, one step late.", "label": "slop", "why": "weird construction", "rewrite": "", "source": "author label"}
+{"text": "It never restarts into the outage, because jobs that use the scoring service launch with zero MAST retries.", "label": "slop", "why": "idiom 'restarts into the outage'", "rewrite": "", "source": "author label"}
+{"text": "Rows whose scoring failed are left out of training.", "label": "human", "why": "author labelled human", "rewrite": "", "source": "author label"}
+{"text": "The scoring service owners set its value and re-check it after the capacity change [D123068254](https://www.internalfb.com/diff/D123068254).", "label": "human", "why": "author labelled human", "rewrite": "", "source": "author label"}
+{"text": "Only transient connection errors get one jittered retry.", "label": "human", "why": "author labelled human", "rewrite": "", "source": "author label"}
+{"text": "It limits requests in flight, not the request rate, because in-flight requests are what fill AdFinder's memory.", "label": "human", "why": "author labelled human", "rewrite": "", "source": "author label"}
+{"text": "So the first change splits coverage by hash bucket and by request size.", "label": "human", "why": "author labelled human", "rewrite": "", "source": "author label"}
+{"text": "We propose a new fail-on-compromised setting.", "label": "human", "why": "author labelled human", "rewrite": "", "source": "author label"}
