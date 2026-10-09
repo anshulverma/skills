@@ -77,7 +77,9 @@ def chart(rows: list[dict], out: str, title: str) -> None:
         share = ms[-1]["goal"] == ">=" and ms[-1]["target"] <= 1
         if share:
             # Shares read as percentages, with the target in view.
-            ax.yaxis.set_major_formatter(lambda y, _: f"{y:.0%}")
+            # A narrow range (a metric sitting at 100%) needs a decimal, or every tick reads the same.
+            fmt = "{:.1%}" if max(ys + [ms[-1]["target"]]) - min(ys + [ms[-1]["target"]]) < 0.05 else "{:.0%}"
+            ax.yaxis.set_major_formatter(lambda y, _, fmt=fmt: fmt.format(y))
             ax.set_ylim(min(min(ys), ms[-1]["target"]) - 0.02, 1.01)
         shown = f"{ms[-1]['target']:.0%}" if share else f"{ms[-1]['target']:g}"
         ax.set_title(f"{name}\n(target {goal} {shown})", fontsize=8.5, color=ink, loc="left")
