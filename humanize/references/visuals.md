@@ -25,6 +25,7 @@ none is decorative.
 **Make it look designed, not default.** Mermaid's default styling renders flat grey boxes, so for any flow or architecture figure render a styled PNG with Graphviz (installed at `/usr/bin/dot`), starting from `card-diagram.dot` in this directory: rounded cards with a coloured header per stage, tinted badges inside each card, and a legend. Use colour to encode one thing the reader needs (owner, or status such as proposed / landed / unpublished), take the colours from the `dataviz` reference palette, and state the encoding in the legend. Look at the rendered PNG before using it, and fix any overlap or cramped label. Keep Mermaid for quick sketches and for diagrams the reader should be able to edit in the doc.
 
 **Figure slop** is the visual form of AI prose, and a figure with any of these gets redrawn:
+- a card that lists parts as rows with no edges between them, so the reader cannot see what feeds what, what each part decides or what it changes; draw each part as its own box on the path, with an arrow for what it receives and a labelled arrow for its effect ("slow down", "masked, no reward", "stop the job");
 - numbered markers (①, ②) decoded in the caption, which make the reader jump between figure and caption; label in place instead;
 - filler badges and subtitles that add no fact ("non-production, 2 tiers" under a box title);
 - a legend for an encoding the reader does not need;
