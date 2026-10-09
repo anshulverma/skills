@@ -26,6 +26,8 @@ TELLS = {
     "bold run-in label": r"(?m)^\s*(?:[-*]|\d+\.)?\s*\*\*[^*\n]{1,60}?[.:]\*\*",
     "arguing contrast": r"\b(?:rather than|instead of|would have|does not mean|what this buys)\b",
     "x-not-y frame": r",\s+not\s+\w+",
+    # "A, B, and C" and "X, and Y": the serial comma and a comma before a joining "and" read as generated.
+    "comma before and": r",\s+and\b",
     "announcement": r"\b(?:in (?:two|three|four|five) ways|(?:two|three|four|five) things|as follows|the following (?:sections?|points?))\b",
     "hedge clause": r"\b(?:seems? to|appears? to|may potentially|could potentially|it is possible that|arguably)\b",
     "process narration": r"\b(?:I (?:found|noticed|looked|checked|couldn't|can't|could not)|we (?:found|noticed|looked))\b",
