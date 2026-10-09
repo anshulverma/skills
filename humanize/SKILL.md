@@ -217,6 +217,7 @@ Keep everything under `/tmp/humanize/<doc-name>/`: the original as `v0.md`, each
 | A bold label opening a bullet or paragraph ("**Hold.** The cap...") | The same bullet or sentence led by its subject: "After a severe window the controller holds..." |
 | A one-sentence slogan paragraph ("Nothing fails the job.") | That claim as the first clause of the paragraph holding its evidence: "Nothing fails the job today: the three-strike limits are defined but never read." |
 | A paragraph walking through steps, states or a request path | A diagram, with one sentence saying what it shows |
+| A paragraph that hops from part to part of a mechanism ("Error classes recognise overload and the backoff controller slows each rank. Failed rows get no made-up reward. Coverage decides when the job fails.") | A numbered flow in the order things happen, pseudocode, or the figure, or a mix: one line per step saying what triggers it and what it changes. In testing, the author called a paragraph like this AI slop that "jumps from one thing to the next". |
 | Numbers compared in prose ("from 0.29M to 0.14-0.17M per minute") | A chart or table, with the source linked under it |
 | A bare `D123…`, `T…`, `S…`, job name or `file.py:123` | A link (see `references/visuals.md`) |
 | A conclusion or rebuttal nothing set up ("..., so it can't be sending one request per ad") | The question set up first, if readers would ask it; otherwise nothing. |
