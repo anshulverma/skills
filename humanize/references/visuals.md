@@ -33,7 +33,9 @@ none is decorative.
 - a caption that repeats the values printed in the chart or the paragraph, or that decodes the figure instead of saying what it shows;
 - decoration: shadows, gradients, icons, colour that encodes nothing.
 
-A chart's title states what its data shows and nothing more: if one point breaks the trend, the title does not claim the trend. Do not use a categorical axis for numeric ranges with gaps between them; it hides the gaps. A chart that only repeats a table next to it adds nothing, so keep one of the two.
+A chart makes one comparison, the one the paragraph above it needs: one panel and at most two series, and a second panel only when it makes a different point. Legends, reference lines and labels name things the paragraph has already explained; a line labelled with a term the reader has not met ("rotation: 1.33") is figure slop. A chart's title states what its data shows and nothing more: if one point breaks the trend, the title does not claim the trend. Do not use a categorical axis for numeric ranges with gaps between them; it hides the gaps. A chart that only repeats a table next to it adds nothing, so keep one of the two.
+
+A table fits the page without scrolling sideways: about three or four columns, each cell a short phrase. Cut the columns the section's point does not need before shortening cells. In testing, a five-column survey table with sentence-long cells made the author scroll; three columns (system, how it picks a worker, closest option) carried the point.
 
 A two-page doc usually carries one to three visuals. Give each a caption, `Figure N. What it shows.`, and refer to it from the text ("Figure 1 shows the retry path"). Put a source link directly under any chart or data table.
 
