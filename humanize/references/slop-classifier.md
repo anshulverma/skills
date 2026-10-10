@@ -20,18 +20,9 @@ The classifier is an LLM, so the same prompt scores differently from run to run:
 
 ## Open-source options
 
-Measured on all 68 labels on 2026-10-09 (46 slop, 22 human), each as a feature on its own. The prompted classifier above scores AUC 0.93 to 0.95 on `v1`:
-
-| Source | Fires on | Precision | AUC |
-|---|---|---|---|
-| roberta-base-openai-detector (Hugging Face, MIT) | 22 lines | 77% | 0.62 |
-| desklib ai-text-detector-v1.01 (DeBERTa-v3-large, MIT) | 29 | 69% | 0.53 |
-| this skill's `slop_score.py` tells | 12 | 75% | 0.53 |
-| vale-ai-tells rules (MIT), any rule | 6 | 83% | 0.53 |
-| antislop-sampler regexes (Apache-2.0) | 7 | 57% | 0.47 |
-| slop-score words and trigrams, antislop phrases | 0 | n/a | 0.50 |
-
-None is worth wiring in. The detectors measure who wrote a text, not whether the author would call it slop, and they are near chance on single sentences. The slop-score and antislop lists come from creative writing ("voice barely above a whisper", fantasy names) and never fire on technical prose. The vale rules that fire (epigram contrast, passive) are precise but rare, and the step 8 read already covers them. The span annotations behind [Measuring AI Slop in Text](https://arxiv.org/abs/2509.19163) are not released, and SlopShape's data is gated. Its taxonomy is a useful rubric: information density, relevance, repetition, templatedness, coherence, naturalness, verbosity, word complexity and tone. Re-test a new source the same way before adding it: score it as a feature against the labels, and keep it only if its AUC beats chance and adds lines the classifier misses. At a few hundred labels, the next step is a fine-tuned ModernBERT or DeBERTa-v3 that sees the sentences before and after.
+Full results: `~/.claude/docs/slop-detector-eval/report.md` (dataset v1, 2026-10-09; human prose from before 2022 vs six 2026 generators). On passages, the best single detector is SuperAnnotate at AUC 0.90. A logistic-regression ensemble of all detectors reaches 0.95, a gain of +0.046 [+0.029, +0.063]. On sentences, `mpu-env3` reaches 0.79 and the ensemble 0.81 (+0.024 [+0.016, +0.032]).
+Binoculars, Fast-DetectGPT and every lexical list are near chance on internal prose, and `roberta-openai` is inverted. The detectors measure provenance, not taste: on the author's held-out labels the ensemble scores 0.24 and this prompted classifier 0.73.
+Pending the author's decision: no detector picks lines. An optional passage-level check (persisted ensemble, or SuperAnnotate above 0.674) is the only candidate step.
 
 ## A run
 

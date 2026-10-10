@@ -1,6 +1,6 @@
 """Metrics, bootstrap CIs, ensemble and scoreboard for the detector eval.
 
-Usage: detector_eval.py {metrics,ensemble} [--data DIR] [--version v1] [--scoreboard FILE]
+Usage: detector_eval.py {metrics,ensemble,charts} [--data DIR] [--version v1] [--scoreboard FILE]
 """
 import argparse, datetime, json, math, os, subprocess, time
 import numpy as np
@@ -343,18 +343,199 @@ def ensemble(args):
     print(f"\n{time.time() - t0:.1f}s")
 
 
+CHART_DIR = "~/.claude/docs/slop-detector-eval"
+CHART_METHODS = ["ens-lr", "ens-gbt", "superannotate", "mpu-env3", "mpu-env3short", "desklib", "binoculars", "fast-detectgpt",
+                 "roberta-openai", "lex-humanize-tells", "lex-slopscore-word", "lex-vale-any", "lex-antislop-regex"]
+FAMILY = {"ens": ("ensemble", "#2a78d6"), "lex": ("lexical list", "#1baf7a"), "": ("model detector", "#eb6834")}  # categorical slots 1, 3, 2
+PAIR = ("#2a78d6", "#eb6834")
+GENERATORS = ["claude-opus", "claude-sonnet", "claude-haiku", "gpt-5.6-sol", "gpt-5.5", "gpt-5.4"]
+TYPES = ["diff", "post", "wiki", "task", "codedoc", "all"]
+
+
+def _family(m):
+    if m == PROMPTED:
+        return ("prompted classifier", "#4a3aa7")  # categorical slot 7
+    return FAMILY["ens" if m.startswith("ens") else "lex" if m.startswith("lex") else ""]
+
+
+def _latest(path, version):
+    """Newest row per cell key, so re-runs supersede older rows."""
+    best = {}
+    for r in _jsonl(os.path.expanduser(path)):
+        if r["version"] == version:
+            k = (r["method"], r["split"], r["type"], r["granularity"], r["condition"], r["generator"])
+            if k not in best or r["date"] >= best[k]["date"]:
+                best[k] = r
+    return best
+
+
+def charts(args):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+    plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False, "axes.titlesize": 10})
+    out = os.path.expanduser(args.out)
+    os.makedirs(out, exist_ok=True)
+    rows = _latest(args.scoreboard, args.version)
+    base = os.path.join(os.path.expanduser(args.data), "internal", args.version)
+    ens = json.load(open(os.path.join(base, "ensemble.json")))
+    corr = json.load(open(os.path.join(base, "correlations.json")))
+
+    def get(m, split="test", type_="all", g="passage", cond="all", gen="all"):
+        return rows.get((m, split, type_, g, cond, gen))
+
+    def order(g):  # methods by pooled test AUC, best at top
+        return sorted([m for m in CHART_METHODS if get(m, g=g)], key=lambda m: get(m, g=g)["auc"])
+
+    def hbars(ax, items, color=None, offset=0.0, height=0.8, label=None):
+        """items: (label, row|None); bars with CI whiskers; missing rows leave a gap."""
+        for i, (lab, r) in enumerate(items):
+            if r is None or r["auc"] is None:
+                continue
+            c = color or _family(lab)[1]
+            ax.barh(i + offset, r["auc"], height=height, color=c, label=label if i == 0 or label is None else None)
+            if r["auc_lo"] is not None:
+                ax.errorbar(r["auc"], i + offset, xerr=[[r["auc"] - r["auc_lo"]], [r["auc_hi"] - r["auc"]]], fmt="none", ecolor="#52514e", lw=0.8, capsize=2)
+        ax.axvline(0.5, color="#52514e", ls="--", lw=0.8)
+        ax.set_xlim(0, 1.0)
+        ax.grid(axis="x", color="#e5e4e0", lw=0.6); ax.set_axisbelow(True)
+
+    def family_legend(fig):
+        fig.legend(handles=[Patch(color=c, label=n) for n, c in FAMILY.values()], loc="lower center", ncol=3, frameon=False)
+
+    def save(fig, name):
+        fig.savefig(os.path.join(out, name), dpi=130, bbox_inches="tight"); plt.close(fig)
+        print(os.path.join(out, name))
+
+    for g in ("passage", "sentence"):
+        ms = order(g)
+        fig, axes = plt.subplots(2, 3, figsize=(13, 8), sharey=True)
+        for ax, t in zip(axes.flat, TYPES):
+            items = [(m, get(m, type_=t, g=g)) for m in ms]
+            hbars(ax, items)
+            n = next((r for _, r in items if r), None)
+            ax.set_title(f"{'pooled' if t == 'all' else t}  (n={n['n']}, {n['n_pos']} AI)" if n else t)
+            ax.set_yticks(range(len(ms)), ms)
+        for ax in axes[-1]:
+            ax.set_xlabel("AUC (95% CI)")
+        fig.suptitle(f"AUC by content type, {g} level, test split", y=0.995)
+        family_legend(fig); fig.tight_layout(rect=(0, 0.04, 1, 0.98))
+        save(fig, f"auc_by_type_{g}.png")
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.8))
+    for ax, g in zip(axes, ("passage", "sentence")):
+        ms = order(g)
+        neg = get(ms[0], g=g)["n"] - get(ms[0], g=g)["n_pos"]
+        key = "tpr1" if neg >= MIN_NEG[0.01] else "tpr5"
+        vals = [get(m, g=g)[key] or 0.0 for m in ms]
+        ax.barh(range(len(ms)), vals, color=[_family(m)[1] for m in ms])
+        for i, v in enumerate(vals):
+            ax.text(v + 0.01, i, f"{v:.2f}", va="center", fontsize=8, color="#52514e")
+        ax.set_yticks(range(len(ms)), ms); ax.set_xlim(0, 1)
+        ax.set_xlabel(f"TPR at {'1' if key == 'tpr1' else '5'}% FPR")
+        ax.set_title(f"{g}: TPR at {'1' if key == 'tpr1' else '5'}% FPR ({neg} human negatives"
+                     + ("" if key == "tpr1" else ", too few for 1%") + ")")
+        ax.grid(axis="x", color="#e5e4e0", lw=0.6); ax.set_axisbelow(True)
+    family_legend(fig); fig.tight_layout(rect=(0, 0.06, 1, 1))
+    save(fig, "tpr.png")
+
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
+    for ax, g in zip(axes, ("passage", "sentence")):
+        ms = order(g)[::-1]
+        M = np.array([[(get(m, g=g, gen=gen) or {}).get("auc", np.nan) for gen in GENERATORS] for m in ms], dtype=float)
+        ax.imshow(M, cmap="Blues", vmin=0.3, vmax=1.0, aspect="auto")
+        for i in range(len(ms)):
+            for j in range(len(GENERATORS)):
+                ax.text(j, i, f"{M[i, j]:.2f}", ha="center", va="center", fontsize=8, color="white" if M[i, j] > 0.75 else "#0b0b0b")
+        ax.set_xticks(range(len(GENERATORS)), GENERATORS, rotation=30, ha="right"); ax.set_yticks(range(len(ms)), ms)
+        ax.set_title(f"{g}: test AUC per generator")
+        ax.spines[:].set_visible(False)
+    fig.tight_layout(); save(fig, "generators.png")
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5.5), sharey=True)
+    ms = order("passage")
+    for ax, (cond, title) in zip(axes, [("humanized", "humanized (reserved split)"), ("wild", "wild 2024 AI diffs vs 2022 human diffs")]):
+        for k, g in enumerate(("passage", "sentence")):
+            typ = "diff" if cond == "wild" else "all"  # wild positives are diffs only
+            items = [(m, get(m, "reserved", typ, g, cond)) for m in ms]
+            n = next(r for _, r in items if r)
+            hbars(ax, items, color=PAIR[k], offset=0.2 - 0.4 * k, height=0.38, label=f"{g} (n={n['n']}, {n['n_pos']} AI)")
+        ax.set_yticks(range(len(ms)), ms); ax.set_title(title); ax.set_xlabel("AUC (95% CI)")
+        ax.legend(loc="lower right", frameon=False, fontsize=8)
+    fig.tight_layout(); save(fig, "hard_wild.png")
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 3.6), gridspec_kw={"width_ratios": [3, 2]})
+    labels, items = [], []
+    for g in ("passage", "sentence"):
+        e = ens[g]
+        hm, b = f"ens-{e['headline']}", e["best_single"]["method"]
+        for m in (b, hm):
+            labels.append(f"{g}: {m}" + (" (headline)" if m == hm else " (best single)")); items.append((m, get(m, g=g)))
+    hbars(axes[0], items)
+    axes[0].set_yticks(range(len(labels)), labels); axes[0].set_xlabel("pooled test AUC (95% CI)")
+    axes[0].set_title("headline ensemble vs best single method")
+    for i, g in enumerate(("passage", "sentence")):
+        d = ens[g]["auc_diff"]
+        axes[1].errorbar(d["diff"], i, xerr=[[d["diff"] - d["lo"]], [d["hi"] - d["diff"]]], fmt="o", color=PAIR[0], ms=8, capsize=4)
+        axes[1].text(d["diff"], i + 0.18, f"{d['diff']:+.3f} [{d['lo']:+.3f}, {d['hi']:+.3f}]", ha="center", fontsize=8)
+    axes[1].axvline(0, color="#52514e", ls="--", lw=0.8); axes[1].set_ylim(-0.6, 1.6)
+    axes[1].set_yticks([0, 1], ["passage", "sentence"]); axes[1].set_xlabel("AUC difference, paired bootstrap 95% CI")
+    axes[1].set_title("ensemble minus best single")
+    fig.tight_layout(); save(fig, "ensemble_vs_best.png")
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4), sharey=True)
+    types = [t for t in TYPES if t != "all"]
+    for ax, g in zip(axes, ("passage", "sentence")):
+        e = ens[g]; hv, b = e["headline"], e["best_single"]["method"]
+        hbars(ax, [(t, get(f"ens-{hv}-loto-{t}", type_=t, g=g)) for t in types], color=PAIR[0], offset=0.2, height=0.38, label=f"ens-{hv}, type held out")
+        hbars(ax, [(t, get(b, type_=t, g=g)) for t in types], color=PAIR[1], offset=-0.2, height=0.38, label=f"{b} (best single)")
+        ax.set_yticks(range(len(types)), types); ax.set_title(f"{g}: leave-one-type-out"); ax.set_xlabel("test AUC on held-out type (95% CI)")
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=2, frameon=False, fontsize=8)
+    fig.tight_layout(); save(fig, "loto.png")
+
+    keep = [m for m in CHART_METHODS + ["lex-vale-Passive", "lex-vale-Dash", "prompted"] if m in corr["methods"]]
+    idx = [corr["methods"].index(m) for m in keep]
+    R = np.array([[np.nan if corr["rho"][i][j] is None else corr["rho"][i][j] for j in idx] for i in idx], dtype=float)
+    fig, ax = plt.subplots(figsize=(9, 7.5))
+    from matplotlib.colors import LinearSegmentedColormap
+    cmap = LinearSegmentedColormap.from_list("div", ["#2a78d6", "#f0efec", "#e34948"])
+    im = ax.imshow(R, cmap=cmap, vmin=-1, vmax=1)
+    for i in range(len(keep)):
+        for j in range(len(keep)):
+            if not np.isnan(R[i, j]):
+                ax.text(j, i, f"{R[i, j]:.2f}", ha="center", va="center", fontsize=7, color="white" if abs(R[i, j]) > 0.6 else "#0b0b0b")
+    ax.set_xticks(range(len(keep)), keep, rotation=45, ha="right"); ax.set_yticks(range(len(keep)), keep)
+    ax.spines[:].set_visible(False); fig.colorbar(im, ax=ax, shrink=0.7, label="Spearman rho")
+    ax.set_title("Spearman correlation on test sentences (prompted: 200-sentence subset only)")
+    fig.tight_layout(); save(fig, "correlations.png")
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharey=True)
+    ms = order("sentence") + ["prompted"]
+    for ax, (split, typ, cond, title) in zip(axes, [("prompted_subset", "all", "all", "provenance subset (200 test sentences)"),
+                                                    ("eval", "taste", "taste", "author taste labels (25 eval sentences)")]):
+        items = [(m, get(m, split, typ, "sentence", cond)) for m in ms]
+        hbars(ax, items)
+        ax.set_yticks(range(len(ms)), ms); ax.set_title(title); ax.set_xlabel("AUC (95% CI)")
+    fig.legend(handles=[Patch(color=c, label=n) for n, c in list(FAMILY.values()) + [_family(PROMPTED)]],
+               loc="lower center", ncol=4, frameon=False)
+    fig.tight_layout(rect=(0, 0.06, 1, 1)); save(fig, "taste.png")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("metrics", "ensemble"):
+    for name in ("metrics", "ensemble", "charts"):
         p = sub.add_parser(name)
         p.add_argument("--data", default=DATA)
         p.add_argument("--version", default="v1")
         p.add_argument("--scoreboard", default=SCOREBOARD)
+        if name == "charts":
+            p.add_argument("--out", default=CHART_DIR)
     args = ap.parse_args()
     # HistGradientBoosting's OpenMP defaults to every core; on a busy shared host a small fit took 150 s vs <1 s with 8 threads.
     with threadpool_limits(8):
-        {"metrics": metrics, "ensemble": ensemble}[args.cmd](args)
+        {"metrics": metrics, "ensemble": ensemble, "charts": charts}[args.cmd](args)
 
 
 if __name__ == "__main__":
