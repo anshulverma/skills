@@ -24,6 +24,12 @@ class T(unittest.TestCase):
         self.assertNotIn("code", st.normalize(wrapped))
         self.assertIn("Use A and B here.", st.normalize(wrapped))
 
+    def test_titles_match_markdown_headings(self):
+        plain = "Winding Down The Old Cache\nWe turned off the cache because it served stale rows.\n\n  ### New Launch Process\n**tl;dr **We launch on Mondays now."
+        md = "# Winding Down The Old Cache\n\nWe turned off the cache because it served stale rows.\n\n### New Launch Process\n\ntl;dr We launch on Mondays now."
+        self.assertEqual(st.normalize(plain), st.normalize(md))
+        self.assertTrue(st.normalize(plain).startswith("Winding Down The Old Cache. We turned"))
+
     def test_cut_words(self):
         t = "One two three four. Five six seven. Eight nine ten eleven twelve."
         self.assertEqual(st.cut_words(t, 8), "One two three four. Five six seven.")

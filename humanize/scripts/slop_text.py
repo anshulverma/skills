@@ -12,7 +12,7 @@ URL = re.compile(r"https?://\S+|www\.\S+")
 MENTION = re.compile(r"(?<!\w)@\w+")
 
 
-HEAD = re.compile(r"^\s{0,3}#{1,6}\s*(\S.*?)\s*$")
+HEAD = re.compile(r"^\s*#{1,6}\s*(\S.*?)[\s#]*$")
 ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(\S.*?)\s*$")
 
 
@@ -28,13 +28,18 @@ def _blocks(t: str) -> str:
         lines = [l for l in block.splitlines() if l.strip()]
         if not lines or all(re.match(r"( {4}|\t)", l) for l in lines):
             continue  # indented code block (a blank line precedes it; list continuations share a block)
-        items = []
+        items, title = [], False
         for l in lines:
-            if HEAD.match(l) or ITEM.match(l) or not items:
+            if HEAD.match(l) or ITEM.match(l) or not items or not items[-1] or (title and l.lstrip()[:1].isupper()):
                 items.append(l)
             else:
                 items[-1] += " " + l.strip()
-        out.append("\n".join(_end(m[1]) if (m := HEAD.match(i) or ITEM.match(i)) else i for i in items))
+            # A short unpunctuated line followed by a capitalised line is a plain-text title (no '#').
+            title = not ITEM.match(l) and len(l.split()) <= 10 and not re.search(r"[.!?:;,]\W*$", l)
+            if HEAD.match(l):
+                items.append("")  # a heading always ends its own item
+        items = [i for i in items if i.strip()]
+        out.append("\n".join(_end(m[1]) if (m := HEAD.match(i) or ITEM.match(i)) else _end(i.strip()) for i in items))
     return "\n\n".join(out)
 
 
@@ -46,6 +51,7 @@ def normalize(text: str) -> str:
     t = re.sub(r"`([^`\n]+)`", r"\1", t)
     t = re.sub(r"(\*\*|\*)(\S(?:[^*\n]*?\S)?)\1", r"\2", t)
     t = re.sub(r"(?<!\w)(__|_)(\S.*?\S|\S)\1(?!\w)", r"\2", t)  # not inside snake_case words
+    t = re.sub(r"\*+(?=\S)|(?<=\S)\*+|(?<!\w)__|__(?!\w)", "", t)  # unpaired emphasis markers (e.g. "**word **")
     t = t.translate(str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'", "\u00a0": " "}))
     paras = [re.sub(r"\s+", " ", p).strip() for p in re.split(r"\n\s*\n", t) if p.strip()]  # hard-wrapped lines stay joined
     keep = [s for s in _split(paras) if not (URL.search(s) or MENTION.search(s) or ID.search(s))]
