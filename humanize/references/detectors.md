@@ -31,3 +31,11 @@ cd /tmp && env -u PYTHONPATH CUDA_VISIBLE_DEVICES=1 HTTPS_PROXY=http://fwdproxy:
 | `lex-*` | `scripts/lexical.py`: vale-ai-tells per rule and any, antislop regexes and phrases, slop-score words and trigrams, humanize tells; counts per 100 words | all | see `data/oss/LICENSES.md` |
 
 SuperAnnotate's SAIPL licence is AGPL-style: fine for evaluation, do not redistribute the weights. The MPU configs carry no label names; `LABEL_1` is AI per MPU's training code. roberta-openai was trained on GPT-2 output and scores modern chatbot prose as human, so expect it near or below chance. `binoculars` and `fast-detectgpt` come from one pass over both Falcon models (about 28 GiB peak on one GPU) with `--batch` capped at 8.
+
+## Passage check
+
+`scripts/passage_check.py DOC.md [--model PATH] [--json]` splits the body into passages the way the ensemble was trained (normalised paragraphs, short ones under one heading merged to 60 words, cut at a sentence boundary at 400; shorter leftovers are skipped and counted), scores each with the model's six features (no Falcon), and prints each passage's probability of being AI-written, with `FLAG` above the model's threshold. It is advisory and always exits 0. Run it like `detectors.py` above, with the detector venv, `env -u PYTHONPATH` and one GPU.
+
+The model is a logistic regression over `superannotate`, `mpu-env3`, `mpu-env3short`, `desklib`, `roberta-openai` and `lex-humanize-tells`, kept in the models repo at `~/workspace/models/nlp/slop_detector_ensemble_lr/` with its model card and training script. The script reads `--model`, then `HUMANIZE_SLOP_MODEL`, then that directory's `slop_detector_ensemble_lr-v1.0.0.json`. The threshold, 0.80, is the 95th percentile of the model's probability on human dev passages, so about 5% of human passages flag. On the test split (921 internal passages) the model's AUC is 0.951 (95% CI 0.938 to 0.964), and at the threshold it flags 77% of AI passages and 5.9% of human ones.
+
+A pass is weak evidence. On AI passages rewritten by this skill, scored against human passages, the ensemble's AUC is only 0.72 (95% CI 0.62 to 0.81, 122 reserved passages), so many humanized AI passages score below the threshold. Act on a flag; do not report a clean run as proof the doc reads human.

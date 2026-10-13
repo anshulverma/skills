@@ -17,7 +17,7 @@ from sklearn.metrics import roc_auc_score, roc_curve, precision_recall_fscore_su
 
 HERE = os.path.dirname(os.path.realpath(__file__))  # realpath: run via the ~/.claude/skills symlink, sl needs the repo
 SCOREBOARD = os.path.join(HERE, "..", "data", "detector_metrics.jsonl")
-DATA = "~/workspace/datasets/slop-detector-eval"
+DATA = "~/workspace/datasets/slop-detector-eval/data"
 STEMS = ["passages", "sentences", "humanized", "humanized_sentences", "wild", "wild_sentences", "taste"]
 EXTRA = {"prompted_subset": "sentences", "taste_prompted": "taste"}  # score file -> item file it scores
 MIN_NEG = {0.01: 500, 0.05: 100}
