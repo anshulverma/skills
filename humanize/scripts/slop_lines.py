@@ -7,7 +7,8 @@
   slop_lines.py freeze NAME                        pin today's eval split as a fixed eval set
   slop_lines.py metrics                            the logged eval history, oldest first
   slop_lines.py uncertain PRED.json [-n 20]        lines the classifier is least sure of, to label
-  slop_lines.py add "TEXT" slop|human [--why ...] [--rewrite ...] [--source ...]   add one author label
+  slop_lines.py add "TEXT" slop|human [--why ...] [--rewrite ...] [--source ...] [--kind sentence|figure]
+                                                   add one author label (also appended to the slop dataset)
 
 PRED.json is the classifier agent's output, {"lines": [{"i", "text", "p_slop", "label", "why",
 "rewrite"}]}, per references/slop-classifier.md. Labels live in data/slop_labels.jsonl, one
@@ -33,6 +34,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(HERE, "..", "data")
 LABELS = os.path.join(DATA, "slop_labels.jsonl")
 METRICS = os.path.join(DATA, "classifier_metrics.jsonl")
+# Every author label is also kept in the private slop dataset, the long-term record of the author's feedback.
+DATASET = os.environ.get("HUMANIZE_FEEDBACK_DATASET", os.path.expanduser(
+    "~/workspace/datasets/slop-detector-eval/data/internal/feedback/author_labels.jsonl"))
 PROMPT = os.path.join(HERE, "..", "references", "slop-classifier.md")
 sys.path.insert(0, HERE)
 from slop_score import APPENDIX, sentences, strip_frontmatter  # noqa: E402
@@ -105,6 +109,7 @@ def main() -> None:
     a = sub.add_parser("add"); a.add_argument("text"); a.add_argument("label", choices=["slop", "human"])
     a.add_argument("--why", default=""); a.add_argument("--rewrite", default="")
     a.add_argument("--source", default="author label")
+    a.add_argument("--kind", default="sentence", choices=["sentence", "figure"], help="figure: TEXT is an image path under the dataset's figures/")
     o = ap.parse_args()
 
     if o.cmd == "split":
@@ -161,9 +166,16 @@ def main() -> None:
         for p in sorted(lines, key=lambda p: p["i"]):
             print(f"{p['i']:3}. [{p['p_slop']:.2f}] {p['text']}")
     elif o.cmd == "add":
-        with open(LABELS, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"text": o.text, "label": o.label, "why": o.why, "rewrite": o.rewrite, "source": o.source,
-                                "date": datetime.date.today().isoformat()}) + "\n")
+        rec = {"text": o.text, "label": o.label, "why": o.why, "rewrite": o.rewrite, "source": o.source,
+               "date": datetime.date.today().isoformat()}
+        if o.kind == "sentence":
+            with open(LABELS, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\n")
+        if os.path.isdir(os.path.dirname(DATASET)):
+            with open(DATASET, "a", encoding="utf-8") as f:
+                f.write(json.dumps({**rec, "kind": o.kind}) + "\n")
+        else:
+            print(f"warning: {DATASET} not found; label kept only in the skill", file=sys.stderr)
         print(f"added ({o.label}, {split_of(o.text)} split); {sum(1 for _ in open(LABELS))} labels")
 
 
