@@ -20,12 +20,9 @@ The classifier is an LLM, so the same prompt scores differently from run to run:
 
 ## Open-source options
 
-AI-text detectors (Binoculars, Fast-DetectGPT, RoBERTa and DeBERTa detectors on Hugging Face) measure who wrote a text, not whether the author would call it slop, and they are weak on single sentences: on HC3 sentences, fine-tuned RoBERTa scores about 59 F1 and DetectGPT 63, against 87 to 97 on whole documents ([MPU paper](https://arxiv.org/abs/2305.18149)). At most, log one as a feature and keep it only if its AUC on a frozen set beats chance. More useful:
-
-- word and n-gram lists of what LLMs overuse ([slop-forensics](https://github.com/sam-paech/slop-forensics), [EQ-Bench slop score](https://eqbench.com/slop-score.html)) and [Vale](https://vale.sh) rules: cheap line-level features for idioms and stock phrases, though they miss hops and undefined labels;
-- the slop taxonomy in [Measuring AI Slop in Text](https://arxiv.org/abs/2509.19163) as a rubric for the prompt;
-- one yes/no LLM check per shape, combined by logistic regression trained on the labels, which gives calibrated scores per shape;
-- at a few hundred labels, a fine-tuned ModernBERT or DeBERTa-v3 that sees the sentence before and after, since a hop spans sentences.
+Full results: `~/.claude/docs/slop-detector-eval/report.md` (dataset v1, 2026-10-09; human prose from before 2022 vs six 2026 generators). On passages, the best single detector is SuperAnnotate at AUC 0.90. A logistic-regression ensemble of all detectors reaches 0.95, a gain of +0.046 [+0.029, +0.063]. On sentences, `mpu-env3` reaches 0.79 and the ensemble 0.81 (+0.024 [+0.016, +0.032]).
+Binoculars, Fast-DetectGPT and every lexical list are near chance on internal prose, and `roberta-openai` is inverted. The detectors measure provenance, not taste: on the author's held-out labels the ensemble scores 0.24 and this prompted classifier 0.73.
+Pending the author's decision: no detector picks lines. An optional passage-level check (persisted ensemble, or SuperAnnotate above 0.674) is the only candidate step.
 
 ## A run
 
