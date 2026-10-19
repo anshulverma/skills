@@ -549,6 +549,18 @@ def test_status_shows_time_spent_split():
     assert rows["You engaged (reading, commenting, messaging)"] == m.group(2)   # Metrics show the same numbers as Status
 
 
+def test_roadmap_renders_larger_plan_and_milestone_chain():
+    r = copy_run()
+    p = json.load(open(os.path.join(r, "pipeline.json")))
+    p["roadmap"] = [{"name": "This run", "status": "in_progress", "scope": "a"}, {"name": "Next \"one\"", "status": "planned", "scope": "b"}]
+    json.dump(p, open(os.path.join(r, "pipeline.json"), "w"))
+    h = render_tracker.render(r, state.parse_ts("2026-10-19T07:00:00Z"))
+    plan = h.split("<h2>Larger plan</h2>")[1].split("<h2>")[0]
+    assert "1. This run" in plan and "2. Next" in plan and "planned" in plan
+    dot = open(os.path.join(r, "tracker", "flow.dot")).read()
+    assert "Milestone 1: This run (this run)" in dot and "DONE -> M2;" in dot and 'Next \\"one\\"' in dot   # quotes escaped for dot
+
+
 def test_agent_time_counts_while_owner_away_but_not_while_waiting():
     T = state.parse_ts
     ev = [{"ts": "2026-10-19T08:00:00Z", "kind": "comment", "doc": "spec", "comment_ts": "2026-10-19T08:00:00Z", "event": ""},

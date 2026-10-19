@@ -47,6 +47,7 @@ The renderer masks a credential value in `request.md` as `[credential masked]`, 
 | Section | Content and source |
 |---|---|
 | Status block | Last updated (owner's timezone, `owner_tz`, + tick), status, now (phase, unit, start, elapsed), waiting on (who, what, since, link, what unblocks it), next wake (cron cadence, next fire, expiry, armed awaits), all from `tracker_status`. INIT writes `tracker_status` before the first render; every transition rewrites it |
+| Larger plan | When `pipeline.json.roadmap` is set: this run as milestone 1 and the later milestones (name, scope, status). The phase flowchart draws this run's phases left to right inside a milestone-1 box, with later milestones stacked below it. Bookkeeping only; the owner sets or edits the list |
 | Where the run is | Phase flowchart INIT, RESEARCH, PROPOSAL, SPEC, PLAN, BUILD, LAND, DONE with start and end states. Each gated doc is followed by an "accepted?" decision with a dashed revise loop. LAND is followed by an "all code landed?" decision with a review-fixes loop. The current phase is filled blue and each gated doc shows its state |
 | Timeline | Time per phase, split into the skill working and waiting on the owner. Build to closure (R5) adds implementation time per plan task, test runs, each diff from creation to publish, review and land, and request-to-closure time |
 | Implementation plan (R9) | From PLAN on: link to the plan doc, the plan's `**Goal:**` line, sdd stage, tasks complete n/m, a task flowchart and a task table (ID, task, depends on, state, started, duration) |
