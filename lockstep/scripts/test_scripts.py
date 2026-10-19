@@ -542,7 +542,7 @@ def test_status_shows_time_spent_split():
     m = re.search(r"Time spent</b></td><td>((?:\d+h )?\d+m) active: you ((?:\d+h )?\d+m) \+ agent ((?:\d+h )?\d+m)", status)
     assert m, status
     mins = lambda x: sum(int(v) * (60 if u == "h" else 1) for v, u in re.findall(r"(\d+)([hm])", x))
-    assert abs(mins(m.group(2)) + mins(m.group(3)) - mins(m.group(1))) <= 1      # the split adds up to the total (rounding)
+    assert mins(m.group(2)) + mins(m.group(3)) == mins(m.group(1))      # the displayed split adds up exactly
 
 
 # ---------- velocity.py ----------

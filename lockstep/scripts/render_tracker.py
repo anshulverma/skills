@@ -337,6 +337,7 @@ def render(run_dir: str, now: datetime) -> str:
         timeline_chart(events, now, os.path.join(figdir, "timeline.png"))
     own_all, skill_all = owner_spans(events), skill_spans(events, now)
     you_s, agent_s = time_split(events, now)
+    tot_m, you_m = round((you_s + agent_s) / 60), round(you_s / 60)  # displayed parts add up to the displayed total
     active = lambda a, b: overlap(_merge(own_all + skill_all), a, b)
     t0 = parse_ts(events[0]["ts"]) if events else now
     st = run["tracker_status"]
@@ -345,7 +346,7 @@ def render(run_dir: str, now: datetime) -> str:
     h.append("<h2>Status</h2>" + _table(["", ""], [
         ("<b>Last updated</b>", f"{now:%Y-%m-%d %H:%M} UTC (tick {esc(run.get('tick', 0))})"),
         ("<b>Status</b>", esc(run.get("status", ""))),
-        ("<b>Time spent</b>", f"{fmt_dur(you_s + agent_s)} active: you {fmt_dur(you_s)} + agent {fmt_dur(agent_s)} "
+        ("<b>Time spent</b>", f"{fmt_dur(tot_m * 60)} active: you {fmt_dur(you_m * 60)} + agent {fmt_dur((tot_m - you_m) * 60)} "
                               "(a minute when you were engaged counts as yours, even if the agent was also working)"),
         ("<b>Now</b>", esc(st.get("now", "")) + (f" (sdd stage {esc(sdd.get('stage'))})" if sdd else "")),
         ("<b>Waiting on</b>", esc(st.get("waiting_on", "")) + since),
