@@ -3,6 +3,7 @@
 
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from datetime import timedelta
@@ -11,6 +12,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIX = os.path.join(HERE, "fixtures")
 sys.path.insert(0, HERE)
 import state  # noqa: E402
+import sweep  # noqa: E402
 
 
 def test_recompute_status():
@@ -74,6 +76,196 @@ def test_append_event_fields():
     e = state.append_event(d, "task_start", "Task 3 started", now=state.parse_ts("2026-10-19T06:00:00Z"), task=3)
     assert e == {"ts": "2026-10-19T06:00:00Z", "phase": None, "kind": "task_start", "event": "Task 3 started", "task": 3}
     assert json.loads(open(os.path.join(d, "events.jsonl")).read()) == e
+
+
+def test_lease_unreadable_is_stale_and_cli_validates():
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, ".lock"), "w").write('{"session_id": "s1", "heartb')
+    assert state.acquire_lease(d, "s2")          # real clock, so the CLI calls below see a fresh lease
+    cli = lambda *a: subprocess.run([sys.executable, os.path.join(HERE, "state.py"), d, *a], capture_output=True).returncode
+    assert cli("lease", "acquire", "s3") == 3
+    assert cli("lease", "heartbeet", "s2") == 2 and os.path.exists(os.path.join(d, ".lock"))
+    assert cli("reason", "add", "bogus", "x") == 2
+    assert cli("event", "milestone", "text", "noequals") == 2
+
+
+def test_atomic_write_cleans_temp_on_failure():
+    d = tempfile.mkdtemp()
+    try:
+        state.atomic_write_json(os.path.join(d, "x.json"), {"bad": object()})
+        assert False
+    except TypeError:
+        pass
+    assert os.listdir(d) == []
+
+
+# ---------- sweep.py ----------
+
+def row(id, text, author="Owner", parent=None, quoted=None, t="2026-10-19T05:00:00Z", action=None, resolved=False):
+    return {"id": id, "content": text, "author": author, "parent_id": parent, "quoted_text": quoted,
+            "created_time": t, "action": action, "resolved": resolved}
+
+
+DOC = {"title": "[Design] X", "status": "awaiting_acceptance", "qprefix": "Q",
+       "questions": ["1. Which name? We recommend a.", "2. Push? We recommend no."], "answered": [],
+       "accept_comment": None}
+
+
+def kinds(items):
+    return [i["kind"] for i in items]
+
+
+def test_two_step_accept():
+    rows = [row("a", "Approved", quoted="[Design] X")]
+    it = sweep.pending(rows, dict(DOC), "Owner", set(), {}, "gate")
+    assert kinds(it) == ["accept"] and it[0]["doc_status_after"] == "confirm_pending"
+    rows += [row("b", "lgtm", parent="a", t="2026-10-19T05:01:00Z")]
+    doc = {**DOC, "status": "confirm_pending", "accept_comment": "a"}
+    assert kinds(sweep.pending(rows, doc, "Owner", {"a"}, {}, "gate")) == ["confirm"]
+
+
+def test_accept_with_all_answered_is_immediate():
+    rows = [row("q1", "a", quoted="1. Which name? We recommend a."), row("q2", "Q2: no", t="2026-10-19T05:01:00Z"),
+            row("a", "LGTM", quoted="[Design] X", t="2026-10-19T05:02:00Z")]
+    it = sweep.pending(rows, dict(DOC), "Owner", set(), {}, "gate")
+    assert kinds(it) == ["answer", "answer", "accept"] and it[-1]["doc_status_after"] == "accepted"
+
+
+def test_changes_then_confirm_in_one_sweep():
+    doc = {**DOC, "status": "confirm_pending", "accept_comment": "a"}   # "a" becomes a former accept root via the changes
+    rows = [row("a", "Approved", quoted="[Design] X"),
+            row("c", "Changes: shorten it", quoted="[Design] X", t="2026-10-19T05:05:00Z"),
+            row("d", "confirm", parent="a", t="2026-10-19T05:06:00Z")]
+    it = sweep.pending(rows, doc, "Owner", {"a"}, {}, "gate")
+    assert kinds(it) == ["changes", "stale_confirm"] and it[0]["doc_status_after"] == "awaiting_acceptance"
+
+
+def test_reopen_and_already_accepted():
+    doc = {**DOC, "status": "accepted"}
+    rows = [row("r", "Reopen: S2 needs a rethink"), row("x", "approve", quoted="[Design] X", t="2026-10-19T05:01:00Z")]
+    it = sweep.pending(rows, doc, "Owner", set(), {}, "accepted")
+    assert kinds(it) == ["reopen", "accept"]
+    assert it[0]["doc_status_after"] == "awaiting_acceptance"
+    assert kinds(sweep.pending(rows[1:], doc, "Owner", set(), {}, "accepted")) == ["already_accepted"]
+
+
+def test_action_confirm_and_scope():
+    pa = {"r1": {"verb": "abort", "asked_reply_id": "bot1"}}
+    rows = [row("r1", "Action: abort"), row("bot1", "[🤖 Claude Code] Needs Confirm: abort", parent="r1", t="2026-10-19T05:01:00Z"),
+            row("c1", "Confirm", parent="r1", t="2026-10-19T05:02:00Z")]
+    assert kinds(sweep.pending(rows, dict(DOC), "Owner", {"r1"}, pa, "tracker")) == ["confirm_action"]
+    pa_close = {"r2": {"verb": "close", "asked_reply_id": "bot2"}}
+    rows2 = [row("r2", "Action: close"), row("bot2", "[🤖 Claude Code] Needs Confirm: close", parent="r2", t="2026-10-19T05:01:00Z"),
+             row("c2", "confirm", parent="r2", t="2026-10-19T05:03:00Z"), row("d", "D123456789 and D123456790", t="2026-10-19T05:04:00Z")]
+    assert kinds(sweep.pending(rows2, dict(DOC), "Owner", {"r2"}, pa_close, "tracker")) == ["confirm_action", "diff_ids"]
+
+
+def test_non_owner_and_own_replies():
+    rows = [row("n", "Action: abort", author="Someone"), row("o", "[🤖 Claude Code] Running: pause", parent="n"),
+            row("k", "(cont'd 2/2) tail", parent="n"), row("m", "", parent="n"), row("z", "resolve", action="resolve")]
+    assert kinds(sweep.pending(rows, dict(DOC), "Owner", set(), {}, "gate")) == ["other_author"]
+
+
+def test_resolved_thread_with_unhandled_reply_is_pending():
+    rows = [row("a", "why X?", resolved=True), row("b", "and Y?", parent="a", t="2026-10-19T05:03:00Z")]
+    it = sweep.pending(rows, dict(DOC), "Owner", {"a"}, {}, "gate")
+    assert [i["id"] for i in it] == ["b"]
+
+
+def test_two_owner_messages_oldest_first():
+    rows = [row("a", "Q1: b", t="2026-10-19T05:00:00Z"), row("b", "it must stay private", parent="a", t="2026-10-19T05:02:00Z")]
+    assert kinds(sweep.pending(rows, dict(DOC), "Owner", set(), {}, "gate")) == ["answer", "requirement"]
+
+
+def test_pending_sorted_by_instant_across_offsets():
+    rows = [row("late", "why?", t="2026-10-18T22:10:00-07:00"), row("early", "how?", t="2026-10-19T05:05:00Z")]
+    assert [i["id"] for i in sweep.pending(rows, dict(DOC), "Owner", set(), {}, "gate")] == ["early", "late"]
+
+
+def test_qprefix_is_escaped():
+    p = sweep.qref("T3.")
+    assert p.search("T3.1") and p.search("T3. 1") and not p.search("T301")
+    assert sweep.qref("S").search("s2 sounds good")
+
+
+def test_answer_match_unescapes_entities():
+    doc = {**DOC, "questions": ["1. Can't we mount it? We recommend mounting."]}
+    rows = [row("a", "yes", quoted="1. Can&#39;t we mount it?")]
+    assert kinds(sweep.pending(rows, doc, "Owner", set(), {}, "gate")) == ["answer"]
+
+
+def test_accept_on_title_with_entities():
+    doc = {**DOC, "title": "[Design] Tom's & Jerry's plan"}
+    rows = [row("a", "Accepted", quoted="[Design] Tom&#39;s &amp; Jerry&#39;s plan ")]
+    assert kinds(sweep.pending(rows, doc, "Owner", set(), {}, "gate")) == ["accept"]
+
+
+def test_parse_list_output_noise_and_shapes():
+    rows, tok = sweep.parse_list_output('Warning: slow\n[{"id": "a"}]')
+    assert rows == [{"id": "a"}] and tok is None
+    rows, tok = sweep.parse_list_output('{"truncated": true, "data": [{"id": "b"}], "next_page_token": "T2"}')
+    assert rows == [{"id": "b"}] and tok == "T2"
+    for bad in ("", "Error: auth expired"):
+        try:
+            sweep.parse_list_output(bad)
+            assert False, bad
+        except ValueError:
+            pass
+
+
+def load_rows(name):
+    rows = json.load(open(os.path.join(FIX, name)))
+    return rows["data"] if isinstance(rows, dict) else rows
+
+
+def test_recorded_fixtures_classify():
+    spec_doc = {**DOC, "title": "[Design] Lockstep: Structured Development Reviewed One Doc at a Time", "qprefix": "S",
+                "questions": json.load(open(os.path.join(FIX, "spec.questions.json")))}
+    it = sweep.pending(load_rows("comments_spec.json"), spec_doc, "Anshul Verma", set(), {}, "gate")
+    assert [i["id"] for i in it if i["kind"] == "accept"] == ["AAACI48AiLw"]
+    prop = {**DOC, "title": "[Proposal] Galley: Doc-Gated Spec to Implementation", "qprefix": "Q",
+            "questions": json.load(open(os.path.join(FIX, "proposal.questions.json")))}
+    assert "accept" in kinds(sweep.pending(load_rows("comments_proposal.json"), prop, "Anshul Verma", set(), {}, "gate"))
+    shop = {**DOC, "title": "[Design] RL and On-Policy Distillation for ShopEV Stage 1", "qprefix": "Q", "questions": []}
+    assert "accept" not in kinds(sweep.pending(load_rows("comments_shopev_plan.json"), shop, "Anshul Verma", set(), {}, "gate"))
+
+
+def test_cli_skips_unset_tracker_and_errors_on_missing_questions_file():
+    d = tempfile.mkdtemp()
+    json.dump({"owner_name": "Owner", "docs": {"p": {"id": "X", "title": "T", "status": "accepted", "qprefix": "Q",
+               "questions_file": "docs/p/questions.json"}}}, open(os.path.join(d, "pipeline.json"), "w"))
+    out = json.loads(subprocess.run([sys.executable, os.path.join(HERE, "sweep.py"), "--run", d, "--owner", "Owner"],
+                                    capture_output=True, text=True).stdout)
+    assert set(out["docs"]) == {"p"} and out["docs"]["p"]["status"] == "error"
+
+
+def test_tracker_other_comments_ignored():
+    rows = [row("a", "nice dashboard"), row("b", "Action: pause", t="2026-10-19T05:01:00Z")]
+    assert kinds(sweep.pending(rows, dict(DOC), "Owner", set(), {}, "tracker")) == ["ignored", "action"]
+
+
+def test_list_comments_follows_pages():
+    d = tempfile.mkdtemp()
+    fake = os.path.join(d, "meta")
+    open(fake, "w").write("""#!/bin/bash
+case "$*" in
+  *--page-token=T2*) echo '[{"id": "b"}]' ;;
+  *--id=BAD*) echo 'Error: auth expired'; exit 1 ;;
+  *) echo 'Warning: slow'; echo '{"truncated": true, "data": [{"id": "a"}], "next_page_token": "T2"}' ;;
+esac
+""")
+    os.chmod(fake, 0o755)
+    old = os.environ["PATH"]
+    os.environ["PATH"] = d + ":" + old
+    try:
+        assert [r["id"] for r in sweep.list_comments("DOC1")] == ["a", "b"]
+        try:
+            sweep.list_comments("BAD")
+            assert False
+        except (RuntimeError, ValueError):
+            pass
+    finally:
+        os.environ["PATH"] = old
 
 
 def main() -> None:
