@@ -343,7 +343,7 @@ def render(run_dir: str, now: datetime) -> str:
 
     gates = []
     for k, d in run["docs"].items():
-        if not isinstance(d, dict) or not d.get("id") or d.get("kind") in ("plan", "explainer"):
+        if not isinstance(d, dict) or not d.get("id") or d.get("kind") in ("plan", "explainer", "external"):
             continue
         versions = sum(1 for e in events if e.get("doc") == k and e["kind"] in ("published", "humanize"))
         wait = sum((we - ws).total_seconds() for ws, we in waits.get(k, []))
