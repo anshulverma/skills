@@ -66,7 +66,7 @@ SKILL.md "The tick" is the only tick order. The steps below are this page's part
       python3 ~/.claude/skills/lockstep/scripts/state.py RUN event cron_rearmed "cron re-armed" old=<old_id> new=<new_id>
       ```
 5. Clear dead task ids. For each dead id in `in_flight` or `awaits`:
-   - Clear it and log it (`state.py RUN event tick "dead task <id> cleared"`).
+   - Clear it and log it (`state.py RUN event tick "dead task <id> cleared"`). For a dead `in_flight` unit, also log `unit_done "<unit>"` so its agent time stops at the clear (references/TRACKER.md).
    - Then redo the unit or re-arm the await. Do not wait 30 minutes.
 6. Each sweep adds 1 to `counters.checks` (SKILL.md tick step 4).
 7. Arm the await if the conditions below hold (SKILL.md tick step 10), and rewrite `tracker_status.next_wake`.

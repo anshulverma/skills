@@ -77,7 +77,7 @@ Every transition also rewrites `tracker_status`. Append events with `python3 $S/
 | `phase` | `INIT`, `RESEARCH`, `PROPOSAL`, `SPEC`, `PLAN`, `BUILD`, `LAND`, `DONE` |
 | `status` | Derived only (see "Derived status") |
 | `tick` | Integer, bumped by each tick that holds the lease |
-| `in_flight` | Claim object or `null`. Schema and staleness rule: sdd SKILL.md "In-flight marker", with one exception: a claim whose `agent` is a task this session knows is still running is never stale, even past 30 minutes. Fingerprints follow sdd SKILL.md "Fingerprint every artifact write" |
+| `in_flight` | Claim object or `null`. Schema and staleness rule: sdd SKILL.md "In-flight marker", with one exception: a claim whose `agent` is a task this session knows is still running is never stale, even past 30 minutes. Fingerprints follow sdd SKILL.md "Fingerprint every artifact write". Claiming logs `unit_start "<unit>"` and clearing logs `unit_done "<unit>"` (agent time, references/TRACKER.md) |
 | `cron_job_id`, `cron_armed_at` | references/LOOP.md |
 | `awaits` | `{doc: background task id}` for `await_owner.sh` (references/LOOP.md) |
 | `pending_actions` | `{root_id: {verb, asked_reply_id}}`, holding Confirm verbs that wait for `confirm` (references/ACTIONS.md) |
