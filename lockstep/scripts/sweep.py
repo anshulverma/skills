@@ -36,15 +36,22 @@ def clean(s) -> str:
 
 
 def parse_list_output(out: str) -> tuple[list[dict], str | None]:
-    starts = [i for i in (out.find("["), out.find("{")) if i != -1]
-    if not starts:
-        raise ValueError(f"no JSON in comment list output: {out.strip()[:200]!r}")
-    raw, _ = json.JSONDecoder().raw_decode(out[min(starts):])
-    if isinstance(raw, list):
-        return raw, None
-    if isinstance(raw, dict) and isinstance(raw.get("data"), list):
-        return raw["data"], raw.get("next_page_token")
-    raise ValueError(f"unexpected comment list shape: {type(raw).__name__}")
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(out):  # skip noise like "Warning: ..." or "[INFO] ..." before the JSON
+        if ch not in "[{":
+            continue
+        try:
+            raw, _ = dec.raw_decode(out[i:])
+        except ValueError:
+            continue
+        if isinstance(raw, list):
+            return raw, None
+        if isinstance(raw, dict) and isinstance(raw.get("data"), list):
+            token = raw.get("next_page_token")
+            if raw.get("truncated") and not token:
+                raise ValueError("listing truncated with no next_page_token")
+            return raw["data"], token
+    raise ValueError(f"no comment list JSON in output: {out.strip()[:200]!r}")
 
 
 def list_comments(doc_id: str) -> list[dict]:
@@ -53,13 +60,16 @@ def list_comments(doc_id: str) -> list[dict]:
         cmd = ["meta", "google.docs.comment", "list", f"--id={doc_id}", "--output=json", "-l", "200", "--columns=all"]
         if token:
             cmd.append(f"--page-token={token}")
-        p = subprocess.run(cmd, capture_output=True, text=True)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if p.returncode != 0:
             raise RuntimeError(f"comment list failed ({p.returncode}): {(p.stdout + p.stderr).strip()[:200]}")
-        page, token = parse_list_output(p.stdout)
+        page, nxt = parse_list_output(p.stdout)
         rows += page
-        if not token:
+        if not nxt:
             return rows
+        if nxt == token:
+            raise RuntimeError(f"comment list repeated page token {nxt!r}")
+        token = nxt
 
 
 def _answer_q(root: dict, text: str, doc: dict) -> int | None:
@@ -77,6 +87,7 @@ def pending(rows: list[dict], doc: dict, owner: str, handled: set[str], pending_
     by_id = {r["id"]: r for r in rows}
     title = clean(doc.get("title"))
     status = doc.get("status")
+    frozen = scope == "accepted" and status in ("accepted", "superseded", "reference")
     accept_root = doc.get("accept_comment")
     answered = set(doc.get("answered") or [])
     former = set(doc.get("superseded_accepts") or [])
@@ -101,7 +112,7 @@ def pending(rows: list[dict], doc: dict, owner: str, handled: set[str], pending_
         text = r["content"].strip()
         root = root_of(r)
         top = r is root
-        on_title = top and clean(root.get("quoted_text")) == title
+        on_title = top and bool(title) and clean(root.get("quoted_text")) == title
         q = None
         if r.get("author") != owner:
             kind = "other_author"
@@ -112,8 +123,13 @@ def pending(rows: list[dict], doc: dict, owner: str, handled: set[str], pending_
             kind = "confirm_action"
         elif scope == "tracker":
             kind = "diff_ids" if DIFF.search(text) else "ignored"
-        elif scope == "accepted" and status == "accepted" and REOPEN.match(text):
-            kind, status = "reopen", "awaiting_acceptance"
+        elif frozen and REOPEN.match(text):
+            if status == "accepted":
+                kind, status, frozen = "reopen", "awaiting_acceptance", False
+            else:
+                kind = "already_accepted"  # superseded and reference docs never re-gate
+        elif frozen and on_title and (ACCEPT.match(text) or CHANGES.match(text)):
+            kind = "already_accepted"
         elif on_title and ACCEPT.match(text):
             if status == "awaiting_acceptance":
                 kind = "accept"
@@ -152,12 +168,14 @@ def pending(rows: list[dict], doc: dict, owner: str, handled: set[str], pending_
 
 
 def _after(r: dict, asked: dict | None) -> bool:
-    return asked is None or parse_ts(r["created_time"]) > parse_ts(asked["created_time"])
+    # A confirm only counts after the skill's "Needs Confirm" reply; if that reply cannot be found, it does not.
+    return asked is not None and parse_ts(r["created_time"]) > parse_ts(asked["created_time"])
 
 
 def _doc_dict(run_dir: str, key: str, d: dict) -> dict:
-    if not d.get("qprefix"):
-        raise ValueError(f"docs.{key}.qprefix is required")
+    for field in ("qprefix", "title"):
+        if not d.get(field):
+            raise ValueError(f"docs.{key}.{field} is required")
     qfile = d.get("questions_file")
     questions = []
     if qfile:

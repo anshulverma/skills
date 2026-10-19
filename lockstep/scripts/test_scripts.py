@@ -269,6 +269,31 @@ esac
         os.environ["PATH"] = old
 
 
+def test_frozen_docs_never_regate():
+    for st in ("superseded", "reference"):
+        doc = {**DOC, "status": st}
+        rows = [row("a", "Approved", quoted="[Design] X"), row("c", "Changes: x", quoted="[Design] X", t="2026-10-19T05:01:00Z"),
+                row("r", "Reopen it", t="2026-10-19T05:02:00Z")]
+        assert kinds(sweep.pending(rows, doc, "Owner", set(), {}, "accepted")) == ["already_accepted"] * 3, st
+
+
+def test_parse_list_output_truncated_without_token_and_bracket_noise():
+    try:
+        sweep.parse_list_output('{"truncated": true, "data": [{"id": "a"}]}')
+        assert False
+    except ValueError:
+        pass
+    assert sweep.parse_list_output('[INFO] fetching\n[{"id": "a"}]')[0] == [{"id": "a"}]
+
+
+def test_confirm_before_needs_confirm_reply_does_not_count():
+    pa = {"r1": {"verb": "abort", "asked_reply_id": "bot1"}}
+    rows = [row("r1", "Action: abort"), row("c0", "confirm", parent="r1", t="2026-10-19T05:00:30Z"),
+            row("bot1", "[🤖 Claude Code] Needs Confirm: abort", parent="r1", t="2026-10-19T05:01:00Z")]
+    assert kinds(sweep.pending(rows, dict(DOC), "Owner", {"r1"}, pa, "gate")) == ["question"]
+    assert kinds(sweep.pending(rows, dict(DOC), "Owner", {"r1"}, {"r1": {"verb": "abort", "asked_reply_id": "gone"}}, "gate")) == ["question"]
+
+
 # ---------- md2ghtml.py ----------
 
 def test_md2ghtml_full():
