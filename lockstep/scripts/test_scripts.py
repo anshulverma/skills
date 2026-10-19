@@ -16,6 +16,7 @@ import state  # noqa: E402
 import sweep  # noqa: E402
 import md2ghtml  # noqa: E402
 import render_tracker  # noqa: E402
+import velocity  # noqa: E402
 
 
 def test_recompute_status():
@@ -407,6 +408,126 @@ def test_no_plan_section_before_plan():
     p["phase"] = "SPEC"
     json.dump(p, open(os.path.join(d, "pipeline.json"), "w"))
     assert "<h2>Implementation plan</h2>" not in render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+
+
+# ---------- velocity.py ----------
+
+def test_score_and_threshold():
+    m = {"words": 900, "figures": 2, "tables": 1, "open_questions": 3, "grade": 13, "unknown_terms": 2, "slop": 15}
+    assert abs(velocity.score(m) - (9 + 4 + 1 + 6 + 3 + 2 + 1.5)) < 1e-9 and velocity.score(m) >= velocity.EXPLAINER_THRESHOLD
+
+
+def test_sessions_gap_9_vs_11():
+    t = state.parse_ts("2026-10-19T05:00:00Z")
+    assert len(velocity.sessions([t, t + timedelta(minutes=9)])) == 1
+    assert len(velocity.sessions([t, t + timedelta(minutes=11)])) == 2
+    assert velocity.sessions([t]) == [(t, t)]
+
+
+def test_sessions_mixed_offsets():
+    a = state.parse_ts("2026-10-18T22:00:00-07:00")
+    b = state.parse_ts("2026-10-19T05:05:00Z")
+    assert len(velocity.sessions([b, a])) == 1
+
+
+def test_lead_in_default_median_cap():
+    t = state.parse_ts("2026-10-19T05:00:00Z")
+    assert velocity.lead_in([]) == 5
+    assert velocity.lead_in([(t, t + timedelta(minutes=4)), (t, t + timedelta(minutes=8)), (t, t + timedelta(minutes=30))]) == 8
+    assert velocity.lead_in([(t, t + timedelta(minutes=40))]) == 15
+
+
+def test_active_minutes_single_comment():
+    t = state.parse_ts("2026-10-19T05:00:00Z")
+    assert velocity.active_minutes([(t, t)], 5) == 5
+
+
+def test_grade_and_estimates():
+    assert 0 < velocity.grade("The cat sat. The dog ran far away from home.") < 6
+    assert velocity.pace_wpm([]) == 200 and velocity.estimate_minutes(450, 200) == 3
+    assert velocity.header_line({"words": 400, "figures": 0, "tables": 0, "open_questions": 0, "grade": 8,
+                                 "unknown_terms": 0, "slop": 0}, 200) == "Complexity 4.0 · about 2 min to read"
+
+
+def test_velocity_cli_appends_under_lock():
+    root = tempfile.mkdtemp()
+    env = {**os.environ, "LOCKSTEP_VELOCITY_ROOT": root}
+    mpath = os.path.join(root, "m.json")
+    json.dump({"words": 500, "figures": 1, "tables": 0, "open_questions": 2, "grade": 11, "unknown_terms": 0, "slop": 10},
+              open(mpath, "w"))
+    r = subprocess.run([sys.executable, os.path.join(HERE, "velocity.py"), "doc", copy_run(), "spec", mpath],
+                       capture_output=True, text=True, env=env, timeout=60)
+    assert r.returncode == 0 and "Complexity" in r.stdout, r.stderr
+    assert len(open(os.path.join(root, "docs.jsonl")).read().splitlines()) == 1
+
+
+def test_velocity_metrics_cli():
+    d = tempfile.mkdtemp()
+    md = os.path.join(d, "doc.md")
+    open(md, "w").write("# T\n\nShort plain text here. Another sentence.\n\n![f](a.png)\n\n| a | b |\n|---|---|\n| 1 | 2 |\n")
+    q = os.path.join(d, "q.json")
+    json.dump(["1. A?", "2. B?"], open(q, "w"))
+    r = subprocess.run([sys.executable, os.path.join(HERE, "velocity.py"), "metrics", md, q], capture_output=True, text=True, timeout=60)
+    m = json.loads(r.stdout)
+    assert m["figures"] == 1 and m["tables"] == 1 and m["open_questions"] == 2 and m["words"] > 0 and m["unknown_terms"] == 0
+
+
+def test_velocity_session_from_events():
+    root = tempfile.mkdtemp()
+    d = copy_run()
+    with open(os.path.join(d, "events.jsonl"), "a") as f:
+        for ts in ("2026-10-19T04:00:00Z",):
+            f.write(json.dumps({"ts": ts, "phase": "PROPOSAL", "kind": "published", "event": "p", "doc": "proposal"}) + "\n")
+        for ts in ("2026-10-19T04:06:00Z", "2026-10-19T04:10:00Z", "2026-10-19T04:40:00Z"):
+            f.write(json.dumps({"ts": ts, "phase": "PROPOSAL", "kind": "comment", "event": "c", "doc": "proposal",
+                                "comment_ts": ts}) + "\n")
+    env = {**os.environ, "LOCKSTEP_VELOCITY_ROOT": root}
+    r = subprocess.run([sys.executable, os.path.join(HERE, "velocity.py"), "session", d, "proposal"],
+                       capture_output=True, text=True, env=env, timeout=60)
+    assert r.returncode == 0, r.stderr
+    rows = [json.loads(x) for x in open(os.path.join(root, "sessions.jsonl"))]
+    assert len(rows) == 2 and abs(rows[0]["active_min"] - (4 + 6)) < 1e-9   # 4 min burst + 6 min lead-in
+
+
+def test_grade_and_publish_reuses_doc():
+    root = tempfile.mkdtemp()
+    d = tempfile.mkdtemp()
+    fake = os.path.join(d, "meta")
+    log = os.path.join(d, "log")
+    open(fake, "w").write(f"""#!/bin/bash
+echo "$*" >> {log}
+case "$*" in
+  *"docs create"*) echo '{{"id": "VDOC1"}}' ;;
+  *"share list"*) echo '[{{"role": "owner", "email": "o@x"}}]' ;;
+  *) echo ok ;;
+esac
+""")
+    os.chmod(fake, 0o755)
+    env = {**os.environ, "LOCKSTEP_VELOCITY_ROOT": root, "PATH": d + ":" + os.environ["PATH"]}
+    for _ in range(2):
+        r = subprocess.run([sys.executable, os.path.join(HERE, "velocity.py"), "publish"], env=env, timeout=60,
+                           capture_output=True, text=True)
+        assert r.returncode == 0, r.stderr
+    assert json.load(open(os.path.join(root, "doc.json")))["id"] == "VDOC1"
+    assert open(log).read().count("docs create") == 1
+
+
+def test_publish_refuses_shared_doc():
+    root = tempfile.mkdtemp()
+    d = tempfile.mkdtemp()
+    fake = os.path.join(d, "meta")
+    open(fake, "w").write("""#!/bin/bash
+case "$*" in
+  *"docs create"*) echo '{"id": "VDOC2"}' ;;
+  *"share list"*) echo '[{"role": "owner", "email": "o@x"}, {"role": "reader", "type": "domain"}]' ;;
+  *) echo ok ;;
+esac
+""")
+    os.chmod(fake, 0o755)
+    env = {**os.environ, "LOCKSTEP_VELOCITY_ROOT": root, "PATH": d + ":" + os.environ["PATH"]}
+    r = subprocess.run([sys.executable, os.path.join(HERE, "velocity.py"), "publish"], env=env, timeout=60,
+                       capture_output=True, text=True)
+    assert r.returncode != 0 and "not private" in r.stderr
 
 
 # ---------- await_owner.sh ----------
