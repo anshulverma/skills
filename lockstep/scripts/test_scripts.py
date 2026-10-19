@@ -313,6 +313,17 @@ def test_md2ghtml_without_tldr():
     assert title == "T" and "<aside" not in html_ and "Just text." in html_
 
 
+def test_md2ghtml_edges():
+    d = tempfile.mkdtemp()
+    md = ("# A &amp; B\n\n![Flow](fig/a.png)\n\nsee ![x](b.png) inline and ![r](https://e.com/r.png)\n\n"
+          "```\n| TL;DR |\n|---|\n| not a tldr |\n![no](c.png)\n```\n\n- one\n- two\n")
+    title, h = md2ghtml.convert(md, d)
+    assert title == "A & B" and "@@" not in h
+    assert f'<p style="text-align:center"><img src="file://{d}/fig/a.png" alt="Flow"></p>' in h
+    assert f'see <img src="file://{d}/b.png" alt="x"> inline' in h and 'src="https://e.com/r.png"' in h
+    assert "<aside" not in h and "| TL;DR |" in h and "![no](c.png)" in h
+
+
 # ---------- await_owner.sh ----------
 
 def test_await_owner_filters_bot_events():
@@ -330,6 +341,34 @@ printf '{{"seq":1,"payload":{{"gdrive":{{"comment_body":"%s"}}}}}}\\n' "$b"
     r = subprocess.run(["bash", os.path.join(HERE, "await_owner.sh"), "DOC1"], capture_output=True, text=True,
                        timeout=30, env={**os.environ, "PATH": d + ":" + os.environ["PATH"]})
     assert r.returncode == 0 and r.stdout.strip() == "HUMAN_EVENT doc=DOC1 body=Approved", (r.stdout, r.stderr)
+
+
+def test_await_owner_leaves_no_orphans_and_backs_off():
+    d = tempfile.mkdtemp()
+    fake = os.path.join(d, "meta")
+    open(fake, "w").write(f"""#!/bin/bash
+case "$*" in
+  *--id\\ SLOW*|*"--id SLOW"*) echo $$ > {d}/slow.pid; exec sleep 60 ;;
+  *--id\\ FAIL*|*"--id FAIL"*) echo 'Error: cert expired'; exit 1 ;;
+  *) printf '%s\\n' '{{"seq":1,"payload":{{"gdrive":{{"comment_body":"[🤖 x"}}}}}}' '{{"seq":2,"payload":{{"gdrive":{{"comment_body":"real\\nreply"}}}}}}' ;;
+esac
+""")
+    os.chmod(fake, 0o755)
+    env = {**os.environ, "PATH": d + ":" + os.environ["PATH"], "AWAIT_RETRY_SECS": "1"}
+    import time
+    p = subprocess.Popen(["bash", os.path.join(HERE, "await_owner.sh"), "SLOW", "FAIL"], stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE, text=True, env=env)
+    time.sleep(2.5)
+    p.terminate()
+    _, err = p.communicate(timeout=10)
+    assert err.count("meta await failed for FAIL") <= 4, err          # backed off, not spinning
+    pid = int(open(os.path.join(d, "slow.pid")).read())
+    time.sleep(0.3)
+    assert not os.path.exists(f"/proc/{pid}"), "orphaned meta await"
+    r = subprocess.run(["bash", os.path.join(HERE, "await_owner.sh"), "OK"], capture_output=True, text=True, timeout=30, env=env)
+    assert r.stdout.strip() == "HUMAN_EVENT doc=OK body=real reply", r.stdout   # batch scanned past the bot event
+    assert subprocess.run(["bash", os.path.join(HERE, "await_owner.sh")], capture_output=True).returncode == 2
+
 
 
 def main() -> None:
