@@ -312,6 +312,13 @@ def test_review_fixes_classifier():
     assert kinds(sweep.pending(rows, acc, "Owner", {"a"}, {}, "accepted")) == ["already_accepted"]
 
 
+def test_question_anchored_on_a_question_stays_a_question():
+    rows = [row("a", "Will the SFT recipe need to be built by us?", quoted="1. Which name? We recommend a."),
+            row("b", "a", quoted="1. Which name? We recommend a.", t="2026-10-19T05:01:00Z")]
+    it = sweep.pending(rows, dict(DOC), "Owner", set(), {}, "gate")
+    assert kinds(it) == ["question", "answer"] and it[1]["q"] == 1
+
+
 # ---------- md2ghtml.py ----------
 
 def test_md2ghtml_full():

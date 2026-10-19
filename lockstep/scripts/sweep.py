@@ -159,7 +159,7 @@ def pending(rows: list[dict], doc: dict, owner: str, handled: set[str], pending_
                 if status == "confirm_pending":
                     former.add(accept_root)
                     status, accept_root = "awaiting_acceptance", None
-        elif (q := _answer_q(root, text, doc)) is not None:
+        elif "?" not in text and (q := _answer_q(root, text, doc)) is not None:  # asking about a question is not answering it
             kind = "answer"
             answered.add(q)
         elif REQ.search(text) and "?" not in text:
