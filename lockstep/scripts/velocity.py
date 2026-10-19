@@ -20,7 +20,7 @@ import subprocess
 import sys
 from datetime import datetime
 
-from state import atomic_write_json, iso, now_utc, parse_ts, read_json
+from state import atomic_write_json, iso, now_utc, parse_ts, read_events, read_json
 
 EXPLAINER_THRESHOLD = 20
 DEFAULT_WPM = 200  # cold-start pace until the owner has measured sessions
@@ -102,54 +102,62 @@ def _append(name: str, row: dict) -> None:
 def metrics_for(md_path: str, questions_path: str, graded: str | None) -> dict:
     raw = re.sub(r"(?s)<!--.*?-->", "", open(md_path, encoding="utf-8").read())
     try:
-        sys.path.insert(0, HUMANIZE)
+        if HUMANIZE not in sys.path:
+            sys.path.append(HUMANIZE)
         import slop_score
+        raw = slop_score.strip_frontmatter(raw)
         m, _ = slop_score.metrics(raw)
         words, slop = int(m["words"]), round(slop_score.score(m, slop_score.WEIGHTS), 1)
-    except Exception:  # humanize missing or changed: still measurable, slop unknown
+    except Exception as e:  # humanize missing or changed: still measurable, slop unknown
+        print(f"velocity: slop score unavailable ({type(e).__name__}: {e}); slop recorded as 0", file=sys.stderr)
         words, slop = len(re.findall(r"[A-Za-z0-9']+", raw)), 0
     unknown = 0
-    if graded and os.path.exists(graded):
+    if graded:
         g = read_json(graded)
-        unknown = len(g.get("unknown_terms") or g.get("unfamiliar_terms") or [])
+        terms = g.get("unknown_terms", g.get("unfamiliar_terms", []))
+        unknown = terms if isinstance(terms, int) else len(terms or [])
+    raw = re.sub(r"(?ms)^```.*?^```[^\n]*$", "", raw)  # code is not read like prose
     prose = re.sub(r"(?m)^\s*\|.*\|\s*$|!\[[^\]]*\]\([^)]*\)|^#+ .*$|`[^`]*`", " ", raw)
     return {"words": words, "slop": slop,
             "figures": len(re.findall(r"!\[[^\]]*\]\([^)]*\)", raw)),
-            "tables": len(re.findall(r"(?m)^\s*\|[-: |]+\|\s*$", raw)),
+            "tables": len(re.findall(r"(?m)^\s*\|(?:\s*:?-+:?\s*\|)+\s*$", raw)),
             "open_questions": len(read_json(questions_path)), "grade": round(grade(prose), 1),
             "unknown_terms": unknown}
 
 
-def _events(run_dir: str) -> list[dict]:
-    from render_tracker import read_events
-    return read_events(run_dir)
-
-
 def record_session(run_dir: str, doc_key: str) -> list[dict]:
-    events = [e for e in _events(run_dir) if e.get("doc") == doc_key]
+    """Rebuild this doc's sessions since its latest publish and replace their rows (repeat calls stay correct)."""
+    run = os.path.basename(os.path.abspath(run_dir))
+    events = [e for e in read_events(run_dir) if e.get("doc") == doc_key]
     pubs = [parse_ts(e["ts"]) for e in events if e["kind"] == "published"]
     if not pubs:
         return []
     pub = max(pubs)
-    seen = {(r["run"], r["doc"], r["start"]) for r in _jsonl("sessions.jsonl")}
     comments = [parse_ts(e["comment_ts"]) for e in events if e.get("comment_ts") and parse_ts(e["comment_ts"]) >= pub]
     sess = sessions(comments)
-    pairs = [(r_pub, r_first) for r_pub, r_first in
-             ((parse_ts(r["published"]), parse_ts(r["first_comment"])) for r in _jsonl("leadins.jsonl"))]
-    if sess and not any(p == pub for p, _ in pairs):
-        pairs.append((pub, sess[0][0]))
-        _append("leadins.jsonl", {"published": iso(pub), "first_comment": iso(sess[0][0])})
-    li = lead_in(pairs)
+    leadins = [r for r in _jsonl("leadins.jsonl") if not (r.get("run") == run and r.get("doc") == doc_key
+                                                          and r.get("published") == iso(pub))]
+    if sess:
+        leadins.append({"run": run, "doc": doc_key, "published": iso(pub), "first_comment": iso(sess[0][0])})
+    _rewrite("leadins.jsonl", leadins)
+    li = lead_in([(parse_ts(r["published"]), parse_ts(r["first_comment"])) for r in leadins])
     words = next((d["metrics"]["words"] for d in reversed(_jsonl("docs.jsonl"))
-                  if d["run"] == os.path.basename(os.path.abspath(run_dir)) and d["doc"] == doc_key), 0)
-    new = []
-    for s, e in sess:
-        row = {"run": os.path.basename(os.path.abspath(run_dir)), "doc": doc_key, "start": iso(s), "end": iso(e),
-               "active_min": active_minutes([(s, e)], li), "words": words if not new else 0}
-        if (row["run"], row["doc"], row["start"]) not in seen:
-            _append("sessions.jsonl", row)
-            new.append(row)
+                  if d["run"] == run and d["doc"] == doc_key), 0)
+    new = [{"run": run, "doc": doc_key, "published": iso(pub), "start": iso(s), "end": iso(e),
+            "active_min": active_minutes([(s, e)], li), "words": words if i == 0 else 0}
+           for i, (s, e) in enumerate(sess)]
+    keep = [r for r in _jsonl("sessions.jsonl")
+            if not (r.get("run") == run and r.get("doc") == doc_key and r.get("published", iso(pub)) == iso(pub))]
+    _rewrite("sessions.jsonl", keep + new)
     return new
+
+
+def _rewrite(name: str, rows: list[dict]) -> None:
+    path = os.path.join(root(), name)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in rows)
+    os.replace(tmp, path)
 
 
 def render_body(figdir: str) -> str:
@@ -208,8 +216,18 @@ def _meta(*args: str) -> str:
 
 
 def _json_in(out: str):
-    i = min(x for x in (out.find("["), out.find("{")) if x != -1)
-    return json.JSONDecoder().raw_decode(out[i:])[0]
+    try:
+        return json.loads(out)
+    except ValueError:
+        pass
+    dec = json.JSONDecoder()
+    for i, ch in enumerate(out):
+        if ch in "[{":
+            try:
+                return dec.raw_decode(out[i:])[0]
+            except ValueError:
+                continue
+    raise ValueError(f"no JSON in meta output: {out.strip()[:200]!r}")
 
 
 def publish() -> str:
@@ -219,7 +237,8 @@ def publish() -> str:
     else:
         doc_id = _json_in(_meta("google.docs", "create", f"--title={TITLE}", "--output=json"))["id"]
     perms = _json_in(_meta("google.docs.share", "list", f"--id={doc_id}", "--output=json"))
-    if any(p.get("role") != "owner" for p in perms):
+    private = isinstance(perms, list) and perms and all(isinstance(p, dict) and p.get("role") == "owner" for p in perms)
+    if not private:  # fails closed on any shape it does not recognise
         raise PermissionError(f"velocity doc {doc_id} is not private; not writing to it")
     if not os.path.exists(path):
         atomic_write_json(path, {"id": doc_id, "title": TITLE})
@@ -234,8 +253,8 @@ def main(argv: list[str]) -> int:
         print(__doc__, file=sys.stderr)
         return 2
     cmd, rest = argv[0], argv[1:]
-    if cmd == "metrics" and len(rest) in (2, 4):
-        graded = rest[3] if len(rest) == 4 and rest[2] == "--graded" else None
+    if cmd == "metrics" and (len(rest) == 2 or (len(rest) == 4 and rest[2] == "--graded")):
+        graded = rest[3] if len(rest) == 4 else None
         print(json.dumps(metrics_for(rest[0], rest[1], graded)))
         return 0
     if cmd not in ("doc", "session", "render", "publish"):
@@ -260,7 +279,8 @@ def main(argv: list[str]) -> int:
             else:
                 print(__doc__, file=sys.stderr)
                 return 2
-        except (RuntimeError, PermissionError, ValueError, OSError) as e:
+        except (RuntimeError, PermissionError, ValueError, OSError, KeyError, TypeError, AttributeError, ImportError,
+                subprocess.TimeoutExpired) as e:
             print(e, file=sys.stderr)
             return 1
     return 0

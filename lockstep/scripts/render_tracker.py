@@ -19,7 +19,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
-from state import now_utc, parse_ts, read_json  # noqa: E402
+from state import now_utc, parse_ts, read_events, read_json  # noqa: E402,F401
 
 PHASES = ["INIT", "RESEARCH", "PROPOSAL", "SPEC", "PLAN", "BUILD", "LAND", "DONE"]
 PHASE_LABEL = {"PLAN": "Plan\\n(write + harden)", "BUILD": "Build\\n(implement)", "LAND": "Land\\n(optional review, merge)"}
@@ -65,25 +65,6 @@ def mask_credentials(text: str) -> tuple[str, list[str]]:
             return m.group(1) + m.group(2) + "[credential masked]"
         text = pat.sub(sub, text)
     return text, keys
-
-
-def read_events(run_dir: str) -> list[dict]:
-    out = []
-    for line in open(os.path.join(run_dir, "events.jsonl"), errors="replace"):
-        try:
-            e = json.loads(line)
-            parse_ts(e["ts"])
-        except (ValueError, KeyError, TypeError, AttributeError):
-            continue  # torn last line from a crash mid-append, or a malformed record
-        if not isinstance(e, dict) or not isinstance(e.get("kind"), str):
-            continue
-        e["event"] = str(e.get("event", ""))
-        try:
-            e["task"] = int(e["task"]) if e.get("task") is not None else None
-        except (TypeError, ValueError):
-            e["task"] = None
-        out.append(e)
-    return out
 
 
 def waiting_intervals(events: list[dict], now: datetime) -> dict[str, list[tuple[datetime, datetime]]]:

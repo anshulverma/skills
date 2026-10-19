@@ -598,6 +598,48 @@ esac
     assert r.returncode != 0 and "not private" in r.stderr
 
 
+
+def test_velocity_session_repeat_calls_upsert():
+    root = tempfile.mkdtemp()
+    d = copy_run()
+    env = {**os.environ, "LOCKSTEP_VELOCITY_ROOT": root}
+    mpath = os.path.join(root, "m.json")
+    json.dump({"words": 1000, "figures": 0, "tables": 0, "open_questions": 0, "grade": 8, "unknown_terms": 0, "slop": 0},
+              open(mpath, "w"))
+    run = lambda *a: subprocess.run([sys.executable, os.path.join(HERE, "velocity.py"), *a], env=env, timeout=60,
+                                    capture_output=True, text=True)
+    assert run("doc", d, "proposal", mpath).returncode == 0
+    ev = lambda ts, kind: json.dumps({"ts": ts, "phase": "PROPOSAL", "kind": kind, "event": "e", "doc": "proposal",
+                                      **({"comment_ts": ts} if kind == "comment" else {})}) + "\n"
+    with open(os.path.join(d, "events.jsonl"), "a") as f:
+        f.write(ev("2026-10-19T04:00:00Z", "published") + ev("2026-10-19T04:06:00Z", "comment"))
+    assert run("session", d, "proposal").returncode == 0
+    with open(os.path.join(d, "events.jsonl"), "a") as f:
+        f.write(ev("2026-10-19T04:09:00Z", "comment") + ev("2026-10-19T05:30:00Z", "comment"))
+    assert run("session", d, "proposal").returncode == 0
+    rows = [json.loads(x) for x in open(os.path.join(root, "sessions.jsonl"))]
+    assert [(r["end"], r["active_min"], r["words"]) for r in rows] == [("2026-10-19T04:09:00Z", 9, 1000), ("2026-10-19T05:30:00Z", 6, 0)]
+    assert abs(velocity.pace_wpm(rows) - 1000 / 15) < 1e-9
+
+
+def test_publish_fails_closed_on_odd_share_output():
+    root = tempfile.mkdtemp()
+    d = tempfile.mkdtemp()
+    fake = os.path.join(d, "meta")
+    open(fake, "w").write("""#!/bin/bash
+case "$*" in
+  *"docs create"*) echo '{"id": "VDOC3"}' ;;
+  *"share list"*) echo '{"permissions": []}' ;;
+  *) echo ok ;;
+esac
+""")
+    os.chmod(fake, 0o755)
+    env = {**os.environ, "LOCKSTEP_VELOCITY_ROOT": root, "PATH": d + ":" + os.environ["PATH"]}
+    r = subprocess.run([sys.executable, os.path.join(HERE, "velocity.py"), "publish"], env=env, timeout=60,
+                       capture_output=True, text=True)
+    assert r.returncode == 1 and "not private" in r.stderr and "Traceback" not in r.stderr
+
+
 # ---------- await_owner.sh ----------
 
 def test_await_owner_filters_bot_events():

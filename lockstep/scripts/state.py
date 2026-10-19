@@ -99,6 +99,25 @@ def append_event(run_dir: str, kind: str, event: str, now: datetime | None = Non
     return e
 
 
+def read_events(run_dir: str) -> list[dict]:
+    out = []
+    for line in open(os.path.join(run_dir, "events.jsonl"), errors="replace"):
+        try:
+            e = json.loads(line)
+            parse_ts(e["ts"])
+        except (ValueError, KeyError, TypeError, AttributeError):
+            continue  # torn last line from a crash mid-append, or a malformed record
+        if not isinstance(e, dict) or not isinstance(e.get("kind"), str):
+            continue
+        e["event"] = str(e.get("event", ""))
+        try:
+            e["task"] = int(e["task"]) if e.get("task") is not None else None
+        except (TypeError, ValueError):
+            e["task"] = None
+        out.append(e)
+    return out
+
+
 def _lease_path(run_dir: str) -> str:
     return os.path.join(run_dir, ".lock")
 
