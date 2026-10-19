@@ -265,14 +265,15 @@ def timeline_chart(events, now, out):
     pieces = active_pieces(events, now)
     fig, ax = plt.subplots(figsize=(10, 2.8), facecolor="#fcfcfb")
     ax.set_facecolor("#fcfcfb")
-    phase_at = lambda t: next((e.get("phase") for e in reversed(events)
+    by_time = sorted(events, key=lambda e: parse_ts(e["ts"]))   # backfilled events sit out of file order
+    phase_at = lambda t: next((e.get("phase") for e in reversed(by_time)
                                if parse_ts(e["ts"]) <= t and e.get("phase") in PHASES), "INIT")
     rows = [p for p in PHASES if any(phase_at(a) == p for a, _, _ in pieces)] or ["INIT"]
     x, prev = 0.0, None
     for a, b, who in pieces:
         if prev is not None and (a - prev).total_seconds() >= 15 * 60:
             ax.axvline(x, color=GREY, linestyle=":", linewidth=1)
-            ax.text(x, -0.6, f"away {fmt_dur((a - prev).total_seconds())}", fontsize=7, color=GREY, ha="center")
+            ax.text(x, len(rows) - 0.45, f"idle {fmt_dur((a - prev).total_seconds())}", fontsize=7, color=GREY, ha="center")
         w, r = (b - a).total_seconds() / 60, rows.index(phase_at(a))
         if who in ("you", "both"):   # upper half: you engaged
             ax.barh(r - 0.13, w, left=x, height=0.26, color=ORANGE, edgecolor="#fcfcfb", linewidth=0.5)
@@ -359,8 +360,8 @@ def render(run_dir: str, now: datetime) -> str:
         ("<b>Status</b>", esc(run.get("status", ""))),
         ("<b>Time spent</b>", f"{fmt_dur(tot_m * 60)} active: you {fmt_dur(you_m * 60)} + agent {fmt_dur(agent_m * 60)}"
                               + (f" − {fmt_dur(both_m * 60)} when both of you were working" if both_m > 0 else "")
-                              + " (your time away is not yours, but counts for the agent while it works; "
-                                "the agent waiting on you counts for neither)"),
+                              + " (each side counts its own working time: the agent's counts even while you are away, "
+                                "and time it spends waiting on you counts for neither)"),
         ("<b>Now</b>", esc(st.get("now", "")) + (f" (sdd stage {esc(sdd.get('stage'))})" if sdd else "")),
         ("<b>Waiting on</b>", esc(st.get("waiting_on", "")) + since),
         ("<b>Next wake</b>", esc(st.get("next_wake", ""))),
