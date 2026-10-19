@@ -13,6 +13,7 @@ FIX = os.path.join(HERE, "fixtures")
 sys.path.insert(0, HERE)
 import state  # noqa: E402
 import sweep  # noqa: E402
+import md2ghtml  # noqa: E402
 
 
 def test_recompute_status():
@@ -266,6 +267,25 @@ esac
             pass
     finally:
         os.environ["PATH"] = old
+
+
+# ---------- md2ghtml.py ----------
+
+def test_md2ghtml_full():
+    d = tempfile.mkdtemp()
+    os.makedirs(os.path.join(d, "fig"))
+    md = ("<!-- humanize-context\ntype: x\n-->\n# My Title\n\n| TL;DR |\n|---|\n| one **bold** |\n| two |\n\n"
+          "Body *it*.\n\n![Flow](fig/a.png)\n\n*Figure 1. Caption.*\n\n| A | B |\n|---|---|\n| 1 | 2 |\n")
+    title, html_ = md2ghtml.convert(md, d)
+    assert title == "My Title" and '<p data-style="TITLE">My Title</p>' in html_
+    assert "humanize-context" not in html_ and "<aside" in html_ and "<b>bold</b>" in html_
+    assert f'src="file://{d}/fig/a.png"' in html_ and "<i>Figure 1. Caption.</i>" in html_
+    assert "</table>\n<p></p>" in html_ and "<strong>" not in html_
+
+
+def test_md2ghtml_without_tldr():
+    title, html_ = md2ghtml.convert("# T\n\nJust text.\n", tempfile.mkdtemp())
+    assert title == "T" and "<aside" not in html_ and "Just text." in html_
 
 
 def main() -> None:
