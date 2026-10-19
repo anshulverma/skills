@@ -22,7 +22,8 @@ from datetime import datetime
 
 from state import atomic_write_json, iso, now_utc, parse_ts, read_events, read_json
 
-EXPLAINER_THRESHOLD = 20
+EXPLAINER_THRESHOLD = 5.5  # 0-10 scale; a raw score of 20
+SCALE = 25  # raw score that maps to 6.3; larger docs approach 10
 DEFAULT_WPM = 200  # cold-start pace until the owner has measured sessions
 SESSION_GAP_MIN = 10
 TITLE = "Review velocity"
@@ -33,9 +34,13 @@ def root() -> str:
     return os.environ.get("LOCKSTEP_VELOCITY_ROOT", "/data/users/anshulverma/sdd-runs/_velocity")
 
 
-def score(m: dict) -> float:
+def raw_score(m: dict) -> float:
     return (m["words"] / 100 + 2 * m["figures"] + m["tables"] + 2 * m["open_questions"]
             + max(0, m["grade"] - 10) + m["unknown_terms"] + m["slop"] / 10)
+
+
+def score(m: dict) -> float:
+    return round(10 * (1 - math.exp(-raw_score(m) / SCALE)), 1)
 
 
 def grade(text: str) -> float:
@@ -78,7 +83,7 @@ def estimate_minutes(words: int, wpm: float) -> int:
 
 
 def header_line(m: dict, wpm: float) -> str:
-    return f"Complexity {score(m):.1f} · about {estimate_minutes(m['words'], wpm)} min to read"
+    return f"Complexity {score(m):.1f}/10 · about {estimate_minutes(m['words'], wpm)} min to read"
 
 
 def _jsonl(name: str) -> list[dict]:
