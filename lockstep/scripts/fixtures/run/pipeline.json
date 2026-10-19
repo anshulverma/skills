@@ -1,0 +1,80 @@
+{
+ "slug": "demo",
+ "owner_name": "Owner",
+ "phase": "BUILD",
+ "status": "running",
+ "tick": 12,
+ "terminal": null,
+ "paused": false,
+ "blocked_reasons": [
+  "sdd"
+ ],
+ "waiting_reasons": [],
+ "pending_actions": {},
+ "diffs": {
+  "D123456789": "published"
+ },
+ "repo_kind": "sapling",
+ "tracker_doc": "TRK",
+ "tracker_title": "[Tracker] Lockstep: demo",
+ "tracker_status": {
+  "now": "Building T3",
+  "waiting_on": "nothing",
+  "since": "2026-10-19T06:00:00Z",
+  "next_wake": "cron */5"
+ },
+ "counters": {
+  "checks": 30,
+  "agents": 12,
+  "humanize_passes": 2
+ },
+ "docs": {
+  "proposal": {
+   "id": "P1",
+   "title": "[Proposal] Demo",
+   "kind": "proposal",
+   "qprefix": "Q",
+   "status": "accepted",
+   "opened_at": "2026-10-19T04:00:00Z",
+   "accepted_at": "2026-10-19T04:30:00Z",
+   "accepted_hash": "x",
+   "questions_file": "docs/proposal/questions.json",
+   "answered": [
+    1,
+    2
+   ]
+  },
+  "spec": {
+   "id": "S1",
+   "title": "[Design] Demo",
+   "kind": "spec",
+   "qprefix": "S",
+   "status": "accepted",
+   "opened_at": "2026-10-19T04:40:00Z",
+   "accepted_at": "2026-10-19T05:00:00Z",
+   "accepted_hash": "y",
+   "questions_file": "docs/spec/questions.json",
+   "answered": [
+    1
+   ]
+  },
+  "plan": {
+   "id": "PL1",
+   "title": "[Plan] Demo",
+   "kind": "plan",
+   "qprefix": "P",
+   "status": "reference",
+   "opened_at": "2026-10-19T05:30:00Z"
+  },
+  "task-2": {
+   "id": "T2D",
+   "title": "[Task 2] Demo question",
+   "kind": "task",
+   "qprefix": "T2.",
+   "status": "awaiting_acceptance",
+   "opened_at": "2026-10-19T06:10:00Z",
+   "questions_file": "docs/task-2/questions.json",
+   "answered": []
+  }
+ }
+}

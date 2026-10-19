@@ -3,6 +3,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,6 +15,7 @@ sys.path.insert(0, HERE)
 import state  # noqa: E402
 import sweep  # noqa: E402
 import md2ghtml  # noqa: E402
+import render_tracker  # noqa: E402
 
 
 def test_recompute_status():
@@ -322,6 +324,89 @@ def test_md2ghtml_edges():
     assert f'<p style="text-align:center"><img src="file://{d}/fig/a.png" alt="Flow"></p>' in h
     assert f'see <img src="file://{d}/b.png" alt="x"> inline' in h and 'src="https://e.com/r.png"' in h
     assert "<aside" not in h and "| TL;DR |" in h and "![no](c.png)" in h
+
+
+# ---------- render_tracker.py ----------
+
+RUN_FIX = os.path.join(FIX, "run")
+
+
+def copy_run():
+    d = tempfile.mkdtemp()
+    shutil.copytree(RUN_FIX, d, dirs_exist_ok=True)
+    return d
+
+
+def test_render_every_section():
+    html_ = render_tracker.render(copy_run(), state.parse_ts("2026-10-19T07:00:00Z"))
+    for h in ("How to steer this run", "Status", "Implementation plan", "Build to closure", "Milestones",
+              "Follow-ups and blockers", "Gates", "Metrics", "Docs produced", "Actions", "Parked tasks",
+              "Diffs", "Original request (verbatim)", "Event log"):
+        assert f"<h2>{h}</h2>" in html_, h
+    assert html_.count('src="file:///') == 3 and "Confirm" in html_ and "Reopen" in html_
+    assert "relocate the demo scripts" in html_ and "Action: unblock" in html_
+
+
+def test_render_fails_loudly():
+    for missing in ("docs", "tracker_status", "request.md"):
+        d = copy_run()
+        if missing == "request.md":
+            os.remove(os.path.join(d, "request.md"))
+        else:
+            p = json.load(open(os.path.join(d, "pipeline.json")))
+            p.pop(missing)
+            json.dump(p, open(os.path.join(d, "pipeline.json"), "w"))
+        r = subprocess.run([sys.executable, os.path.join(HERE, "render_tracker.py"), d, os.path.join(d, "o.html")],
+                           capture_output=True, text=True)
+        assert r.returncode == 1 and missing in (r.stderr + r.stdout), (missing, r.stderr)
+
+
+def test_request_rendered_escaped_and_masked():
+    d = copy_run()
+    open(os.path.join(d, "request.md"), "w").write("make <b>it</b> & ship; api_key=sk-abc123XYZ and teh typo\n")
+    html_ = render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+    assert "make &lt;b&gt;it&lt;/b&gt; &amp; ship" in html_ and "teh typo" in html_
+    assert "sk-abc123XYZ" not in html_ and "api_key=[credential masked]" in html_
+    render_tracker.render(d, state.parse_ts("2026-10-19T07:01:00Z"))
+    assert open(os.path.join(d, "events.jsonl")).read().count("credential masked") == 1
+
+
+def test_render_skips_torn_event_line():
+    d = copy_run()
+    open(os.path.join(d, "events.jsonl"), "a").write('{"ts": "2026-10-19T06:59:00Z", "kind": "mile')
+    assert "<h2>Event log</h2>" in render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+
+
+def test_title_byte_identical():
+    d = copy_run()
+    t = state.parse_ts("2026-10-19T07:00:00Z")
+    a = render_tracker.render(d, t).split("\n", 1)[0]
+    b = render_tracker.render(d, t + timedelta(hours=1)).split("\n", 1)[0]
+    assert a == b
+
+
+def test_task_states_and_chart():
+    d = copy_run()
+    sdd = json.load(open(os.path.join(d, "run.json")))
+    tasks = render_tracker.plan_tasks(os.path.join(d, sdd["plan_path"]))
+    assert [t[0] for t in tasks] == [1, 2, 3, 4] and all("`" not in t[1] for t in tasks)
+    states, times = render_tracker.task_states(d, sdd, tasks, render_tracker.read_events(d))
+    assert states == {1: "complete", 2: "parked", 3: "in_progress", 4: "blocked"} and "task_done" in times[1]
+    render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+    dot = open(os.path.join(d, "tracker", "tasks.dot")).read()
+    assert "#2e9e5b" in dot and "#eb6834" in dot and "#2a78d6" in dot and "#c8312b" in dot and "spec accepted" in dot
+    assert "T1 -> T4" not in dot          # transitive edge removed (T4 reaches T1 through T2 and T3)
+    flow = open(os.path.join(d, "tracker", "flow.dot")).read()
+    assert "accepted?" in flow and "all code" in flow and 'shape=ellipse' in flow
+
+
+def test_no_plan_section_before_plan():
+    d = copy_run()
+    os.remove(os.path.join(d, "run.json"))
+    p = json.load(open(os.path.join(d, "pipeline.json")))
+    p["phase"] = "SPEC"
+    json.dump(p, open(os.path.join(d, "pipeline.json"), "w"))
+    assert "<h2>Implementation plan</h2>" not in render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
 
 
 # ---------- await_owner.sh ----------
