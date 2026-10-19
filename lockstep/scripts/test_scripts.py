@@ -470,24 +470,30 @@ def test_render_done_keeps_plan_and_section_order():
     heads = re.findall(r"<h2>([^<]*)</h2>", h)
     order = ["Implementation plan", "Build to closure", "Gates", "Milestones", "Follow-ups and blockers", "Metrics"]
     assert [x for x in heads if x in order] == order
-    assert "Request to closure: 2h 50m." in h        # 04:00 request to 06:50 done, not "so far"
+    m = re.search(r"Request to closure: (\S+(?: \S+)?) active \((2h 50m) wall clock\)", h)   # 04:00 request to 06:50 done
+    assert m and "so far" not in m.group(0)     # this fixture has no idle gaps, so active equals wall clock
 
 
-def test_timeline_states_adopted_doc_and_dead_session():
+def test_active_time_excludes_sleep_and_dead_sessions():
     T = state.parse_ts
-    docs = {"proposal": {"kind": "proposal", "status": "awaiting_acceptance", "opened_at": "2026-10-19T04:00:00Z"}}
-    ev = [{"ts": "2026-10-19T07:18:00Z", "kind": "tick", "doc": None, "event": "", "phase": "PROPOSAL"},
-          {"ts": "2026-10-19T17:21:00Z", "kind": "tick", "doc": None, "event": "", "phase": "PROPOSAL"},
-          {"ts": "2026-10-19T17:45:00Z", "kind": "comment", "doc": "proposal", "event": "", "phase": "PROPOSAL"},
-          {"ts": "2026-10-19T17:47:00Z", "kind": "tick", "doc": None, "event": "", "phase": "PROPOSAL"}]
-    st = [x[3] for x in render_tracker.classify(ev, docs, T("2026-10-19T17:50:00Z"))]
-    assert st == ["waiting", "waiting", "working", "waiting"]       # the 10 h gap is waiting on the owner, not work
-    w = render_tracker.waiting_secs(ev, docs, T("2026-10-19T17:50:00Z"))
-    assert w["proposal"] == (10 * 3600 + 3 * 60) + 24 * 60 + 3 * 60
-    closed = {"proposal": {"kind": "proposal", "status": "accepted", "opened_at": "2026-10-19T04:00:00Z",
-                           "accepted_at": "2026-10-19T05:00:00Z"}}
-    st = [x[3] for x in render_tracker.classify(ev[:2], closed, T("2026-10-19T17:22:00Z"))]
-    assert st == ["idle", "working"]                                  # no gate open, 10 h gap: no session running
+    ev = [{"ts": "2026-10-19T07:16:00Z", "kind": "milestone", "event": "", "phase": "PROPOSAL"},
+          {"ts": "2026-10-19T07:18:00Z", "kind": "tick", "event": "", "phase": "PROPOSAL"},
+          {"ts": "2026-10-19T17:21:00Z", "kind": "tick", "event": "", "phase": "PROPOSAL"},     # 10 h asleep / session down
+          {"ts": "2026-10-19T17:45:30Z", "kind": "comment", "doc": "proposal", "comment_ts": "2026-10-19T17:45:00Z",
+           "event": "", "phase": "PROPOSAL"},
+          {"ts": "2026-10-19T17:47:30Z", "kind": "answer", "doc": "proposal", "comment_ts": "2026-10-19T17:47:00Z",
+           "event": "", "phase": "PROPOSAL"},
+          {"ts": "2026-10-19T17:50:00Z", "kind": "tick", "event": "", "phase": "PROPOSAL"}]
+    now = T("2026-10-19T17:55:00Z")
+    own = render_tracker.owner_spans(ev)
+    assert own == [(T("2026-10-19T17:40:00Z"), T("2026-10-19T17:47:00Z"))]          # 5 min lead-in + 2 min burst
+    sk = render_tracker.skill_spans(ev, now)
+    assert sk == [(T("2026-10-19T07:16:00Z"), T("2026-10-19T07:18:00Z")), (T("2026-10-19T17:45:30Z"), T("2026-10-19T17:50:00Z"))]
+    total = sum((b - a).total_seconds() for a, b, _ in render_tracker.active_pieces(ev, now))
+    assert total == 2 * 60 + 10 * 60      # 07:16-07:18 plus 17:40-17:50 (reading and replying overlap): 12 min, not 10 h
+    assert render_tracker.overlap(render_tracker.owner_spans(ev, "proposal"), T("2026-10-19T07:00:00Z"), now) == 7 * 60
+    ev.append({"ts": "2026-10-19T18:30:00Z", "kind": "owner_active", "event": "owner message", "phase": "PROPOSAL"})
+    assert render_tracker.owner_spans(ev)[-1] == (T("2026-10-19T18:25:00Z"), T("2026-10-19T18:30:00Z"))
 
 
 
@@ -520,6 +526,14 @@ def test_external_docs_linked_not_swept():
     docs_sec = h.split("<h2>Docs produced</h2>")[1].split("<h2>")[0]
     gates_sec = h.split("<h2>Gates</h2>")[1].split("<h2>")[0]
     assert "Experiment tracker" in docs_sec and "Experiment tracker" not in gates_sec
+
+
+def test_skill_spans_tolerate_out_of_order_events():
+    T = state.parse_ts
+    ev = [{"ts": "2026-10-19T10:00:00Z", "kind": "milestone", "event": ""},
+          {"ts": "2026-10-19T10:10:00Z", "kind": "milestone", "event": ""},
+          {"ts": "2026-10-19T10:05:00Z", "kind": "owner_active", "event": "backfilled"}]
+    assert render_tracker.skill_spans(ev, T("2026-10-19T10:12:00Z")) == [(T("2026-10-19T10:00:00Z"), T("2026-10-19T10:12:00Z"))]
 
 
 # ---------- velocity.py ----------

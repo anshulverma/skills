@@ -12,7 +12,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import matplotlib
 
@@ -66,65 +66,68 @@ def mask_credentials(text: str) -> tuple[str, list[str]]:
     return text, keys
 
 
-IDLE_GAP = 15 * 60  # seconds without an event, and nothing waiting on the owner: no session was running
-GATED = ("proposal", "spec", "task")
+# Only active time counts: the skill doing real work, or the owner engaged (reading, commenting, messaging).
+OWNER_GAP = 10 * 60   # owner comments closer than this belong to one reading session (decision Q8)
+LEAD_IN = 5 * 60      # reading before the first comment of a session
+SKILL_GAP = 45 * 60   # after a work event, a quiet gap longer than this means nothing was running
+OWNER_ACTIVITY = OWNER_KINDS + ("reopen", "owner_active")
 
 
-def open_periods(events: list[dict], docs: dict, now: datetime) -> dict[str, list[tuple[datetime, datetime]]]:
-    """Per gated doc: spans while its gate was open (published or reopened, not yet accepted)."""
-    out = {}
-    for key, d in docs.items():
-        if not isinstance(d, dict) or d.get("kind", key if key in ("proposal", "spec") else None) not in GATED:
-            continue
-        start = parse_ts(d["opened_at"]) if d.get("opened_at") else None  # adopted docs have no gate_open event
-        spans = []
-        for e in events:
-            if e.get("doc") != key:
-                continue
-            t = parse_ts(e["ts"])
-            if e["kind"] in ("gate_open", "confirm_pending", "reopen", "published") and start is None:
-                start = t
-            elif e["kind"] == "accept" and start is not None:
-                spans.append((start, t))
-                start = None
-        if start is not None:
-            end = parse_ts(d["accepted_at"]) if d.get("status") == "accepted" and d.get("accepted_at") else now
-            if end > start:
-                spans.append((start, end))
-        out[key] = spans
+def _merge(spans):
+    out = []
+    for s, t in sorted(spans):
+        if out and s <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], t))
+        else:
+            out.append((s, t))
     return out
 
 
-def classify(events: list[dict], docs: dict, now: datetime) -> list[tuple[str, datetime, datetime, str, list[str]]]:
-    """(phase, start, end, state, open docs) per gap between events; state is working, waiting or idle.
+def owner_spans(events: list[dict], doc: str | None = None) -> list[tuple[datetime, datetime]]:
+    """Reading sessions: owner activity with gaps under OWNER_GAP, each from LEAD_IN before its first comment."""
+    ts = sorted(parse_ts(e.get("comment_ts") or e["ts"]) for e in events
+                if e["kind"] in OWNER_ACTIVITY and (doc is None or e.get("doc") == doc))
+    sessions = []
+    for t in ts:
+        if sessions and (t - sessions[-1][1]).total_seconds() < OWNER_GAP:
+            sessions[-1][1] = t
+        else:
+            sessions.append([t, t])
+    return _merge([(s - timedelta(seconds=LEAD_IN), t) for s, t in sessions])
 
-    Waiting: some gate is open and the gap is not the skill handling an owner comment (or it ran past IDLE_GAP).
-    Idle: no gate open and nothing happened for IDLE_GAP, so no session was running. Otherwise working."""
-    periods = open_periods(events, docs, now)
-    out = []
+
+def skill_spans(events: list[dict], now: datetime) -> list[tuple[datetime, datetime]]:
+    """Gaps after work events (anything but quiet polls and owner messages), unless the gap ran past SKILL_GAP."""
+    spans = []
+    # Owner messages never split skill time; backfilled events may be out of file order.
+    events = sorted((e for e in events if e["kind"] != "owner_active"), key=lambda e: parse_ts(e["ts"]))
     for i, e in enumerate(events):
+        if e["kind"] == "tick":
+            continue
         s = parse_ts(e["ts"])
         t = parse_ts(events[i + 1]["ts"]) if i + 1 < len(events) else now
-        open_docs = [k for k, sp in periods.items() if any(a <= s < b for a, b in sp)]
-        long_gap = (t - s).total_seconds() > IDLE_GAP
-        if open_docs and (e["kind"] not in OWNER_KINDS or long_gap):
-            state = "waiting"
-        elif long_gap:
-            state = "idle"
-        else:
-            state = "working"
-        phase = e.get("phase") if e.get("phase") in PHASES else (out[-1][0] if out else "INIT")
-        out.append((phase, s, t, state, open_docs))
-    return out
+        if (t - s).total_seconds() <= SKILL_GAP:
+            spans.append((s, t))
+    return _merge(spans)
 
 
-def waiting_secs(events: list[dict], docs: dict, now: datetime) -> dict[str, float]:
-    secs = {}
-    for _, s, t, state, open_docs in classify(events, docs, now):
-        if state == "waiting":
-            for k in open_docs:
-                secs[k] = secs.get(k, 0) + (t - s).total_seconds()
-    return secs
+def overlap(spans, a: datetime, b: datetime) -> float:
+    return sum(max(0.0, (min(t, b) - max(s, a)).total_seconds()) for s, t in spans)
+
+
+def active_pieces(events: list[dict], now: datetime) -> list[tuple[datetime, datetime, str]]:
+    """The union of skill and owner time, split into pieces labelled "you" (owner engaged) or "skill"."""
+    own, sk = owner_spans(events), skill_spans(events, now)
+    cuts = sorted({x for s, t in own + sk for x in (s, t)})
+    pieces = []
+    for a, b in zip(cuts, cuts[1:]):
+        who = "you" if overlap(own, a, b) else "skill" if overlap(sk, a, b) else None
+        if who:
+            if pieces and pieces[-1][1] == a and pieces[-1][2] == who:
+                pieces[-1] = (pieces[-1][0], b, who)
+            else:
+                pieces.append((a, b, who))
+    return pieces
 
 
 def plan_tasks(plan_path):
@@ -238,33 +241,36 @@ def task_chart(tasks, states, out):
     subprocess.run(["dot", "-Tpng", "-Gdpi=150", dot, "-o", out], check=True)
 
 
-def timeline_chart(events, now, out, docs=None):
-    spans = [(ph, s, t, st) for ph, s, t, st, _ in classify(events, docs or {}, now)]
-    fig, ax = plt.subplots(figsize=(10, 2.6), facecolor="#fcfcfb")
+def timeline_chart(events, now, out):
+    """Active time only: idle stretches are cut out and marked with how long nothing was happening."""
+    pieces = active_pieces(events, now)
+    fig, ax = plt.subplots(figsize=(10, 2.8), facecolor="#fcfcfb")
     ax.set_facecolor("#fcfcfb")
-    t0 = parse_ts(events[0]["ts"])
-    rows = [p for p in PHASES if any(s[0] == p for s in spans)]
-    colour = {"working": BLUE, "waiting": ORANGE, "idle": LIGHT}
-    for phase, s, e, state in spans:
-        y = rows.index(phase)
-        ax.barh(y, (e - s).total_seconds() / 60, left=(s - t0).total_seconds() / 60, height=0.5,
-                color=colour[state], edgecolor="#fcfcfb", linewidth=1.5)
+    phase_at = lambda t: next((e.get("phase") for e in reversed(events)
+                               if parse_ts(e["ts"]) <= t and e.get("phase") in PHASES), "INIT")
+    rows = [p for p in PHASES if any(phase_at(a) == p for a, _, _ in pieces)] or ["INIT"]
+    x, prev = 0.0, None
+    for a, b, who in pieces:
+        if prev is not None and (a - prev).total_seconds() >= 15 * 60:
+            ax.axvline(x, color=GREY, linestyle=":", linewidth=1)
+            ax.text(x, -0.6, f"away {fmt_dur((a - prev).total_seconds())}", fontsize=7, color=GREY, ha="center")
+        w = (b - a).total_seconds() / 60
+        ax.barh(rows.index(phase_at(a)), w, left=x, height=0.5, color=ORANGE if who == "you" else BLUE,
+                edgecolor="#fcfcfb", linewidth=0.5)
+        x, prev = x + w, b
     ax.set_yticks(range(len(rows)))
     ax.set_yticklabels([r.title() for r in rows])
     ax.invert_yaxis()
-    ax.set_xlabel("minutes since request")
+    ax.set_xlabel("active minutes (time away is cut out)")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     ax.grid(axis="x", color="#e5e4e0")
     from matplotlib.patches import Patch
-    ax.legend(handles=[Patch(color=BLUE, label="skill working"), Patch(color=ORANGE, label="waiting on you"),
-                       Patch(color=LIGHT, label="no session running")],
-              loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, frameon=False, fontsize=9)
+    ax.legend(handles=[Patch(color=BLUE, label="skill working"), Patch(color=ORANGE, label="you engaged (reading, commenting)")],
+              loc="lower center", bbox_to_anchor=(0.5, 1.08), ncol=2, frameon=False, fontsize=9)
     plt.tight_layout()
     plt.savefig(out, dpi=150, facecolor="#fcfcfb")
     plt.close(fig)
-
-
 
 
 def esc(v) -> str:
@@ -317,8 +323,9 @@ def render(run_dir: str, now: datetime) -> str:
     os.makedirs(figdir, exist_ok=True)
     flow_chart(run, os.path.join(figdir, "flow.png"))
     if events:
-        timeline_chart(events, now, os.path.join(figdir, "timeline.png"), run["docs"])
-    waits = waiting_secs(events, run["docs"], now)
+        timeline_chart(events, now, os.path.join(figdir, "timeline.png"))
+    own_all, skill_all = owner_spans(events), skill_spans(events, now)
+    active = lambda a, b: overlap(_merge(own_all + skill_all), a, b)
     t0 = parse_ts(events[0]["ts"]) if events else now
     st = run["tracker_status"]
     since = f" (since {hhmm(st['since'])})" if st.get("since") else ""
@@ -335,7 +342,7 @@ def render(run_dir: str, now: datetime) -> str:
              "and the dashed edges are the review loops."))
     if events:
         h.append("<h2>Timeline</h2>" + _figure(figdir, "timeline.png", "timeline", 2,
-                 "Time per phase: the skill working, waiting on you, or no session running (a gap of more than 15 minutes with nothing waiting on you)."))
+                 "Active time only, by phase: the skill working and you engaged. Time away (asleep, session down, idle) is cut out; dotted lines mark the breaks."))
 
     plan_path = sdd.get("plan_path") and os.path.join(run_dir, sdd["plan_path"])
     tasks, states, times = [], {}, {}
@@ -354,7 +361,7 @@ def render(run_dir: str, now: datetime) -> str:
         for n, title, deps in tasks:
             t = times.get(n, {})
             start = f"{t['task_start']:%m-%d %H:%M}" if "task_start" in t else ""
-            dur = fmt_dur(((t.get("task_done") or now) - t["task_start"]).total_seconds()) if "task_start" in t else ""
+            dur = fmt_dur(overlap(skill_all, t["task_start"], t.get("task_done") or now)) if "task_start" in t else ""
             rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-", TASK_STATES[states[n]][3], start, dur))
         h.append(_table(["ID", "Task", "Depends on", "State", "Started (UTC)", "Duration"], rows))
 
@@ -368,8 +375,9 @@ def render(run_dir: str, now: datetime) -> str:
             diff_ev.setdefault(str(e["diff"]), {})[e["kind"][5:]] = hhmm(e["ts"])
     end = next((parse_ts(e["ts"]) for e in reversed(events) if e["kind"] == "done"), None)
     h.append("<h2>Build to closure</h2><p>Request to closure: "
-             f"{fmt_dur(((end or now) - t0).total_seconds())}{'' if end else ' so far'}. Test runs: {sum(tests.values())}.</p>")
-    closure = [(f"T{n}", fmt_dur((t["task_done"] - t["task_start"]).total_seconds()) if "task_done" in t else "running",
+             f"{fmt_dur(active(t0, end or now))} active{'' if end else ' so far'} "
+             f"({fmt_dur(((end or now) - t0).total_seconds())} wall clock). Test runs: {sum(tests.values())}.</p>")
+    closure = [(f"T{n}", fmt_dur(overlap(skill_all, t["task_start"], t["task_done"])) if "task_done" in t else "running",
                 str(tests.get(n, 0))) for n, t in sorted(times.items()) if "task_start" in t]
     if closure:
         h.append(_table(["Task", "Implementation time", "Test runs"], closure))
@@ -383,10 +391,10 @@ def render(run_dir: str, now: datetime) -> str:
         if not isinstance(d, dict) or not d.get("id") or d.get("kind") in ("plan", "explainer", "external"):
             continue
         versions = sum(1 for e in events if e.get("doc") == k and e["kind"] in ("published", "humanize"))
-        wait = waits.get(k, 0)
+        wait = overlap(owner_spans(events, k), t0, now)
         gates.append((_doc_link(d, k), str(versions or 1), esc(d.get("status", "").replace("_", " ")),
                       hhmm(d.get("opened_at")), hhmm(d.get("accepted_at")), fmt_dur(wait), _qcount(run_dir, d)))
-    h.append("<h2>Gates</h2>" + _table(["Doc", "Version", "Status", "Opened", "Accepted", "Waiting on you", "Questions"], gates))
+    h.append("<h2>Gates</h2>" + _table(["Doc", "Version", "Status", "Opened", "Accepted", "Your active time", "Questions"], gates))
 
     ms, cum, last, phase0 = [], 0, None, None
     for e in events:
@@ -418,7 +426,10 @@ def render(run_dir: str, now: datetime) -> str:
     slops = [esc(e["slop"]) for e in events if "slop" in e]
     counters = run.get("counters") or {}
     h.append("<h2>Metrics</h2>" + _table(["", ""], [
-        ("Elapsed since request", fmt_dur((now - t0).total_seconds())),
+        ("Active time on the project", fmt_dur(active(t0, now))),
+        ("Skill working", fmt_dur(overlap(skill_all, t0, now))),
+        ("You engaged (reading, commenting, messaging)", fmt_dur(overlap(own_all, t0, now))),
+        ("Wall clock since request (reference only)", fmt_dur((now - t0).total_seconds())),
         ("Comments answered", str(sum(e["kind"] in ("comment", "answer", "requirement") for e in events))),
         ("Requirements added from comments", str(sum(e["kind"] == "requirement" for e in events))),
         ("Agents dispatched", esc(agents or counters.get("agents", 0))),
