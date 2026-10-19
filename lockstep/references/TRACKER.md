@@ -70,14 +70,14 @@ python3 $S/state.py <run> event <kind> "<text>" [doc=<key>] [task=<n>] [diff=D<n
 
 `action` events also carry `verb=<verb>` and `status=<outcome>` for the Actions table. `lease_takeover` is written by `state.py lease acquire`; never append it by hand.
 
-`kind` is one of: milestone, tick, published, gate_open, comment, requirement, answer, accept, confirm_pending, changes, reopen, action, humanize, task_start, task_done, task_parked, test_run, diff_created, diff_published, diff_reviewed, diff_landed, blocked, done, abort, cron_rearmed, local_merge, lease_takeover.
+`kind` is one of: milestone, tick, published, gate_open, comment, requirement, answer, accept, confirm_pending, changes, reopen, action, humanize, task_start, task_done, task_parked, test_run, diff_created, diff_published, diff_reviewed, diff_landed, blocked, done, abort, cron_rearmed, local_merge, lease_takeover, owner_active.
 
 - `comment_ts` is the API `created_time` of the owner comment (each sweep item carries it as `created_time`). Set it on comment, answer, requirement and accept events. Review sessions are built from it (references/VELOCITY.md).
-- Timeline states, per gap between consecutive events (`render_tracker.classify`):
-  - **waiting on you**: some gated doc's gate is open (from its `opened_at`, `gate_open`, `published`, `confirm_pending` or `reopen` until its accept) and the gap is not the skill handling an owner comment, or that handling gap ran past 15 minutes;
-  - **no session running**: no gate is open and nothing happened for more than 15 minutes (the Claude session was down; never counted as work);
-  - **working**: everything else.
-  The Gates table's "Waiting on you" column sums the waiting gaps per doc.
+- Only active time counts (`render_tracker.active_pieces`). The purpose is measuring how fast the owner completes a task, so time away never counts, not even as "waiting".
+  - **You engaged**: owner activity (comment kinds with their `comment_ts`, plus `owner_active` events) grouped into sessions with gaps under 10 minutes; each session starts 5 minutes before its first comment (reading lead-in, decision Q8).
+  - **Skill working**: the gap after every event except quiet `tick` polls and `owner_active`, unless that gap runs past 45 minutes (nothing was running).
+  - Everything else is time away (asleep, session down, idle polling) and counts as zero. The timeline cuts it out and marks each break with its length; wall clock appears only as a labelled reference.
+  - The Gates column "Your active time" is the owner's sessions on that doc; task durations are skill time between task_start and task_done.
 
 ## Task events in PLAN and BUILD
 

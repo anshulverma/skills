@@ -54,6 +54,7 @@ Run these in order. Each step's protocol lives on the linked page; do not improv
    session holds it: exit without bumping `tick` (references/GATE.md).
 2. **Cron.** Adopt, create or re-arm the one durable cron (references/LOOP.md).
 3. **Dead task ids.** Clear them (references/LOOP.md).
+3b. **Owner in the session.** If the owner sent a message in this Claude session since the last tick, append `state.py <run> event owner_active "<one-line summary>"` (it counts as engaged time; references/TRACKER.md).
 4. **Sweep and handle.** `sweep.py` over every published run doc, then handle each item oldest
    first, by kind (references/GATE.md; `Action:` verbs in references/ACTIONS.md).
 5. **Privacy.** Re-check each doc before writing to it (references/DOCS.md, Privacy check).
