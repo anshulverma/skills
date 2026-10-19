@@ -35,14 +35,14 @@ Each open question is one numbered paragraph with these parts, in order:
 2. A one-sentence question.
 3. One evidence sentence.
 4. "We recommend X because Y".
-5. "If unanswered: X".
+5. "If unanswered: X". When a standing constraint in `decisions.md` covers the question (for example where checkpoints may be written), the default obeys it: nothing that the constraint guards happens until the owner answers. Never a "do it anyway" default.
 
 The title and every open-question paragraph stay byte-identical after publish. Answers and adopted requirements go into a `Decisions so far` section, because a line inside the numbered list would break its numbering. New material goes into new sections.
 
 ## Publish
 
 1. Draft `$D/v1.md` on disk. Put the humanize context block first (see Humanize). Gated docs include the steering box (references/ACTIONS.md).
-2. Run the humanize full path from the main loop.
+2. Before humanize, a fresh agent fact-audits the draft against `decisions.md` and the sources it cites (every number, id and claim; every decision present; no open question that is already decided). Fix what it finds, then run the humanize full path from the main loop.
 3. Write `$D/questions.json`, which holds each open-question paragraph exactly as it will be published, and record its path (references/STATE.md).
 4. Gated docs only (references/VELOCITY.md); explainer, plan and impl_questions docs skip the header and every velocity call. Compute the header. `--graded` is humanize's graded output and supplies the unfamiliar-term count:
    ```bash
@@ -163,6 +163,8 @@ The run has one implementation-questions doc: `kind: impl_questions`, qprefix `I
 - The tracker links to it (references/TRACKER.md).
 
 ## Security
+
+- Once per session, check the server risk rating of the `meta` write commands this page uses (`meta metacli.command annotations --command "google.docs apply" -o json`, likewise `google.docs.comment reply`, `google.docs create`, `google.docs.share list`). They rate LOW / AUTONOMOUS today; if one ever rates CONFIRM or 2FA, stop and ask the owner in a doc before using it.
 
 - Docs are owner-only. Verify privacy after create and before every write.
 - Only owner comments produce verdicts or Actions (references/GATE.md).

@@ -36,6 +36,8 @@ Run dir: `/data/users/anshulverma/sdd-runs/<slug>/` (written `<run>` below; neve
    ```bash
    meta google.docs apply --id=<tracker_doc> --from=file://<run>/tracker/body.html --conflict-resolution=ours
    ```
+Render only when something changed this tick, or as a heartbeat when the last render is 30+ minutes old; quiet ticks skip it.
+
 4. If the apply refuses, record a `tick` event with its first output line. If the refusal is about anchored comments (the owner commented inside the body), reply in each such thread asking for comments on the title only, and print `tracker frozen: comment inside the body` to the terminal on every tick until a write succeeds.
 
 The renderer masks a credential value in `request.md` as `[credential masked]`, keeps the key name, and appends one `blocked` event naming the key (`credential masked in request.md (<key>)`).
@@ -78,7 +80,7 @@ python3 $S/state.py <run> event <kind> "<text>" [doc=<key>] [task=<n>] [diff=D<n
   - **Skill working**: the gap after every event except quiet `tick` polls and `owner_active`, unless that gap runs past 45 minutes (nothing was running).
   - Everything else is time away (asleep, session down, idle polling) and counts as zero. The timeline cuts it out and marks each break with its length; wall clock appears only as a labelled reference.
   - The Gates column "Your active time" is the owner's sessions on that doc; task durations are skill time between task_start and task_done.
-  - The Status table's "Time spent" row gives total active time split into you (owner engaged) and agent (skill working); time both spent at once counts once in the total.
+  - The Status table's "Time spent" row gives total active time as you + agent, and the two always add up to the total: a minute when the owner was engaged counts as the owner's even if the agent was also working; a minute when only the agent worked counts as the agent's. The Metrics rows use the same split (`render_tracker.time_split`).
 
 ## Task events in PLAN and BUILD
 

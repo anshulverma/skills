@@ -78,7 +78,7 @@ The script lists comments with `--output=json -l 200 --columns=all` and follows 
 | `already_accepted` | Says the doc is already accepted (a `Reopen` comment re-opens an accepted doc; superseded and reference docs never re-gate) | None |
 | `answer` | Answers question `q` | Record `<qprefix><q>` in `decisions.md`, add `q` to `docs.<doc>.answered`, add it to the doc's `Decisions so far` at the next refresh |
 | `requirement` | "adopted" plus how it is applied, or "not adopted: conflicts with <rule>" when it conflicts with the never-allowed list in [references/ACTIONS.md](ACTIONS.md) or with `decisions.md` | Adopted: record in `decisions.md`, add to `Decisions so far` |
-| `question` | The researched answer | Dispatch one agent per question with a small payload |
+| `question` | The researched answer | Dispatch one agent per question with a small payload. A comment that asks nothing (a note or a link shared "as a reference") gets recorded under References in `decisions.md` and a short acknowledgement, with no agent |
 
 Classification patterns (all case-insensitive):
 
@@ -96,6 +96,10 @@ Acceptance rules:
 - Comments after acceptance are still answered but never re-gate unless they start with `Reopen`.
 - While `waiting_reasons` holds `reopen:<doc>`, accepts on later gates are ignored and never replayed. Mark them handled, reply that the accept is ignored while that doc is reopened, and change no state.
 - Never accept on silence. A cron tick never auto-accepts.
+
+### One comment, several kinds
+
+`sweep.py` gives each comment one kind, but a comment can carry more than one thing: an answer to a question, a new question and a requirement in the same reply. Read the text and handle every part: record the answer (add its number to `answered`), answer the question in the same reply, and record the requirement. Do this before handling the next item, so a later `accept` in the same sweep sees the answer and can take effect without a needless confirm round.
 
 ## 6. Ledger
 

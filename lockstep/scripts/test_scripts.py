@@ -539,7 +539,10 @@ def test_skill_spans_tolerate_out_of_order_events():
 def test_status_shows_time_spent_split():
     h = render_tracker.render(copy_run(), state.parse_ts("2026-10-19T07:00:00Z"))
     status = h.split("<h2>Status</h2>")[1].split("<h2>")[0]
-    assert re.search(r"Time spent</b></td><td>\S+(?: \S+)? active: you \S+(?: \S+)?, agent \S+", status), status
+    m = re.search(r"Time spent</b></td><td>((?:\d+h )?\d+m) active: you ((?:\d+h )?\d+m) \+ agent ((?:\d+h )?\d+m)", status)
+    assert m, status
+    mins = lambda x: sum(int(v) * (60 if u == "h" else 1) for v, u in re.findall(r"(\d+)([hm])", x))
+    assert abs(mins(m.group(2)) + mins(m.group(3)) - mins(m.group(1))) <= 1      # the split adds up to the total (rounding)
 
 
 # ---------- velocity.py ----------
