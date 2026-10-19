@@ -160,10 +160,13 @@ Invoke `superpowers:writing-plans` against the hardened spec. Save the plan to t
 auto-plan uses for plans: `docs/auto-plan/plans/<date>-<slug>.md`. Record it in
 `run.json.plan_path`.
 
+When `run.json.driver == "lockstep"`, tell writing-plans to give every `### Task N` heading a
+`**Depends on:** Task N, ... | none` line directly below it.
+
 Verify before advancing: the plan carries its required header, a Global Constraints section
 copying the spec's binding values verbatim, per-task interfaces, and no placeholders (`TBD`,
-"add error handling", "similar to Task N"). A placeholder here becomes a wrong implementation
-in stage 5.
+"add error handling", "similar to Task N"); for lockstep-driven runs, every task has a
+`**Depends on:**` line. A placeholder here becomes a wrong implementation in stage 5.
 
 ### The seam
 
@@ -241,9 +244,20 @@ kind:
   `status: blocked`. No stronger model and no narrower task slice can grant an ACL; running
   the ladder just burns two ticks to arrive at the same place.
 
-Either way, append the task to `ledger.md` as **blocked, not complete**, so a resume stops
-there instead of skipping it. Leave `stage` and `plan_path` intact so the run is resumable
+Either way, append the task to `ledger.md` as `Task N: blocked (<reason>)` (blocked, not
+complete), so a resume stops there instead of skipping it. Leave `stage` and `plan_path` intact so the run is resumable
 once the blocker clears. Put the concrete remediation in `blocked_reason`.
+
+Implementer returns NEEDS_OWNER (an unknown whose answer changes the task's output; it writes
+`docs/task-N/questions.md`): append `Task N: parked (docs/task-N/questions.md)` to `ledger.md`
+and move to the next task whose dependencies are complete. Parked lines are skipped, not
+blocking. Lockstep publishes the questions as a gated doc and, on acceptance, writes
+`docs/task-N/answers.md` and deletes the parked line, so the task runs again with the answers
+in its brief. An implementer question that does not change the output is DONE_WITH_CONCERNS:
+the task completes and the question is appended to `questions.md`.
+
+When no unparked task is runnable, write `run.json.idle_reason: all_remaining_parked` and end
+the tick. Never run the whole-branch review or set `done` while a parked line exists.
 
 After the last task: whole-branch review on the most capable model, one fix subagent for all
 findings, then `arc f && arc lint`, then `status: done`.
@@ -251,7 +265,9 @@ findings, then `arc f && arc lint`, then `status: done`.
 ## Finishing
 
 On `done` or `blocked`: rewrite `run.json`, print the summary plus any `unresolved` items,
-then `ScheduleWakeup({stop: true})`.
+then `CronDelete({id: run.json.cron_job_id})`; if the id is missing, find the job whose prompt
+is exactly `/sdd <slug>` with `CronList` and delete that. Lockstep-driven runs skip this
+(lockstep owns the cron).
 
-A tick that starts and finds `status` already `done` or `blocked` re-issues the stop and
-exits — so the pipeline stays safe if the loop somehow outlives it.
+A tick that starts and finds `status` already `done` or `blocked` re-issues the CronDelete and
+exits, so the pipeline stays safe if the loop somehow outlives it.

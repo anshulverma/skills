@@ -50,6 +50,25 @@ Every `/sdd` invocation after stage 1 does exactly this:
    return when context is running low, the run is `done`/`blocked`, or you are genuinely
    waiting on something external.
 
+### Driven by lockstep
+
+When `run.json.driver == "lockstep"`, the `lockstep` skill owns the loop and calls sdd for one
+unit at a time:
+
+- Do tick steps 1-5 only; skip step 6 (lockstep sweeps its docs between units).
+- Never call `CronCreate`, `CronDelete` or `CronList`; lockstep owns the cron.
+- Name EXECUTE units `TASK_<n>`. Choose the next task from the plan's `**Depends on:**` lines.
+- Build each implementer brief in this order: the never-allowed list from
+  `~/.claude/skills/lockstep/references/ACTIONS.md`, then the standing constraints from
+  `<run>/decisions.md`, then `docs/task-N/answers.md` when it exists, then the task. The
+  never-allowed rules override any constraint.
+- Append task events with
+  `python3 ~/.claude/skills/lockstep/scripts/state.py <run> event <kind> "<text>" task=<n>`:
+  `task_start` before dispatching the implementer, `test_run` after each test command the
+  implementer or reviewer reports, `task_done` when the ledger line is written, `task_parked`
+  when a task parks.
+- Parked tasks and `idle_reason`: see `references/STAGES.md` Stage 5.
+
 **One unit per *checkpoint*, not one unit per wall-clock tick.** The rule exists to bound
 blast radius: state hits disk after every unit, so a crash or compaction loses at most one
 unit. It does **not** mean pause between units. A pipeline that idles until the next cron
@@ -158,7 +177,7 @@ an unanswerable question degrades to an `UNRESOLVED:` marker instead of hanging.
 | Not recording `cron_job_id` in `run.json` | A later tick has fresh context and no memory of the job ID, so it cannot stop the loop. Fall back to `CronList` if this happens. |
 | Arming without `durable: true` | Session-only jobs die with the Claude process, stranding the run. |
 | An interval below 10m | Ticks fire while the previous unit's subagents are still running, find nothing, and burn turns. |
-| Adding a pid lockfile | Ticks fire only while the REPL is idle. Concurrent ticks cannot happen. |
+| Adding a pid lockfile | Ticks fire only while the REPL is idle. Concurrent ticks cannot happen. (Lockstep-driven runs use lockstep's lease; that is not this.) |
 | `--plan-only` for stage 4 | `--plan-only` runs Phase 3, which **regenerates** the plan and destroys the `writing-plans` output. Use `--resume --harden`. |
 | Omitting `--unattended` | The run hangs forever on the first bubble-up question with nobody there to answer. |
 | Trusting conversation memory for stage or progress | Context compacts between ticks. Re-read `run.json` every time. |
