@@ -159,13 +159,21 @@ def plan_tasks(plan_path):
     return tasks
 
 
+def _dot_esc(t: str) -> str:
+    return str(t).replace("\\", "\\\\").replace('"', '\\"')
+
+
 def flow_chart(run, out):
     """Phase flowchart: start/end states, an accept decision with a revise loop for each gated doc."""
     current = run.get("phase", "PROPOSAL")
     gates = {k: v.get("status", "") for k, v in run.get("docs", {}).items() if isinstance(v, dict)}
-    lines = ['digraph G { graph [rankdir=LR, bgcolor="#fcfcfb", pad=0.3, nodesep=0.35, ranksep=0.4];',
-             'node [shape=box, style="rounded,filled", fontname="Liberation Sans", fontsize=13, penwidth=2];',
+    roadmap = run.get("roadmap") or []
+    # Phases run left to right inside this run's milestone; later milestones stack below it.
+    lines = ['digraph G { graph [rankdir=TB, bgcolor="#fcfcfb", pad=0.3, nodesep=0.25, ranksep=0.35, newrank=true];',
+             'node [shape=box, style="rounded,filled", fontname="Liberation Sans", fontsize=12, penwidth=2];',
              'edge [color="#8a8984", penwidth=2, fontname="Liberation Sans", fontsize=10, fontcolor="#52514e"];',
+             'subgraph cluster_m1 { style="rounded,dashed"; color="#2a78d6"; fontname="Liberation Sans"; fontsize=12; '
+             + (f'label="Milestone 1: {_dot_esc(roadmap[0]["name"])} (this run)";' if roadmap else 'label="This run";'),
              'start [shape=ellipse, label="request", fillcolor="#e3eefb", color="#2a78d6"];']
     done = True
     for p in PHASES:
@@ -195,6 +203,16 @@ def flow_chart(run, out):
             lines.append('LAND -> LAND_ok; LAND_ok -> DONE [label="yes"]; LAND_ok -> LAND [label="no: review\\nfixes", style=dashed, constraint=false];')
         else:
             lines.append(f"{a} -> {b};")
+    row = ["start"] + [p for p in PHASES] + ["PROPOSAL_ok", "SPEC_ok", "LAND_ok"]
+    lines.append("{rank=same; " + "; ".join(row) + ";}")
+    lines.append("}")
+    prev = "DONE"
+    for i, m in enumerate(roadmap[1:], 2):
+        st = m.get("status", "planned")
+        fill, col = ("#e3eefb", BLUE) if st == "done" else ("#fdebd9", ORANGE) if st == "in_progress" else (LIGHT, GREY)
+        lines.append(f'M{i} [label="Milestone {i}: {_dot_esc(m["name"])}\\n({st.replace("_", " ")})", fillcolor="{fill}", color="{col}", fontcolor="#0b0b0b"];')
+        lines.append(f"{prev} -> M{i};")
+        prev = f"M{i}"
     lines.append("}")
     dot = out.replace(".png", ".dot")
     open(dot, "w").write("\n".join(lines))
@@ -386,8 +404,13 @@ def render(run_dir: str, now: datetime) -> str:
         ("<b>Next wake</b>", esc(st.get("next_wake", ""))),
     ]))
     h.append("<h2>Where the run is</h2>" + _figure(figdir, "flow.png", "run phases", 1,
-             "Run phases from request to done; the current phase is filled blue, each gated doc shows its state, "
-             "and the dashed edges are the review loops."))
+             "This run's phases from request to done, left to right inside its milestone; the current phase is filled blue, "
+             "each gated doc shows its state, and the dashed edges are the review loops. Later milestones of the larger plan stack below."))
+    if run.get("roadmap"):
+        h.append("<h2>Larger plan</h2><p>This run is milestone 1. The later milestones are bookkeeping, not yet planned in detail.</p>" + _table(
+            ["Milestone", "Scope", "Status"],
+            [(f"{i}. {esc(m['name'])}", esc(m.get("scope", "")), esc(m.get("status", "planned").replace("_", " ")))
+             for i, m in enumerate(run["roadmap"], 1)]))
     if events:
         h.append("<h2>Timeline</h2>" + _figure(figdir, "timeline.png", "timeline", 2,
                  "Active time only, by phase: you engaged (upper bar) and the agent working (lower bar), counted separately. Stretches when neither of you was working (you away and the agent idle or waiting on you) are cut out; dotted lines mark the breaks."))

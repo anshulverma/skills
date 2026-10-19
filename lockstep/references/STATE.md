@@ -90,6 +90,7 @@ Every transition also rewrites `tracker_status`. Append events with `python3 $S/
 | `repo`, `build_branch` | Absolute path of the target repo and the branch BUILD commits to; written at PLAN handoff, read by LAND |
 | `impl_questions_seen` | Count of `run.json.unresolved` plus `questions.md` entries already in the implementation-questions doc |
 | `tracker_doc`, `tracker_title` | The tracker's doc id and exact title |
+| `roadmap` | Optional list of `{name, status, scope}` milestones of the larger plan; the first is this run. The tracker draws them below the phase flowchart and lists them under Larger plan (bookkeeping only) |
 | `owner_tz` | IANA timezone the tracker shows times in (default `America/Los_Angeles`); stored times stay UTC |
 | `tracker_status` | `{now, waiting_on, since, link, unblocks, next_wake}` |
 | `counters` | `{checks, agents, humanize_passes}` |
