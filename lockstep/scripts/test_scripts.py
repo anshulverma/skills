@@ -539,10 +539,27 @@ def test_skill_spans_tolerate_out_of_order_events():
 def test_status_shows_time_spent_split():
     h = render_tracker.render(copy_run(), state.parse_ts("2026-10-19T07:00:00Z"))
     status = h.split("<h2>Status</h2>")[1].split("<h2>")[0]
-    m = re.search(r"Time spent</b></td><td>((?:\d+h )?\d+m) active: you ((?:\d+h )?\d+m) \+ agent ((?:\d+h )?\d+m)", status)
+    d = r"((?:\d+h )?\d+m)"
+    m = re.search(rf"Time spent</b></td><td>{d} active: you {d} \+ agent {d}(?: − {d} when both)?", status)
     assert m, status
-    mins = lambda x: sum(int(v) * (60 if u == "h" else 1) for v, u in re.findall(r"(\d+)([hm])", x))
-    assert mins(m.group(2)) + mins(m.group(3)) == mins(m.group(1))      # the displayed split adds up exactly
+    mins = lambda x: sum(int(v) * (60 if u == "h" else 1) for v, u in re.findall(r"(\d+)([hm])", x or ""))
+    assert mins(m.group(2)) + mins(m.group(3)) - mins(m.group(4)) == mins(m.group(1))   # the displayed numbers add up exactly
+
+
+def test_agent_time_counts_while_owner_away_but_not_while_waiting():
+    T = state.parse_ts
+    ev = [{"ts": "2026-10-19T08:00:00Z", "kind": "comment", "doc": "spec", "comment_ts": "2026-10-19T08:00:00Z", "event": ""},
+          {"ts": "2026-10-19T08:02:00Z", "kind": "unit_start", "event": "SPEC_HARDEN_PASS"},
+          {"ts": "2026-10-19T09:32:00Z", "kind": "unit_done", "event": "SPEC_HARDEN_PASS"},   # 90 min, no events, owner asleep
+          {"ts": "2026-10-19T09:33:00Z", "kind": "gate_open", "event": "plan gate open", "doc": "plan"},
+          {"ts": "2026-10-19T09:50:00Z", "kind": "tick", "event": ""}]                       # waiting on the owner
+    now = T("2026-10-19T10:00:00Z")
+    sk = render_tracker.skill_spans(ev, now)
+    assert sk == [(T("2026-10-19T08:00:00Z"), T("2026-10-19T09:33:00Z"))]   # comment handling + the whole unit; the gate wait is idle
+    you, agent, total = render_tracker.time_split(ev, now)
+    assert you == 5 * 60 and agent == 93 * 60 and total == 98 * 60           # owner: 5 min lead-in; agent counts while owner away
+    ev.append({"ts": "2026-10-19T09:55:00Z", "kind": "unit_start", "event": "PLAN_WRITE"})
+    assert render_tracker.skill_spans(ev, now)[-1] == (T("2026-10-19T09:55:00Z"), now)   # a running unit counts until now
 
 
 # ---------- velocity.py ----------

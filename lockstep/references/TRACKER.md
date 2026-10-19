@@ -72,15 +72,16 @@ python3 $S/state.py <run> event <kind> "<text>" [doc=<key>] [task=<n>] [diff=D<n
 
 `action` events also carry `verb=<verb>` and `status=<outcome>` for the Actions table. `lease_takeover` is written by `state.py lease acquire`; never append it by hand.
 
-`kind` is one of: milestone, tick, published, gate_open, comment, requirement, answer, accept, confirm_pending, changes, reopen, action, humanize, task_start, task_done, task_parked, test_run, diff_created, diff_published, diff_reviewed, diff_landed, blocked, done, abort, cron_rearmed, local_merge, lease_takeover, owner_active.
+`kind` is one of: milestone, tick, published, gate_open, comment, requirement, answer, accept, confirm_pending, changes, reopen, action, humanize, task_start, task_done, task_parked, test_run, diff_created, diff_published, diff_reviewed, diff_landed, blocked, done, abort, cron_rearmed, local_merge, lease_takeover, owner_active, unit_start, unit_done.
 
 - `comment_ts` is the API `created_time` of the owner comment (each sweep item carries it as `created_time`). Set it on comment, answer, requirement and accept events. Review sessions are built from it (references/VELOCITY.md).
-- Only active time counts (`render_tracker.active_pieces`). The purpose is measuring how fast the owner completes a task, so time away never counts, not even as "waiting".
+- Only active time counts (`render_tracker.active_pieces`). The purpose is measuring how fast the owner completes a task. You and the agent are counted separately: your time away lowers only your time, and the agent's working time counts whether or not you are around. Time when neither is working counts for nobody.
   - **You engaged**: owner activity (comment kinds with their `comment_ts`, plus `owner_active` events) grouped into sessions with gaps under 10 minutes; each session starts 5 minutes before its first comment (reading lead-in, decision Q8).
-  - **Skill working**: the gap after every event except quiet `tick` polls and `owner_active`, unless that gap runs past 45 minutes (nothing was running).
-  - Everything else is time away (asleep, session down, idle polling) and counts as zero. The timeline cuts it out and marks each break with its length; wall clock appears only as a labelled reference.
+  - **Agent working**: every unit from its `unit_start` to its `unit_done` event (or to now while it runs), however long and quiet, plus the gap after any other event except quiet `tick` polls, `gate_open` and `owner_active`, unless that gap runs past 45 minutes. An open gate with no unit running is the agent waiting on the owner and counts as zero.
+  - Log `state.py <run> event unit_start "<unit>"` whenever `in_flight` is claimed, and `unit_done "<unit>"` with the same text whenever it is cleared, including when a dead unit is cleared (references/LOOP.md). Without these, a long background unit (a workflow, a humanize pass) after its last event would count only its first 45 minutes.
+  - Everything else (you away and the agent idle, waiting on you, or its session down) counts as zero. The timeline cuts it out and marks each break with its length; wall clock appears only as a labelled reference.
   - The Gates column "Your active time" is the owner's sessions on that doc; task durations are skill time between task_start and task_done.
-  - The Status table's "Time spent" row gives total active time as you + agent, and the two always add up to the total: a minute when the owner was engaged counts as the owner's even if the agent was also working; a minute when only the agent worked counts as the agent's. The Metrics rows use the same split (`render_tracker.time_split`).
+  - The Status table's "Time spent" row reads "X active: you Y + agent Z − W when both of you were working", so the displayed numbers always add up (W is derived from the displayed X, Y, Z). The Metrics rows give the same four numbers: active (either working), you engaged, agent working, both at once (`render_tracker.time_split`). The timeline draws you (upper bar) and the agent (lower bar) separately in each phase row.
 
 ## Task events in PLAN and BUILD
 

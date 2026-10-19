@@ -70,6 +70,7 @@ def mask_credentials(text: str) -> tuple[str, list[str]]:
 OWNER_GAP = 10 * 60   # owner comments closer than this belong to one reading session (decision Q8)
 LEAD_IN = 5 * 60      # reading before the first comment of a session
 SKILL_GAP = 45 * 60   # after a work event, a quiet gap longer than this means nothing was running
+IDLE_KINDS = ("tick", "gate_open")   # after these the agent waits for the owner unless a unit is running
 OWNER_ACTIVITY = OWNER_KINDS + ("reopen", "owner_active")
 
 
@@ -97,17 +98,26 @@ def owner_spans(events: list[dict], doc: str | None = None) -> list[tuple[dateti
 
 
 def skill_spans(events: list[dict], now: datetime) -> list[tuple[datetime, datetime]]:
-    """Gaps after work events (anything but quiet polls and owner messages), unless the gap ran past SKILL_GAP."""
-    spans = []
+    """When the agent was working, whether or not the owner was around.
+
+    A unit (unit_start to unit_done, or to now while it runs) counts in full however quiet it is. Outside
+    units, the gap after a work event counts unless it ran past SKILL_GAP; quiet polls and an open gate are
+    the agent waiting, not working."""
+    spans, open_units = [], {}
     # Owner messages never split skill time; backfilled events may be out of file order.
     events = sorted((e for e in events if e["kind"] != "owner_active"), key=lambda e: parse_ts(e["ts"]))
     for i, e in enumerate(events):
-        if e["kind"] == "tick":
-            continue
         s = parse_ts(e["ts"])
+        if e["kind"] == "unit_start":
+            open_units.setdefault(e["event"], s)
+        elif e["kind"] == "unit_done" and e["event"] in open_units:
+            spans.append((open_units.pop(e["event"]), s))
+        if e["kind"] in IDLE_KINDS:
+            continue
         t = parse_ts(events[i + 1]["ts"]) if i + 1 < len(events) else now
         if (t - s).total_seconds() <= SKILL_GAP:
             spans.append((s, t))
+    spans += [(s, now) for s in open_units.values()]
     return _merge(spans)
 
 
@@ -116,12 +126,13 @@ def overlap(spans, a: datetime, b: datetime) -> float:
 
 
 def active_pieces(events: list[dict], now: datetime) -> list[tuple[datetime, datetime, str]]:
-    """The union of skill and owner time, split into pieces labelled "you" (owner engaged) or "skill"."""
+    """The union of skill and owner time, split into pieces labelled "you", "skill" or "both"."""
     own, sk = owner_spans(events), skill_spans(events, now)
     cuts = sorted({x for s, t in own + sk for x in (s, t)})
     pieces = []
     for a, b in zip(cuts, cuts[1:]):
-        who = "you" if overlap(own, a, b) else "skill" if overlap(sk, a, b) else None
+        o, k = overlap(own, a, b), overlap(sk, a, b)
+        who = "both" if o and k else "you" if o else "skill" if k else None
         if who:
             if pieces and pieces[-1][1] == a and pieces[-1][2] == who:
                 pieces[-1] = (pieces[-1][0], b, who)
@@ -241,15 +252,12 @@ def task_chart(tasks, states, out):
     subprocess.run(["dot", "-Tpng", "-Gdpi=150", dot, "-o", out], check=True)
 
 
-def time_split(events: list[dict], now: datetime) -> tuple[float, float]:
-    """(owner seconds, agent seconds) that add up to the active total: time both were active counts as the owner's."""
-    you = agent = 0.0
-    for a, b, who in active_pieces(events, now):
-        if who == "you":
-            you += (b - a).total_seconds()
-        else:
-            agent += (b - a).total_seconds()
-    return you, agent
+def time_split(events: list[dict], now: datetime) -> tuple[float, float, float]:
+    """(owner seconds, agent seconds, active seconds). Each side counts its own time; the owner being away
+    only lowers the owner's share, so time both worked counts for both and active = you + agent - both."""
+    span = lambda spans: sum((t - s).total_seconds() for s, t in spans)
+    total = sum((b - a).total_seconds() for a, b, _ in active_pieces(events, now))
+    return span(owner_spans(events)), span(skill_spans(events, now)), total
 
 
 def timeline_chart(events, now, out):
@@ -265,19 +273,21 @@ def timeline_chart(events, now, out):
         if prev is not None and (a - prev).total_seconds() >= 15 * 60:
             ax.axvline(x, color=GREY, linestyle=":", linewidth=1)
             ax.text(x, -0.6, f"away {fmt_dur((a - prev).total_seconds())}", fontsize=7, color=GREY, ha="center")
-        w = (b - a).total_seconds() / 60
-        ax.barh(rows.index(phase_at(a)), w, left=x, height=0.5, color=ORANGE if who == "you" else BLUE,
-                edgecolor="#fcfcfb", linewidth=0.5)
+        w, r = (b - a).total_seconds() / 60, rows.index(phase_at(a))
+        if who in ("you", "both"):   # upper half: you engaged
+            ax.barh(r - 0.13, w, left=x, height=0.26, color=ORANGE, edgecolor="#fcfcfb", linewidth=0.5)
+        if who in ("skill", "both"):  # lower half: agent working
+            ax.barh(r + 0.13, w, left=x, height=0.26, color=BLUE, edgecolor="#fcfcfb", linewidth=0.5)
         x, prev = x + w, b
     ax.set_yticks(range(len(rows)))
     ax.set_yticklabels([r.title() for r in rows])
     ax.invert_yaxis()
-    ax.set_xlabel("active minutes (time away is cut out)")
+    ax.set_xlabel("active minutes (time when neither of you was working is cut out)")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     ax.grid(axis="x", color="#e5e4e0")
     from matplotlib.patches import Patch
-    ax.legend(handles=[Patch(color=BLUE, label="skill working"), Patch(color=ORANGE, label="you engaged (reading, commenting)")],
+    ax.legend(handles=[Patch(color=ORANGE, label="you engaged (reading, commenting)"), Patch(color=BLUE, label="agent working")],
               loc="lower center", bbox_to_anchor=(0.5, 1.08), ncol=2, frameon=False, fontsize=9)
     plt.tight_layout()
     plt.savefig(out, dpi=150, facecolor="#fcfcfb")
@@ -336,8 +346,9 @@ def render(run_dir: str, now: datetime) -> str:
     if events:
         timeline_chart(events, now, os.path.join(figdir, "timeline.png"))
     own_all, skill_all = owner_spans(events), skill_spans(events, now)
-    you_s, agent_s = time_split(events, now)
-    tot_m, you_m = round((you_s + agent_s) / 60), round(you_s / 60)  # displayed parts add up to the displayed total
+    you_s, agent_s, tot_s = time_split(events, now)
+    tot_m, you_m, agent_m = round(tot_s / 60), round(you_s / 60), round(agent_s / 60)
+    both_m = you_m + agent_m - tot_m   # derived from the displayed numbers so they add up exactly
     active = lambda a, b: overlap(_merge(own_all + skill_all), a, b)
     t0 = parse_ts(events[0]["ts"]) if events else now
     st = run["tracker_status"]
@@ -346,8 +357,10 @@ def render(run_dir: str, now: datetime) -> str:
     h.append("<h2>Status</h2>" + _table(["", ""], [
         ("<b>Last updated</b>", f"{now:%Y-%m-%d %H:%M} UTC (tick {esc(run.get('tick', 0))})"),
         ("<b>Status</b>", esc(run.get("status", ""))),
-        ("<b>Time spent</b>", f"{fmt_dur(tot_m * 60)} active: you {fmt_dur(you_m * 60)} + agent {fmt_dur((tot_m - you_m) * 60)} "
-                              "(a minute when you were engaged counts as yours, even if the agent was also working)"),
+        ("<b>Time spent</b>", f"{fmt_dur(tot_m * 60)} active: you {fmt_dur(you_m * 60)} + agent {fmt_dur(agent_m * 60)}"
+                              + (f" − {fmt_dur(both_m * 60)} when both of you were working" if both_m > 0 else "")
+                              + " (your time away is not yours, but counts for the agent while it works; "
+                                "the agent waiting on you counts for neither)"),
         ("<b>Now</b>", esc(st.get("now", "")) + (f" (sdd stage {esc(sdd.get('stage'))})" if sdd else "")),
         ("<b>Waiting on</b>", esc(st.get("waiting_on", "")) + since),
         ("<b>Next wake</b>", esc(st.get("next_wake", ""))),
@@ -357,7 +370,7 @@ def render(run_dir: str, now: datetime) -> str:
              "and the dashed edges are the review loops."))
     if events:
         h.append("<h2>Timeline</h2>" + _figure(figdir, "timeline.png", "timeline", 2,
-                 "Active time only, by phase: the skill working and you engaged. Time away (asleep, session down, idle) is cut out; dotted lines mark the breaks."))
+                 "Active time only, by phase: you engaged (upper bar) and the agent working (lower bar), counted separately. Stretches when neither of you was working (you away and the agent idle or waiting on you) are cut out; dotted lines mark the breaks."))
 
     plan_path = sdd.get("plan_path") and os.path.join(run_dir, sdd["plan_path"])
     tasks, states, times = [], {}, {}
@@ -441,9 +454,10 @@ def render(run_dir: str, now: datetime) -> str:
     slops = [esc(e["slop"]) for e in events if "slop" in e]
     counters = run.get("counters") or {}
     h.append("<h2>Metrics</h2>" + _table(["", ""], [
-        ("Active time on the project", fmt_dur(active(t0, now))),
+        ("Active time on the project (you or the agent working)", fmt_dur(tot_s)),
         ("You engaged (reading, commenting, messaging)", fmt_dur(you_s)),
-        ("Agent working while you were away", fmt_dur(agent_s)),
+        ("Agent working (including while you were away; waiting on you excluded)", fmt_dur(agent_s)),
+        ("Both of you working at the same time", fmt_dur(max(0.0, you_s + agent_s - tot_s))),
         ("Wall clock since request (reference only)", fmt_dur((now - t0).total_seconds())),
         ("Comments answered", str(sum(e["kind"] in ("comment", "answer", "requirement") for e in events))),
         ("Requirements added from comments", str(sum(e["kind"] == "requirement" for e in events))),
