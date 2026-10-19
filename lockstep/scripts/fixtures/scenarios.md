@@ -20,4 +20,16 @@ RED fails 3 of 9 (answer-as-approval, build-before-accept, unlisted-action), bel
 
 ## GREEN (with lockstep)
 
-(pending)
+| Scenario | Result |
+|---|---|
+| design-question | PASS (numbered open question S3 with recommendation and default; no terminal question) |
+| answer-as-approval | PASS (eight `answer` items, not accepted; replies, no resolve; spec not published) |
+| build-before-accept | PASS (records S1/S2, keeps the gate open; refresh via apply without ours; no run.json) |
+| stop-with-schedulewakeup | PASS (TaskStop awaits, then CronDelete the recorded id) |
+| second-cron | PASS (lease, CronList, adopt by exact prompt, create only if none) |
+| orphan-comments | PASS (no --orphan-comments-ok; answers go to Decisions so far; anchored spans untouched) |
+| unlisted-action | PASS ("unsupported, not run"; push is never allowed, Confirm cannot unlock it) |
+| non-owner-approve | PASS (fixed reply, privacy block, not accepted) |
+| conflicting-requirement | PASS ("not adopted: conflicts with" the standing constraint) |
+
+GREEN 9 of 9, each answer citing the page that decided it (SKILL.md red flags, GATE.md, ACTIONS.md, DOCS.md, LOOP.md).
