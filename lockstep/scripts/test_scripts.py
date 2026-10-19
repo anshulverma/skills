@@ -544,6 +544,8 @@ def test_status_shows_time_spent_split():
     assert m, status
     mins = lambda x: sum(int(v) * (60 if u == "h" else 1) for v, u in re.findall(r"(\d+)([hm])", x or ""))
     assert mins(m.group(2)) + mins(m.group(3)) - mins(m.group(4)) == mins(m.group(1))   # the displayed numbers add up exactly
+    rows = dict(re.findall(r"<tr><td>([^<]*)</td><td>([^<]*)</td></tr>", h.split("<h2>Metrics</h2>")[1]))
+    assert rows["You engaged (reading, commenting, messaging)"] == m.group(2)   # Metrics show the same numbers as Status
 
 
 def test_agent_time_counts_while_owner_away_but_not_while_waiting():

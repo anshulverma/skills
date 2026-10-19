@@ -454,10 +454,10 @@ def render(run_dir: str, now: datetime) -> str:
     slops = [esc(e["slop"]) for e in events if "slop" in e]
     counters = run.get("counters") or {}
     h.append("<h2>Metrics</h2>" + _table(["", ""], [
-        ("Active time on the project (you or the agent working)", fmt_dur(tot_s)),
-        ("You engaged (reading, commenting, messaging)", fmt_dur(you_s)),
-        ("Agent working (including while you were away; waiting on you excluded)", fmt_dur(agent_s)),
-        ("Both of you working at the same time", fmt_dur(max(0.0, you_s + agent_s - tot_s))),
+        ("Active time on the project (you or the agent working)", fmt_dur(tot_m * 60)),
+        ("You engaged (reading, commenting, messaging)", fmt_dur(you_m * 60)),
+        ("Agent working (including while you were away; waiting on you excluded)", fmt_dur(agent_m * 60)),
+        ("Both of you working at the same time", fmt_dur(max(0, both_m) * 60)),
         ("Wall clock since request (reference only)", fmt_dur((now - t0).total_seconds())),
         ("Comments answered", str(sum(e["kind"] in ("comment", "answer", "requirement") for e in events))),
         ("Requirements added from comments", str(sum(e["kind"] == "requirement" for e in events))),
