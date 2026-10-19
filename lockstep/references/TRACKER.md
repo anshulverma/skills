@@ -73,7 +73,11 @@ python3 $S/state.py <run> event <kind> "<text>" [doc=<key>] [task=<n>] [diff=D<n
 `kind` is one of: milestone, tick, published, gate_open, comment, requirement, answer, accept, confirm_pending, changes, reopen, action, humanize, task_start, task_done, task_parked, test_run, diff_created, diff_published, diff_reviewed, diff_landed, blocked, done, abort, cron_rearmed, local_merge, lease_takeover.
 
 - `comment_ts` is the API `created_time` of the owner comment (each sweep item carries it as `created_time`). Set it on comment, answer, requirement and accept events. Review sessions are built from it (references/VELOCITY.md).
-- A waiting span runs from gate_open or confirm_pending to the next owner comment or accept.
+- Timeline states, per gap between consecutive events (`render_tracker.classify`):
+  - **waiting on you**: some gated doc's gate is open (from its `opened_at`, `gate_open`, `published`, `confirm_pending` or `reopen` until its accept) and the gap is not the skill handling an owner comment, or that handling gap ran past 15 minutes;
+  - **no session running**: no gate is open and nothing happened for more than 15 minutes (the Claude session was down; never counted as work);
+  - **working**: everything else.
+  The Gates table's "Waiting on you" column sums the waiting gaps per doc.
 
 ## Task events in PLAN and BUILD
 
