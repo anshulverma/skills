@@ -95,7 +95,7 @@ Write every timestamp you type by hand from `date -u +%Y-%m-%dT%H:%M:%SZ`. Never
 
 1. Reads `doc.json`. If it is absent, runs `meta google.docs create --title="Review velocity" --output=json` with no body. That empty doc is the stub.
 2. Checks privacy on the stub, and again on every later call: `meta google.docs.share list --id=<id> --output=json` must return only `owner` roles. Link sharing shows up as a non-owner entry, so it fails the check. Any shape the script does not recognize also fails closed.
-3. Writes `doc.json` only after the check passes.
+3. `doc.json` is written right after `create`, before the check, so a retry reuses the same doc.
 4. Renders the body and runs `meta google.docs apply --id=<id> --from=file://<root>/body.html --conflict-resolution=ours`. The title paragraph stays byte-identical. This doc is not gated, so `ours` is allowed here.
 
 The body contains: a steering line ("Steer a run from that run's own docs; comments here are not read."), the measured pace and session count, Figure 1 (pace vs complexity), Figure 2 (estimate vs actual active time), a Docs table (run, doc, complexity, words, estimate, actual) and a Sessions table (run, doc, start UTC, active minutes). The spec also asks for a trend-over-time chart. `velocity.py` does not draw one yet, and the Sessions table in time order is the only trend view.
@@ -105,7 +105,7 @@ If the check fails, `publish` exits 1 with `velocity doc <id> is not private; no
 1. Log it: `python3 $S/state.py $RUN event blocked "doc not private: velocity"`, and say so in the terminal.
 2. Add the reason: `python3 $S/state.py $RUN reason add blocked doc_not_private:velocity`.
 3. On each tick, re-run `publish`. Drop only that reason (`reason drop blocked doc_not_private:velocity`) once it exits 0.
-4. Before `doc.json` exists, each failed attempt leaves an empty doc whose id is in the error. Report those ids to the owner. Do not delete them.
+4. A failed check leaves that one doc recorded in `doc.json`; every later call re-checks it. Report its id to the owner. Do not delete it.
 
 ## Rules
 

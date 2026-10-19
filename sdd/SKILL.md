@@ -64,7 +64,8 @@ unit at a time:
 - Build each implementer brief in this order: the never-allowed list from
   `~/.claude/skills/lockstep/references/ACTIONS.md`, then the standing constraints from
   `<run>/decisions.md`, then `docs/task-N/answers.md` when it exists, then the task. The
-  never-allowed rules override any constraint. Tell the implementer it may return NEEDS_OWNER
+  never-allowed rules override any constraint. For implementers, the write rule allows the target
+  repo's working copy as well as the run dir; everything else on the list applies unchanged. Tell the implementer it may return NEEDS_OWNER
   (an unknown whose answer changes the task's output; write the questions to
   `<run>/docs/task-N/questions.md`) or DONE_WITH_CONCERNS (a question that does not change the
   output; it goes to `<run>/questions.md`).

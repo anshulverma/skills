@@ -36,7 +36,7 @@ CREDENTIAL = [  # mask only the value; KEY=value (incl. MY_TOKEN, client_secret,
                r"([ \t]*[:=][ \t]*(?:bearer[ \t]+)?)([^\s\[][^\s]*)"),
     re.compile(r"(?i)(?<![A-Za-z0-9])(bearer)([ \t]+)([A-Za-z0-9._~+/-]{20,})")]
 OWNER_KINDS = ("comment", "answer", "requirement", "accept", "changes", "confirm", "action")
-UNBLOCK = {"sdd": "fix the remediation in run.json blocked_reason, then comment `Action: unblock`",
+UNBLOCK = {"sdd": "fix the remediation in run.json blocked_reason, comment `Action: unblock`, then reply Confirm",
            "doc_not_private": "remove the extra sharing on that doc; the next check clears this",
            "all_parked": "answer the parked task docs listed below", "reopen": "accept the reopened doc again"}
 STEER = ('<h2>How to steer this run</h2><table><tr><th>Comment (on the title)</th><th>Example</th></tr>'
@@ -275,7 +275,7 @@ def render(run_dir: str, now: datetime) -> str:
         note = f"credential masked in request.md ({', '.join(sorted(set(masked)))})"
         if not any(e["event"] == note for e in events):
             from state import append_event
-            events.append(append_event(run_dir, "milestone", note, now=now))
+            events.append(append_event(run_dir, "blocked", note, now=now))
     figdir = os.path.join(run_dir, "tracker")
     os.makedirs(figdir, exist_ok=True)
     flow_chart(run, os.path.join(figdir, "flow.png"))

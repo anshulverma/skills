@@ -59,7 +59,7 @@ The title and every open-question paragraph stay byte-identical after publish. A
 7. Snapshot the doc, then convert the draft:
    ```bash
    meta google.docs get --id=<id> --output=ghtml --dest=file://$D/live.html     # also writes live.html.base
-   python3 $S/md2ghtml.py $D/v1.md $D/body.html                                # prints the title
+   $PY $S/md2ghtml.py $D/v1.md $D/body.html                                     # prints the title; use it as <title> in step 5 and docs.<doc>.title
    ```
 8. Replace the stub paragraph in `$D/live.html` with `$D/body.html`. Images work only through `apply`.
 9. Run `meta google.docs apply --id=<id> --from=file://$D/live.html --dry-run`, then the same command without `--dry-run`.
@@ -121,7 +121,7 @@ The debounce rule is in references/GATE.md: reply at once, refresh after about 1
 
 ## Humanize
 
-- **Context block.** Before any humanize call, write the complete `<!-- humanize-context ... -->` block at the top of the draft. It has these fields: type, purpose, author, readers, destination, length, depth, ask, keep, confirmed. Tell humanize "caller says do not ask; keep the title verbatim". The spec doc uses depth "design". `md2ghtml.py` strips the block before publishing.
+- **Context block.** Before any humanize call, write the complete `<!-- humanize-context ... -->` block at the top of the draft. It has these fields: type, purpose, author, readers, destination, length, depth, ask, keep, confirmed. Tell humanize "caller says do not ask; keep the title verbatim". The spec doc uses depth "design". `md2ghtml.py` strips the block before publishing. After each humanize pass, add 1 to `counters.humanize_passes` and log a `humanize` event with `slop=<score>` and `doc=<key>`.
 - **Full path.** Run it at the first publish of each doc, and on the final spec before its approval request. Run humanize from the main loop so it can dispatch its fresh agents.
 - **Lite path.** Run it on every refresh, on new or changed sections only. There is no redraft and no cold-read quiz:
   ```bash

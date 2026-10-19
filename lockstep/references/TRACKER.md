@@ -36,9 +36,9 @@ Run dir: `/data/users/anshulverma/sdd-runs/<slug>/` (written `<run>` below; neve
    ```bash
    meta google.docs apply --id=<tracker_doc> --from=file://<run>/tracker/body.html --conflict-resolution=ours
    ```
-4. If the apply refuses, record a `tick` event with its first output line and move on.
+4. If the apply refuses, record a `tick` event with its first output line. If the refusal is about anchored comments (the owner commented inside the body), reply in each such thread asking for comments on the title only, and print `tracker frozen: comment inside the body` to the terminal on every tick until a write succeeds.
 
-The renderer masks a credential value in `request.md` as `[credential masked]`, keeps the key name, and appends one event naming the key (`credential masked in request.md (<key>)`).
+The renderer masks a credential value in `request.md` as `[credential masked]`, keeps the key name, and appends one `blocked` event naming the key (`credential masked in request.md (<key>)`).
 
 ## What the renderer draws
 
@@ -58,7 +58,7 @@ The renderer masks a credential value in `request.md` as `[credential masked]`, 
 | Original request (verbatim, R8) | `request.md`, HTML-escaped. It is exempt from the no-data-paths rule because the tracker is verified private. Credentials are never exempt |
 | Event log | Every event with its time and the delta from the previous one |
 
-Task flowchart: one node per task labelled `T<n>` plus a short title. Edges come from each `**Depends on:**` line after transitive reduction (an edge is dropped when a longer path already connects the same two tasks). It has a start node "spec accepted", an end node "all tasks complete" and a legend. Node colour follows task state: not started grey, in progress blue, complete green, parked orange, blocked red. State comes from `ledger.md` (`Task N: complete|parked|blocked`), then from the sdd in-flight claim (`TASK_<n>` means in progress), then from task_start / task_done events, which also supply the timings.
+Task flowchart: one node per task labelled `T<n>` plus a short title. Edges come from each `**Depends on:**` line after transitive reduction (an edge is dropped when a longer path already connects the same two tasks). It has a start node "spec accepted", an end node "all tasks complete" and a legend. Node colour follows task state: not started grey, in progress blue, complete green, parked orange, blocked red. State comes from `ledger.md` (`Task N: complete|parked|blocked`), else in progress when a task_start has no later task_done, else not started; the task events also supply the timings.
 
 ## events.jsonl
 
@@ -77,19 +77,9 @@ python3 $S/state.py <run> event <kind> "<text>" [doc=<key>] [task=<n>] [diff=D<n
 
 ## Task events in PLAN and BUILD
 
-sdd appends task_start, test_run, task_done and task_parked itself. Lockstep fills any gaps around each sdd unit:
+sdd appends task_start, test_run, task_done and task_parked itself (sdd SKILL.md, "Driven by lockstep"). After each sdd unit, lockstep only backfills from `ledger.md`: a new `Task N: complete ...` line with no `task_done task=<N>` gets one, and a new `Task N: parked (...)` line with no `task_parked task=<N>` gets one. It never infers task_start (sdd's in-flight claim is cleared inside the unit, so it is never seen).
 
-1. Before the unit, save the `Task N:` lines of `<run>/ledger.md` and `run.json.in_flight`.
-2. After the unit, compare and append each missing event. Skip any event sdd already appended for that task since step 1:
-
-| Change seen | Event |
-|---|---|
-| `in_flight.unit` is `TASK_<n>` and there is no task_start for n after its last task_done | `task_start task=<n>` |
-| New `Task N: complete ...` line | `task_done task=<N>` |
-| New `Task N: parked (docs/task-N/questions.md)` line | `task_parked task=<N>` |
-| A test command run | `test_run task=<n>`, from sdd only (the ledger has no signal for it) |
-
-3. Render and apply the tracker right after any new task_start.
+Render and apply the tracker right after any new task_start.
 
 After each PLAN_WRITE and each PLAN_HARDEN unit, re-publish the plan reference doc (`docs.plan`, `kind: plan`, status `reference`) using references/DOCS.md, append `published doc=plan`, then render and apply.
 
@@ -100,7 +90,7 @@ BUILD only commits locally. Lockstep and sdd never publish, land or push. `pipel
 **`git`**: each tick, check whether the owner has merged the build branch (the branch BUILD committed to) into local main:
 
 ```bash
-git -C <repo> merge-base --is-ancestor <build branch> main
+git -C "$(jq -r .repo pipeline.json)" merge-base --is-ancestor "$(jq -r .build_branch pipeline.json)" main
 ```
 
 Exit 0: append `local_merge`, then leave for DONE.

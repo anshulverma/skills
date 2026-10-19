@@ -45,7 +45,9 @@ r = sys.argv[1]; p = state.load(r); p["cron_job_id"], p["cron_armed_at"] = sys.a
 
 ## Tick start (`/lockstep --tick <slug>`)
 
-1. If `RUN` is missing, or `pipeline.json.status` is `done` or `aborted`, do this and exit:
+SKILL.md "The tick" is the only tick order. The steps below are this page's parts of it (finished or missing run, cron, dead task ids, the await).
+
+1. If `RUN` is missing, or `pipeline.json.terminal` is set (`done` or `aborted`), do this and exit, before taking the lease:
    - `CronDelete` every job whose prompt is exactly `/lockstep --tick <slug>`.
    - `TaskStop` every task id in `awaits`.
 
@@ -66,8 +68,8 @@ r = sys.argv[1]; p = state.load(r); p["cron_job_id"], p["cron_armed_at"] = sys.a
 5. Clear dead task ids. For each dead id in `in_flight` or `awaits`:
    - Clear it and log it (`state.py RUN event tick "dead task <id> cleared"`).
    - Then redo the unit or re-arm the await. Do not wait 30 minutes.
-6. Sweep every published run doc (references/GATE.md) and add 1 to `counters.checks`.
-7. Arm the await if the conditions below hold. Then rewrite `tracker_status.next_wake` and release the lease.
+6. Each sweep adds 1 to `counters.checks` (SKILL.md tick step 4).
+7. Arm the await if the conditions below hold (SKILL.md tick step 10), and rewrite `tracker_status.next_wake`.
 
 Never delete the last exact-prompt job unless `status` is `done` or `aborted`.
 

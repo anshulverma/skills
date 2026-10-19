@@ -41,7 +41,7 @@ Global review-velocity data lives in `/data/users/anshulverma/sdd-runs/_velocity
    {"slug": "<slug>", "owner_name": "", "phase": "INIT", "tick": 0, "in_flight": null,
     "cron_job_id": "", "cron_armed_at": "", "awaits": {}, "pending_actions": {}, "diffs": {},
     "terminal": null, "paused": false, "blocked_reasons": [], "waiting_reasons": [],
-    "repo_kind": null, "tracker_doc": "", "tracker_title": "<tracker title>",
+    "repo_kind": null, "repo": "", "build_branch": "", "impl_questions_seen": 0, "tracker_doc": "", "tracker_title": "<tracker title>",
     "tracker_status": {"now": "", "waiting_on": "", "since": "<date -u>", "link": "",
                        "unblocks": "", "next_wake": ""},
     "counters": {"checks": 0, "agents": 0, "humanize_passes": 0}, "docs": {}}
@@ -87,6 +87,8 @@ Every transition also rewrites `tracker_status`. Append events with `python3 $S/
 | `blocked_reasons` | `sdd`, `doc_not_private:<doc>` |
 | `waiting_reasons` | `reopen:<doc>`, `all_parked` |
 | `repo_kind` | `git` or `sapling`. Written at PLAN handoff. It decides how LAND detects landing (references/TRACKER.md) |
+| `repo`, `build_branch` | Absolute path of the target repo and the branch BUILD commits to; written at PLAN handoff, read by LAND |
+| `impl_questions_seen` | Count of `run.json.unresolved` plus `questions.md` entries already in the implementation-questions doc |
 | `tracker_doc`, `tracker_title` | The tracker's doc id and exact title |
 | `tracker_status` | `{now, waiting_on, since, link, unblocks, next_wake}` |
 | `counters` | `{checks, agents, humanize_passes}` |
@@ -100,6 +102,7 @@ Every transition also rewrites `tracker_status`. Append events with `python3 $S/
 | `title` | The exact title, byte-identical after publish. `sweep.py` errors if it is empty |
 | `kind` | `proposal`, `spec`, `task`, `plan`, `explainer` or `impl_questions` |
 | `qprefix` | Question prefix (table below). `sweep.py` errors if it is empty |
+| `explainer` | `auto` (default), `on` or `off`; `Action: add explainer` / `no explainer` set `on` / `off`, and `velocity.py doc`'s verdict applies only while `auto` |
 | `status` | `drafting`, `awaiting_acceptance`, `confirm_pending`, `accepted`, `superseded` or `reference` |
 | `opened_at`, `accepted_at` | UTC time the gate opened and time of the latest accept |
 | `accepted_hash` | Spec only: `sha256sum "$RUN/spec.md"`, recorded at every spec accept |
@@ -153,7 +156,7 @@ python3 $S/state.py "$RUN" reason add|drop blocked|waiting <reason>    # prints 
 
 | When | Write |
 |---|---|
-| PLAN handoff | The full `run.json` at `stage: SPEC_HARDEN` with `driver: "lockstep"` and `cron_job_id: ""`, so sdd never deletes lockstep's cron. Also set `pipeline.json` `repo_kind` |
+| PLAN handoff | The full `run.json` at `stage: SPEC_HARDEN` with `driver: "lockstep"` and `cron_job_id: ""`, so sdd never deletes lockstep's cron. Also set `pipeline.json` `repo_kind`, `repo` and `build_branch` |
 | Remediation or confirmed `Action: unblock` | `status: running` and an emptied `blocked_reason`, only if `run.json` exists. Never touch `doc_not_private:*` |
 | A `task-N` doc is accepted | Clear `idle_reason`. Delete that task's parked line from `ledger.md` |
 | A changed spec is re-accepted | The supersede step below |
@@ -163,8 +166,8 @@ python3 $S/state.py "$RUN" reason add|drop blocked|waiting <reason>    # prints 
 1. When `Reopen` arrives on the proposal or spec after a later phase has started, run `python3 $S/state.py "$RUN" reason add waiting reopen:<doc>`. Accepts on later gates: references/GATE.md. sdd dispatch stops once the current unit finishes.
 2. On re-accept, keep the doc's previous `accepted_at`. Fold the `decisions.md` entries newer than it into `spec.md`, then compare `sha256sum "$RUN/spec.md"` with `docs.spec.accepted_hash`.
 3. Unchanged: `python3 $S/state.py "$RUN" reason drop waiting reopen:<doc>`.
-4. Changed after a proposal reopen: set `docs.spec.status` to `awaiting_acceptance` and refresh the spec doc (references/DOCS.md).
-5. Changed accepted spec during PLAN or BUILD:
+4. Changed after a proposal reopen: drop `reopen:<doc>` (`state.py reason drop waiting reopen:<doc>`), set `docs.spec.status` to `awaiting_acceptance` and refresh the spec doc (references/DOCS.md). The spec's new accept is then a normal gate, not a held one.
+5. Changed accepted spec during PLAN or BUILD: drop `reopen:<doc>`, set `phase` back to `PLAN`, then:
    ```
    TS=$(date -u +%Y%m%dT%H%M%SZ); mkdir -p "$RUN/superseded/$TS"
    command mv <run.json plan_path> "$RUN/ledger.md" <run.json autoplan_state> "$RUN/superseded/$TS/"

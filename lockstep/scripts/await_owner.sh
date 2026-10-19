@@ -15,7 +15,7 @@ for line in sys.stdin:
         body = json.loads(line).get("payload", {}).get("gdrive", {}).get("comment_body", "") or ""
     except ValueError:
         continue
-    if body and not body.startswith("[🤖") and "(cont'"'"'d" not in body:
+    if body and not body.startswith("[🤖") and not body.startswith("(cont'"'"'d"):
         print(" ".join(body.split())[:300]); break'
 }
 

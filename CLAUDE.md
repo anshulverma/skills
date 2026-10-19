@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repository is
 
 A personal collection of Claude Code **skills** — each skill is a directory of Markdown
-files (no compiled code, no test suite, no build step). The content *is* the product:
+files (no compiled code and no build step; `humanize/` and `lockstep/` carry small script test suites). The content *is* the product:
 prose and protocols that get loaded into a Claude Code session as instructions.
 
 The skills are `auto-plan/` (an autonomous planning orchestrator), `auto-research/` (an
@@ -225,7 +225,7 @@ uses. It creates `reviews/` on its first run; do not pre-create it here.
 ## Architecture of the `lockstep` skill
 
 `lockstep` runs a task from request to landed code while the owner only acts in Google Docs. It is
-the one skill here with executable code, so it has three layers:
+one of two skills here with executable code (with `humanize/`), so it has three layers:
 
 | Layer | Files | Role |
 |------|------|------|

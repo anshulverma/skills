@@ -30,10 +30,10 @@ continues. Conversation memory is never pipeline state.
 | `RESEARCH` | Deep-research workflow; reports to `research/*.md`; the main loop reads digests only | Reports and critic on disk |
 | `PROPOSAL` | Draft the proposal with numbered open questions (qprefix `Q`), full humanize, publish, open its gate | Gate `accepted` |
 | `SPEC` | Fold `decisions.md` into `spec.md` `## Clarifications`; publish the final spec (qprefix `S`), full humanize, open its gate | Gate `accepted` |
-| `PLAN` | Write sdd `run.json` (`driver: "lockstep"`, `stage: SPEC_HARDEN`); sdd runs SPEC_HARDEN, PLAN_WRITE, PLAN_HARDEN; publish the plan reference doc; record `repo_kind` | sdd `stage` reaches `EXECUTE` |
+| `PLAN` | Write sdd `run.json` (`driver: "lockstep"`, `stage: SPEC_HARDEN`); sdd runs SPEC_HARDEN, PLAN_WRITE, PLAN_HARDEN; publish the plan reference doc; record `repo_kind`, `repo` (absolute path of the target repo) and `build_branch` | sdd `stage` reaches `EXECUTE` |
 | `BUILD` | sdd EXECUTE, one unit at a time; parked tasks get their own gated docs | sdd `status` `done` |
 | `LAND` | Landing all the code; review is optional. Never publish, land or push yourself | references/TRACKER.md (LAND) |
-| `DONE` | Final tracker render, summary, `TaskStop` awaits, `CronDelete` | |
+| `DONE` | `state.save` with `terminal: "done"` first, then the final tracker render, summary, `TaskStop` awaits, `CronDelete` | |
 
 Never publish the spec before the proposal is accepted. Never write `run.json` before the spec is
 accepted. While a gate is open, do reversible local prep only.
@@ -48,22 +48,25 @@ owner anything in the terminal after the initial request.
 
 Run these in order. Each step's protocol lives on the linked page; do not improvise it.
 
-1. **Lease.** `python3 ~/.claude/skills/lockstep/scripts/state.py <run> lease acquire <session>`;
-   exit 3 means another session holds it: exit without bumping `tick` (references/GATE.md).
-2. **Cron.** Adopt, create or re-arm the one durable cron; clear dead task ids (references/LOOP.md).
-3. **Terminal.** If `terminal` is set: DONE cleanup (references/LOOP.md) and exit.
+0. **Finished or missing.** If the run dir is missing or `terminal` is set: clean up (references/LOOP.md) and exit. Do this before the lease.
+1. **Lease.** `SID="claude-$PPID-$(ps -o lstart= -p $PPID | tr -cd 0-9A-Za-z)"` (the Claude process id and its start time, stable for the session), then
+   `python3 ~/.claude/skills/lockstep/scripts/state.py <run> lease acquire $SID`; exit 3 means another
+   session holds it: exit without bumping `tick` (references/GATE.md).
+2. **Cron.** Adopt, create or re-arm the one durable cron (references/LOOP.md).
+3. **Dead task ids.** Clear them (references/LOOP.md).
 4. **Sweep and handle.** `sweep.py` over every published run doc, then handle each item oldest
    first, by kind (references/GATE.md; `Action:` verbs in references/ACTIONS.md).
 5. **Privacy.** Re-check each doc before writing to it (references/DOCS.md, Privacy check).
-6. **Refresh.** Debounced: only when the newest owner comment is 10+ minutes old (references/DOCS.md).
-7. **One phase unit.** RESEARCH, PROPOSAL and SPEC as in the phase table. PLAN and BUILD: one sdd unit
+6. **Guard.** If `paused` is set, or `waiting_reasons` holds a `reopen:*`, skip steps 7 and 8: sweep and reply only, no publishes, refreshes or sdd units.
+7. **Refresh.** Debounced: only when the newest owner comment is 10+ minutes old (references/DOCS.md).
+8. **One phase unit.** RESEARCH, PROPOSAL and SPEC as in the phase table. PLAN and BUILD: one sdd unit
    (sdd SKILL.md, "Driven by lockstep"), then the parked-task scan (references/STATE.md), the
-   implementation-questions doc (`impl_questions`) when `run.json.unresolved` or `questions.md` grew (references/DOCS.md),
+   implementation-questions doc (`impl_questions`) when `run.json.unresolved` or `questions.md` has entries beyond `pipeline.json.impl_questions_seen` (references/DOCS.md),
    and in PLAN a plan doc re-publish. LAND: references/TRACKER.md.
-8. **Tracker.** Update `tracker_status`, render and apply (references/TRACKER.md).
-9. **Wake.** If the session is live and a gate is open, re-arm `await_owner.sh` only after the
+9. **Tracker.** Update `tracker_status`, render and apply (references/TRACKER.md).
+10. **Wake.** If the session is live and a gate is open, re-arm `await_owner.sh` only after the
    previous one exited (references/LOOP.md).
-10. **Heartbeat** the lease; loop to step 4 while the session is live in PLAN or BUILD and context
+11. **Heartbeat** the lease; loop to step 4 while the session is live in PLAN or BUILD and context
     allows; otherwise release the lease.
 
 ## INIT

@@ -28,7 +28,7 @@ def qref(qprefix: str) -> re.Pattern:
 
 
 def own(text: str) -> bool:
-    return text.startswith("[🤖") or "(cont'd" in text
+    return text.startswith("[🤖") or text.startswith("(cont'd")
 
 
 def clean(s) -> str:
@@ -79,8 +79,11 @@ def _answer_q(root: dict, text: str, doc: dict) -> int | None:
             qc = clean(q)
             if anchor in qc or qc in anchor:
                 return i + 1
-    m = qref(doc["qprefix"]).search(text)
-    return int(m.group(1)) if m else None
+    m = qref(doc["qprefix"]).match(text.lstrip())  # "S3: ..." answers S3; "an S3 bucket" does not
+    if not m:
+        return None
+    q, nq = int(m.group(1)), len(doc.get("questions") or [])
+    return q if not nq or 1 <= q <= nq else None
 
 
 def pending(rows: list[dict], doc: dict, owner: str, handled: set[str], pending_actions: dict, scope: str) -> list[dict]:
@@ -140,12 +143,14 @@ def pending(rows: list[dict], doc: dict, owner: str, handled: set[str], pending_
                     status, accept_root = "confirm_pending", root["id"]
             elif status == "accepted":
                 kind = "already_accepted"
+            elif status == "confirm_pending":
+                kind, status = "confirm", "accepted"  # a second top-level accept confirms, like a reply would
             else:
                 kind = "question"
         elif not top and status == "confirm_pending" and root["id"] == accept_root and (ACCEPT.match(text) or CONFIRM.match(text)):
             kind, status = "confirm", "accepted"
         elif not top and root["id"] in former and (ACCEPT.match(text) or CONFIRM.match(text)):
-            kind = "stale_confirm"
+            kind = "already_accepted" if status == "accepted" else "stale_confirm"
         elif on_title and CHANGES.match(text):
             if status == "accepted":
                 kind = "already_accepted"

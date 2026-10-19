@@ -91,7 +91,7 @@ The only stage with a human present. Do not arm the loop until it completes.
 5. Fold the answers into `spec.md` under `## Clarifications (answered <date>)`. They must be
    *in the file* — later stages run in fresh context and cannot see this conversation.
 6. Write `run.json` at `stage: SPEC_HARDEN`.
-7. Arm: `/loop /sdd <slug>`.
+7. Arm with an explicit interval and durability: `CronCreate({cron: "*/20 * * * *", recurring: true, durable: true, prompt: "/sdd <slug>"})`, and record the id as `run.json.cron_job_id`. Skip this when `driver == "lockstep"`.
 
 ## Stage 2 — SPEC_HARDEN
 

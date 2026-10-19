@@ -45,7 +45,7 @@ Read the verb as the text after `Action:`, trimmed and lowercased. It must exact
 - `share grant`.
 - Publishing or landing diffs.
 - Resolving or deleting comments.
-- Writes outside the run dir `/data/users/anshulverma/sdd-runs/<slug>/` and the skill's own docs.
+- Writes outside the run dir `/data/users/anshulverma/sdd-runs/<slug>/` and the skill's own docs, as an `Action:` effect. (sdd implementers in BUILD also write the target repo's working copy; that is their job, and the rest of this list still binds them.)
 
 Implementer briefs list these rules first, and they override any other constraint. A comment that states a requirement in conflict with this list or with `decisions.md` gets the reply "not adopted: conflicts with <rule>" and is not recorded as adopted (the requirement verdict itself is in references/GATE.md).
 

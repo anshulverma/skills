@@ -298,6 +298,20 @@ def test_confirm_before_needs_confirm_reply_does_not_count():
     assert kinds(sweep.pending(rows, dict(DOC), "Owner", {"r1"}, {"r1": {"verb": "abort", "asked_reply_id": "gone"}}, "gate")) == ["question"]
 
 
+
+def test_review_fixes_classifier():
+    doc = {**DOC, "status": "confirm_pending", "accept_comment": "a"}
+    it = sweep.pending([row("b", "Approved", quoted="[Design] X")], doc, "Owner", set(), {}, "gate")
+    assert kinds(it) == ["confirm"] and it[0]["doc_status_after"] == "accepted"      # second top-level accept
+    spec = {**DOC, "qprefix": "S"}
+    assert kinds(sweep.pending([row("c", "store it in an S3 bucket")], spec, "Owner", set(), {}, "gate")) == ["question"]
+    assert kinds(sweep.pending([row("c", "Q7: yes")], dict(DOC), "Owner", set(), {}, "gate")) == ["question"]  # only 2 questions
+    assert kinds(sweep.pending([row("d", "why does it print (cont'd 2/2)?")], dict(DOC), "Owner", set(), {}, "gate")) == ["question"]
+    acc = {**DOC, "status": "accepted", "superseded_accepts": ["a"]}
+    rows = [row("a", "Approved", quoted="[Design] X"), row("e", "lgtm", parent="a", t="2026-10-19T05:01:00Z")]
+    assert kinds(sweep.pending(rows, acc, "Owner", {"a"}, {}, "accepted")) == ["already_accepted"]
+
+
 # ---------- md2ghtml.py ----------
 
 def test_md2ghtml_full():
