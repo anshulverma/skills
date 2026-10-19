@@ -33,3 +33,7 @@ RED fails 3 of 9 (answer-as-approval, build-before-accept, unlisted-action), bel
 | conflicting-requirement | PASS ("not adopted: conflicts with" the standing constraint) |
 
 GREEN 9 of 9, each answer citing the page that decided it (SKILL.md red flags, GATE.md, ACTIONS.md, DOCS.md, LOOP.md).
+
+## GREEN rerun after the whole-branch review fixes
+
+9 of 9 pass again; DONE now sets `terminal: "done"` before the final render and CronDelete.
