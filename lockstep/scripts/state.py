@@ -15,7 +15,7 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 
 LEASE_STALE = timedelta(minutes=10)
-GATED_PHASES = (None, "INIT", "RESEARCH", "PROPOSAL", "SPEC")
+GATED_PHASES = (None, "PROPOSAL", "SPEC")
 OPEN = ("awaiting_acceptance", "confirm_pending")
 
 
@@ -31,11 +31,21 @@ def parse_ts(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
+def read_json(path: str):
+    with open(path) as f:
+        return json.load(f)
+
+
 def atomic_write_json(path: str, obj) -> None:
     fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", dir=os.path.dirname(path) or ".")
-    with os.fdopen(fd, "w") as f:
-        json.dump(obj, f, indent=1, ensure_ascii=False)
-    os.replace(tmp, path)
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(obj, f, indent=1, ensure_ascii=False)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
 
 
 def recompute_status(p: dict) -> str:
@@ -57,7 +67,7 @@ def recompute_status(p: dict) -> str:
 
 
 def load(run_dir: str) -> dict:
-    return json.load(open(os.path.join(run_dir, "pipeline.json")))
+    return read_json(os.path.join(run_dir, "pipeline.json"))
 
 
 def save(run_dir: str, p: dict) -> None:
@@ -80,9 +90,9 @@ def drop_reason(p: dict, kind: str, reason: str) -> None:
 def append_event(run_dir: str, kind: str, event: str, now: datetime | None = None, **fields) -> dict:
     try:
         phase = load(run_dir).get("phase")
-    except (OSError, ValueError):
+    except (OSError, ValueError, AttributeError):
         phase = None
-    e = {"ts": iso(now or now_utc()), "phase": phase, "kind": kind, "event": event, **fields}
+    e = {**fields, "ts": iso(now or now_utc()), "phase": phase, "kind": kind, "event": event}
     with open(os.path.join(run_dir, "events.jsonl"), "a") as f:
         fcntl.flock(f, fcntl.LOCK_EX)
         f.write(json.dumps(e, ensure_ascii=False) + "\n")
@@ -93,52 +103,67 @@ def _lease_path(run_dir: str) -> str:
     return os.path.join(run_dir, ".lock")
 
 
+class _guard:
+    """Exclusive flock on <run>/.lock.guard: every lease read-decide-write happens under it."""
+
+    def __init__(self, run_dir: str):
+        self.path = os.path.join(run_dir, ".lock.guard")
+
+    def __enter__(self):
+        self.f = open(self.path, "a")
+        fcntl.flock(self.f, fcntl.LOCK_EX)
+
+    def __exit__(self, *exc):
+        self.f.close()
+
+
+def _read_lease(path: str) -> dict | None:
+    try:
+        held = read_json(path)
+        return held if isinstance(held, dict) and "heartbeat_at" in held else {}
+    except FileNotFoundError:
+        return None
+    except ValueError:
+        return {}  # unreadable lease (crash mid-write): treated as stale
+
+
 def acquire_lease(run_dir: str, session_id: str, now: datetime | None = None) -> bool:
     now = now or now_utc()
     path = _lease_path(run_dir)
-    body = {"session_id": session_id, "acquired_at": iso(now), "heartbeat_at": iso(now)}
-    try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        with os.fdopen(fd, "w") as f:
-            json.dump(body, f)
-        return True
-    except FileExistsError:
-        pass
-    try:
-        held = json.load(open(path))
-        stale = now - parse_ts(held["heartbeat_at"]) > LEASE_STALE
-        same = held.get("session_id") == session_id
-    except (OSError, ValueError, KeyError):
-        held, stale, same = {}, True, False  # unreadable lease: a crash mid-write, treat as stale
-    if not (stale or same):
-        return False
-    if not same:
-        append_event(run_dir, "lease_takeover", f"lease taken over from {held.get('session_id')}", now=now,
-                     previous=held.get("session_id"))
-        body["acquired_at"] = iso(now)
-    else:
-        body["acquired_at"] = held.get("acquired_at", iso(now))
-    atomic_write_json(path, body)
+    with _guard(run_dir):
+        held = _read_lease(path)
+        same = bool(held) and held.get("session_id") == session_id
+        if held:
+            try:
+                stale = now - parse_ts(held["heartbeat_at"]) > LEASE_STALE
+            except (TypeError, ValueError):
+                stale = True
+            if not (stale or same):
+                return False
+        acquired = held.get("acquired_at", iso(now)) if same else iso(now)
+        atomic_write_json(path, {"session_id": session_id, "acquired_at": acquired, "heartbeat_at": iso(now)})
+    if held is not None and not same:
+        append_event(run_dir, "lease_takeover", f"lease taken over from {held.get('session_id', 'an unreadable lease')}",
+                     now=now, previous=held.get("session_id"))
     return True
 
 
 def heartbeat(run_dir: str, session_id: str, now: datetime | None = None) -> None:
     path = _lease_path(run_dir)
-    held = json.load(open(path))
-    if held.get("session_id") != session_id:
-        raise RuntimeError(f"lease held by {held.get('session_id')}, not {session_id}")
-    held["heartbeat_at"] = iso(now or now_utc())
-    atomic_write_json(path, held)
+    with _guard(run_dir):
+        held = _read_lease(path)
+        if not held or held.get("session_id") != session_id:
+            raise RuntimeError(f"lease not held by {session_id}")
+        held["heartbeat_at"] = iso(now or now_utc())
+        atomic_write_json(path, held)
 
 
 def release_lease(run_dir: str, session_id: str) -> None:
     path = _lease_path(run_dir)
-    try:
-        held = json.load(open(path))
-    except FileNotFoundError:
-        return
-    if held.get("session_id") == session_id:
-        os.remove(path)
+    with _guard(run_dir):
+        held = _read_lease(path)
+        if held and held.get("session_id") == session_id:
+            os.remove(path)
 
 
 def _coerce(v: str):
@@ -155,15 +180,19 @@ def main(argv: list[str]) -> int:
     run_dir, cmd, rest = argv[0], argv[1], argv[2:]
     if cmd == "status":
         print(recompute_status(load(run_dir)))
-    elif cmd == "lease" and len(rest) == 2:
+    elif cmd == "lease" and len(rest) == 2 and rest[0] in ("acquire", "heartbeat", "release"):
         op, sid = rest
         if op == "acquire":
             return 0 if acquire_lease(run_dir, sid) else 3
-        (heartbeat if op == "heartbeat" else release_lease)(run_dir, sid)
-    elif cmd == "event" and len(rest) >= 2:
+        try:
+            (heartbeat if op == "heartbeat" else release_lease)(run_dir, sid)
+        except RuntimeError as e:
+            print(e, file=sys.stderr)
+            return 3
+    elif cmd == "event" and len(rest) >= 2 and all("=" in kv for kv in rest[2:]):
         fields = dict(kv.split("=", 1) for kv in rest[2:])
         print(json.dumps(append_event(run_dir, rest[0], rest[1], **{k: _coerce(v) for k, v in fields.items()})))
-    elif cmd == "reason" and len(rest) == 3:
+    elif cmd == "reason" and len(rest) == 3 and rest[0] in ("add", "drop") and rest[1] in ("blocked", "waiting"):
         op, kind, reason = rest
         p = load(run_dir)
         (add_reason if op == "add" else drop_reason)(p, kind, reason)
