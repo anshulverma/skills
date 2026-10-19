@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -408,6 +409,73 @@ def test_no_plan_section_before_plan():
     p["phase"] = "SPEC"
     json.dump(p, open(os.path.join(d, "pipeline.json"), "w"))
     assert "<h2>Implementation plan</h2>" not in render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+
+
+
+def test_mask_credentials_variants():
+    m = render_tracker.mask_credentials
+    for raw, secret in (("GITHUB_TOKEN=ghp_abc123", "ghp_abc123"), ("my_token: xyz789", "xyz789"),
+                        ("client_secret=zzz", "zzz"), ("token: Bearer abcdefghijklmnopqrstuvwxyz0123", "abcdefghijklmnop"),
+                        ("Authorization: bearer abcdefghijklmnopqrstuvwxyz0123", "abcdefghijklmnop")):
+        out, keys = m(raw)
+        assert secret not in out and keys, (raw, out)
+    out, keys = m("password:\nnextline stays; we have 5 tokens=fine")
+    assert "nextline stays" in out and "tokens=fine" in out and not keys
+
+
+def test_render_escapes_state_and_survives_quotes():
+    d = copy_run()
+    p = json.load(open(os.path.join(d, "pipeline.json")))
+    p["status"] = "<b>x</b>"
+    p["diffs"] = {"<i>D1</i>": "<s>landed</s>"}
+    json.dump(p, open(os.path.join(d, "pipeline.json"), "w"))
+    plan = os.path.join(d, "plan.md")
+    open(plan, "w").write(open(plan).read().replace("### Task 3: In flight", '### Task 3: Handle "quoted" \\ input'))
+    with open(os.path.join(d, "events.jsonl"), "a") as f:
+        f.write('{"ts": "2026-10-19T06:20:00Z", "kind": "milestone"}\n{"ts": "bad", "kind": "x", "event": "y"}\n')
+        f.write(b'{"ts": "2026-10-19T06:21:00Z", "kind": "milestone", "event": "caf\xc3'.decode("latin-1"))
+    h = render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+    assert "<b>x</b>" not in h and "<i>D1</i>" not in h and "<s>landed</s>" not in h and "&lt;b&gt;x&lt;/b&gt;" in h
+
+
+def test_render_done_keeps_plan_and_section_order():
+    d = copy_run()
+    p = json.load(open(os.path.join(d, "pipeline.json")))
+    p["phase"] = "DONE"
+    json.dump(p, open(os.path.join(d, "pipeline.json"), "w"))
+    with open(os.path.join(d, "events.jsonl"), "a") as f:
+        f.write(json.dumps({"ts": "2026-10-19T06:50:00Z", "phase": "DONE", "kind": "done", "event": "done"}) + "\n")
+    h = render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+    heads = re.findall(r"<h2>([^<]*)</h2>", h)
+    order = ["Implementation plan", "Build to closure", "Gates", "Milestones", "Follow-ups and blockers", "Metrics"]
+    assert [x for x in heads if x in order] == order
+    assert "Request to closure: 2h 50m." in h        # 04:00 request to 06:50 done, not "so far"
+
+
+def test_waiting_intervals_end_at_owner_comment():
+    t = state.parse_ts
+    ev = [{"ts": "2026-10-19T04:00:00Z", "kind": "gate_open", "doc": "p", "event": ""},
+          {"ts": "2026-10-19T04:05:00Z", "kind": "tick", "event": ""},
+          {"ts": "2026-10-19T04:10:00Z", "kind": "comment", "doc": "p", "event": ""},
+          {"ts": "2026-10-19T04:20:00Z", "kind": "confirm_pending", "doc": "p", "event": ""},
+          {"ts": "2026-10-19T04:30:00Z", "kind": "accept", "doc": "p", "event": ""}]
+    w = render_tracker.waiting_intervals(ev, t("2026-10-19T05:00:00Z"))
+    assert w == {"p": [(t("2026-10-19T04:00:00Z"), t("2026-10-19T04:10:00Z")),
+                       (t("2026-10-19T04:20:00Z"), t("2026-10-19T04:30:00Z"))]}
+
+
+def test_task_retry_and_depends_parsing():
+    d = copy_run()
+    sdd = json.load(open(os.path.join(d, "run.json")))
+    tasks = render_tracker.plan_tasks(os.path.join(d, sdd["plan_path"]))
+    assert tasks[3][2] == [1, 2, 3]                       # "spec §9" is not a dependency
+    ev = render_tracker.read_events(d) + [
+        {"ts": "2026-10-19T06:30:00Z", "kind": "task_start", "task": 1, "event": "retry"}]
+    states, _ = render_tracker.task_states(d, sdd, [(1, "a", [])], ev)
+    assert states[1] == "complete"                        # ledger wins
+    os.remove(os.path.join(d, "ledger.md"))
+    states, _ = render_tracker.task_states(d, sdd, [(1, "a", [])], ev)
+    assert states[1] == "in_progress"                     # restarted after its task_done
 
 
 # ---------- velocity.py ----------

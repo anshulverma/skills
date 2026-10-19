@@ -16,4 +16,4 @@
 
 ### Task 4: Blocked task
 
-**Depends on:** Task 2, Task 3
+**Depends on:** Task 1, Task 2, Task 3 (see spec §9)

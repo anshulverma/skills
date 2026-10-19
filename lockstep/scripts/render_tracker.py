@@ -31,8 +31,11 @@ TASK_STATES = {  # state: (fill, border, font, legend)
     "parked": ("#eb6834", "#eb6834", "white", "parked on your answer"),
     "blocked": ("#c8312b", "#c8312b", "white", "blocked"),
 }
-CREDENTIAL = [re.compile(r"(?i)\b(token|secret|password|passwd|api[_-]?key|access[_-]?key)(\s*[:=]\s*)(\S+)"),
-              re.compile(r"(?i)\b(bearer)(\s+)([A-Za-z0-9._~+/-]{20,})")]
+CREDENTIAL = [  # mask only the value; KEY=value (incl. MY_TOKEN, client_secret, "token: Bearer x"), then bare bearer tokens
+    re.compile(r"(?i)(?<![A-Za-z0-9])([A-Za-z0-9_]*(?:token|secret|password|passwd|api[_-]?key|access[_-]?key))"
+               r"([ \t]*[:=][ \t]*(?:bearer[ \t]+)?)([^\s\[][^\s]*)"),
+    re.compile(r"(?i)(?<![A-Za-z0-9])(bearer)([ \t]+)([A-Za-z0-9._~+/-]{20,})")]
+OWNER_KINDS = ("comment", "answer", "requirement", "accept", "changes", "confirm", "action")
 UNBLOCK = {"sdd": "fix the remediation in run.json blocked_reason, then comment `Action: unblock`",
            "doc_not_private": "remove the extra sharing on that doc; the next check clears this",
            "all_parked": "answer the parked task docs listed below", "reopen": "accept the reopened doc again"}
@@ -66,13 +69,40 @@ def mask_credentials(text: str) -> tuple[str, list[str]]:
 
 def read_events(run_dir: str) -> list[dict]:
     out = []
-    for line in open(os.path.join(run_dir, "events.jsonl")):
+    for line in open(os.path.join(run_dir, "events.jsonl"), errors="replace"):
         try:
             e = json.loads(line)
-        except ValueError:
-            continue  # torn last line from a crash mid-append
-        if isinstance(e, dict) and "ts" in e and "kind" in e:
-            out.append(e)
+            parse_ts(e["ts"])
+        except (ValueError, KeyError, TypeError, AttributeError):
+            continue  # torn last line from a crash mid-append, or a malformed record
+        if not isinstance(e, dict) or not isinstance(e.get("kind"), str):
+            continue
+        e["event"] = str(e.get("event", ""))
+        try:
+            e["task"] = int(e["task"]) if e.get("task") is not None else None
+        except (TypeError, ValueError):
+            e["task"] = None
+        out.append(e)
+    return out
+
+
+def waiting_intervals(events: list[dict], now: datetime) -> dict[str, list[tuple[datetime, datetime]]]:
+    """Per doc: waits run from gate_open, confirm_pending or a pre-accept publish to the next owner comment or accept."""
+    out, since, accepted = {}, {}, set()
+    for e in events:
+        doc, t = e.get("doc"), parse_ts(e["ts"])
+        if not doc:
+            continue
+        if e["kind"] in ("gate_open", "confirm_pending") or (e["kind"] == "published" and doc not in accepted):
+            since.setdefault(doc, t)
+        elif e["kind"] in OWNER_KINDS and doc in since:
+            out.setdefault(doc, []).append((since.pop(doc), t))
+        if e["kind"] == "accept":
+            accepted.add(doc)
+        elif e["kind"] == "reopen":
+            accepted.discard(doc)
+    for doc, t in since.items():
+        out.setdefault(doc, []).append((t, now))
     return out
 
 
@@ -81,7 +111,7 @@ def plan_tasks(plan_path):
     tasks, text = [], open(plan_path).read()
     for m in re.finditer(r"^### Task (\d+): (.+)$", text, re.M):
         dm = re.match(r"\s*\*\*Depends on:\*\* (.+)", text[m.end():].lstrip("\n"))
-        deps = [int(x) for x in re.findall(r"\d+", dm.group(1))] if dm else []
+        deps = [int(x) for x in re.findall(r"Task (\d+)", dm.group(1))] if dm else []
         tasks.append((int(m.group(1)), re.sub(r"[`*]", "", m.group(2)).strip(), deps))
     return tasks
 
@@ -139,10 +169,15 @@ def task_states(run_dir, sdd, tasks, events):
     times = {}
     for e in events:
         if e.get("task") and e["kind"] in ("task_start", "task_done"):
-            times.setdefault(int(e["task"]), {})[e["kind"]] = parse_ts(e["ts"])
+            t = times.setdefault(e["task"], {})
+            if e["kind"] == "task_start":
+                t.setdefault("task_start", parse_ts(e["ts"]))  # first start, for duration
+                t["last_start"] = parse_ts(e["ts"])
+            else:
+                t["task_done"] = parse_ts(e["ts"])
     for n, t in times.items():
-        if states.get(n) == "pending" and "task_start" in t and "task_done" not in t:
-            states[n] = "in_progress"
+        if states.get(n) == "pending" and "last_start" in t and not (t.get("task_done") and t["task_done"] >= t["last_start"]):
+            states[n] = "in_progress"  # started, and no task_done after the latest start (covers retries)
     return states, times
 
 
@@ -162,10 +197,12 @@ def task_chart(tasks, states, out):
         return seen
     direct = {n: {d for d in ds if not any(d in reach(o) for o in ds - {d})} for n, ds in dep.items()}
     have_children = {d for ds in direct.values() for d in ds}
+    known = {n for n, _, _ in tasks}
     for n, title, _ in tasks:
-        deps = sorted(direct[n])
+        deps = sorted(d for d in direct[n] if d in known)
         fill, col, font, _ = TASK_STATES[states[n]]
         short = title if len(title) <= 28 else title[:26] + "…"
+        short = short.replace("\\", "\\\\").replace('"', '\\"')
         lines.append(f'T{n} [label="T{n}\\n{short}", fillcolor="{fill}", color="{col}", fontcolor="{font}"];')
         lines += [f"T{d} -> T{n};" for d in deps] or [f"start -> T{n};"]
         if n not in have_children:
@@ -181,17 +218,13 @@ def task_chart(tasks, states, out):
 
 
 def timeline_chart(events, now, out):
-    # Working time = between events; waiting time = from a gate_open until the next owner comment or accept.
-    spans, waiting = [], None
+    waits = [w for ws in waiting_intervals(events, now).values() for w in ws]
+    spans = []
     for i, e in enumerate(events):
         start = parse_ts(e["ts"])
         end = parse_ts(events[i + 1]["ts"]) if i + 1 < len(events) else now
-        if e["kind"] == "gate_open":
-            waiting = True
-        if e["kind"] in ("comment", "accept"):
-            waiting = e["kind"] != "accept"
-        spans.append((e.get("phase") or (spans[-1][0] if spans else "INIT"), start, end,
-                      bool(waiting) and e["kind"] in ("gate_open", "comment")))
+        phase = e.get("phase") if e.get("phase") in PHASES else (spans[-1][0] if spans else "INIT")
+        spans.append((phase, start, end, any(ws <= start and end <= we for ws, we in waits)))
     fig, ax = plt.subplots(figsize=(10, 2.6), facecolor="#fcfcfb")
     ax.set_facecolor("#fcfcfb")
     t0 = parse_ts(events[0]["ts"])
@@ -217,9 +250,13 @@ def timeline_chart(events, now, out):
 
 
 
+def esc(v) -> str:
+    return html.escape(str(v if v is not None else ""), quote=True)
+
+
 def _doc_link(d, fallback):
-    title = html.escape(d.get("title") or fallback)
-    return f'<a href="https://docs.google.com/document/d/{d["id"]}/edit">{title}</a>' if d.get("id") else title
+    title = esc(d.get("title") or fallback)
+    return f'<a href="https://docs.google.com/document/d/{esc(d["id"])}/edit">{title}</a>' if d.get("id") else title
 
 
 def _qcount(run_dir, d):
@@ -227,19 +264,6 @@ def _qcount(run_dir, d):
     if not qf or not os.path.exists(os.path.join(run_dir, qf)):
         return ""
     return f"{len(d.get('answered') or [])}/{len(read_json(os.path.join(run_dir, qf)))}"
-
-
-def _waiting_secs(events, doc, now):
-    total, since = 0, None
-    for e in events:
-        if e.get("doc") != doc:
-            continue
-        if e["kind"] in ("gate_open", "confirm_pending"):
-            since = since or parse_ts(e["ts"])
-        elif since and e["kind"] in ("comment", "answer", "requirement", "accept", "changes"):
-            total += (parse_ts(e["ts"]) - since).total_seconds()
-            since = None
-    return total + ((now - since).total_seconds() if since else 0)
 
 
 def _table(head, rows):
@@ -263,12 +287,13 @@ def render(run_dir: str, now: datetime) -> str:
     if not os.path.exists(req_path):
         raise ValueError("request.md is missing; the tracker always shows the original request verbatim")
     sdd_path = os.path.join(run_dir, "run.json")
-    sdd = read_json(sdd_path) if run.get("phase") in ("PLAN", "BUILD", "LAND") and os.path.exists(sdd_path) else {}
-    events = read_events(run_dir)
-    request, masked = mask_credentials(open(req_path).read().strip())
+    pre_plan = run.get("phase") in (None, "INIT", "RESEARCH", "PROPOSAL", "SPEC")
+    sdd = read_json(sdd_path) if not pre_plan and os.path.exists(sdd_path) else {}
+    events = read_events(run_dir) if os.path.exists(os.path.join(run_dir, "events.jsonl")) else []
+    request, masked = mask_credentials(open(req_path, errors="replace").read().strip())
     if masked:
         note = f"credential masked in request.md ({', '.join(sorted(set(masked)))})"
-        if not any(e.get("event") == note for e in events):
+        if not any(e["event"] == note for e in events):
             from state import append_event
             events.append(append_event(run_dir, "milestone", note, now=now))
     figdir = os.path.join(run_dir, "tracker")
@@ -276,16 +301,17 @@ def render(run_dir: str, now: datetime) -> str:
     flow_chart(run, os.path.join(figdir, "flow.png"))
     if events:
         timeline_chart(events, now, os.path.join(figdir, "timeline.png"))
+    waits = waiting_intervals(events, now)
     t0 = parse_ts(events[0]["ts"]) if events else now
     st = run["tracker_status"]
     since = f" (since {hhmm(st['since'])})" if st.get("since") else ""
-    h = ['<p data-style="TITLE">' + html.escape(run.get("tracker_title", "Tracker")) + "</p>", STEER]
+    h = ['<p data-style="TITLE">' + esc(run.get("tracker_title", "Tracker")) + "</p>", STEER]
     h.append("<h2>Status</h2>" + _table(["", ""], [
-        ("<b>Last updated</b>", f"{now:%Y-%m-%d %H:%M} UTC (tick {run.get('tick', 0)})"),
-        ("<b>Status</b>", run.get("status", "")),
-        ("<b>Now</b>", html.escape(st.get("now", "")) + (f" (sdd stage {sdd.get('stage')})" if sdd else "")),
-        ("<b>Waiting on</b>", html.escape(st.get("waiting_on", "")) + since),
-        ("<b>Next wake</b>", html.escape(st.get("next_wake", ""))),
+        ("<b>Last updated</b>", f"{now:%Y-%m-%d %H:%M} UTC (tick {esc(run.get('tick', 0))})"),
+        ("<b>Status</b>", esc(run.get("status", ""))),
+        ("<b>Now</b>", esc(st.get("now", "")) + (f" (sdd stage {esc(sdd.get('stage'))})" if sdd else "")),
+        ("<b>Waiting on</b>", esc(st.get("waiting_on", "")) + since),
+        ("<b>Next wake</b>", esc(st.get("next_wake", ""))),
     ]))
     h.append("<h2>Where the run is</h2>" + _figure(figdir, "flow.png", "run phases", 1,
              "Run phases from request to done; the current phase is filled blue, each gated doc shows its state, "
@@ -303,37 +329,47 @@ def render(run_dir: str, now: datetime) -> str:
         goal = re.search(r"^\*\*Goal:\*\* (.+)$", open(plan_path).read(), re.M)
         done = sum(v == "complete" for v in states.values())
         h.append(f"<h2>Implementation plan</h2><p>Full plan: {_doc_link(run['docs'].get('plan', {}), sdd['plan_path'])}. "
-                 f"sdd stage: {sdd.get('stage', '')}. Tasks complete: {done}/{len(tasks)}.</p>")
+                 f"sdd stage: {esc(sdd.get('stage', ''))}. Tasks complete: {done}/{len(tasks)}.</p>")
         if goal:
-            h.append(f"<p><b>Goal:</b> {html.escape(goal.group(1))}</p>")
+            h.append(f"<p><b>Goal:</b> {esc(goal.group(1))}</p>")
         h.append(_figure(figdir, "tasks.png", "task flow", 3, "Plan tasks with their dependencies, coloured by state."))
         rows = []
         for n, title, deps in tasks:
             t = times.get(n, {})
             start = f"{t['task_start']:%m-%d %H:%M}" if "task_start" in t else ""
             dur = fmt_dur(((t.get("task_done") or now) - t["task_start"]).total_seconds()) if "task_start" in t else ""
-            rows.append((f"T{n}", html.escape(title), ", ".join(f"T{d}" for d in deps) or "-",
-                         TASK_STATES[states[n]][3], start, dur))
+            rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-", TASK_STATES[states[n]][3], start, dur))
         h.append(_table(["ID", "Task", "Depends on", "State", "Started (UTC)", "Duration"], rows))
 
-        tests = {}
-        for e in events:
-            if e["kind"] == "test_run":
-                tests[e.get("task")] = tests.get(e.get("task"), 0) + 1
-        diff_ev = {}
-        for e in events:
-            if e["kind"].startswith("diff_") and e.get("diff"):
-                diff_ev.setdefault(e["diff"], {})[e["kind"][5:]] = hhmm(e["ts"])
-        end = next((parse_ts(e["ts"]) for e in reversed(events) if e["kind"] == "done"), None)
-        closure = [(f"T{n}", fmt_dur((t["task_done"] - t["task_start"]).total_seconds()) if "task_done" in t else "running",
-                    str(tests.get(n, 0))) for n, t in sorted(times.items()) if "task_start" in t]
-        h.append("<h2>Build to closure</h2><p>Request to closure: "
-                 f"{fmt_dur(((end or now) - t0).total_seconds())}{'' if end else ' so far'}. Test runs: {sum(tests.values())}.</p>")
+    tests = {}
+    for e in events:
+        if e["kind"] == "test_run":
+            tests[e.get("task")] = tests.get(e.get("task"), 0) + 1
+    diff_ev = {}
+    for e in events:
+        if e["kind"].startswith("diff_") and e.get("diff"):
+            diff_ev.setdefault(str(e["diff"]), {})[e["kind"][5:]] = hhmm(e["ts"])
+    end = next((parse_ts(e["ts"]) for e in reversed(events) if e["kind"] == "done"), None)
+    h.append("<h2>Build to closure</h2><p>Request to closure: "
+             f"{fmt_dur(((end or now) - t0).total_seconds())}{'' if end else ' so far'}. Test runs: {sum(tests.values())}.</p>")
+    closure = [(f"T{n}", fmt_dur((t["task_done"] - t["task_start"]).total_seconds()) if "task_done" in t else "running",
+                str(tests.get(n, 0))) for n, t in sorted(times.items()) if "task_start" in t]
+    if closure:
         h.append(_table(["Task", "Implementation time", "Test runs"], closure))
-        if diff_ev:
-            h.append(_table(["Diff", "Created", "Published", "Reviewed", "Landed"],
-                            [(d, v.get("created", ""), v.get("published", ""), v.get("reviewed", ""), v.get("landed", ""))
-                             for d, v in diff_ev.items()]))
+    if diff_ev:
+        h.append(_table(["Diff", "Created", "Published", "Reviewed", "Landed"],
+                        [(esc(d), v.get("created", ""), v.get("published", ""), v.get("reviewed", ""), v.get("landed", ""))
+                         for d, v in diff_ev.items()]))
+
+    gates = []
+    for k, d in run["docs"].items():
+        if not isinstance(d, dict) or not d.get("id") or d.get("kind") in ("plan", "explainer"):
+            continue
+        versions = sum(1 for e in events if e.get("doc") == k and e["kind"] in ("published", "humanize"))
+        wait = sum((we - ws).total_seconds() for ws, we in waits.get(k, []))
+        gates.append((_doc_link(d, k), str(versions or 1), esc(d.get("status", "").replace("_", " ")),
+                      hhmm(d.get("opened_at")), hhmm(d.get("accepted_at")), fmt_dur(wait), _qcount(run_dir, d)))
+    h.append("<h2>Gates</h2>" + _table(["Doc", "Version", "Status", "Opened", "Accepted", "Waiting on you", "Questions"], gates))
 
     ms, cum, last, phase0 = [], 0, None, None
     for e in events:
@@ -344,41 +380,33 @@ def render(run_dir: str, now: datetime) -> str:
             cum, phase0 = 0, e.get("phase")
         elif last:
             cum += (t - last).total_seconds()
-        ms.append((hhmm(e["ts"]), (e.get("phase") or "").title(), html.escape(e["event"]),
+        ms.append((hhmm(e["ts"]), esc((e.get("phase") or "").title()), esc(e["event"]),
                    fmt_dur((t - last).total_seconds()) if last else "", fmt_dur(cum)))
         last = t
-    h.append("<h2>Milestones</h2>" + _table(["Time (UTC)", "Phase", "Milestone", "Since previous", "Cumulative in phase"], ms))
+    h.append("<h2>Milestones</h2>" + _table(
+        ["Time (UTC)", "Phase", "Milestone", "Since previous", "Since first milestone in phase"], ms))
 
     fu = []
     dec = os.path.join(run_dir, "decisions.md")
     if os.path.exists(dec):
-        sec = re.search(r"^## Follow-ups\n(.*?)(?=^## |\Z)", open(dec).read(), re.M | re.S)
-        fu = [("follow-up", html.escape(line.lstrip("-* ").strip()), "")
+        sec = re.search(r"^## Follow-ups\n(.*?)(?=^## |\Z)", open(dec, errors="replace").read(), re.M | re.S)
+        fu = [("follow-up", esc(line.lstrip("-* ").strip()), "")
               for line in (sec.group(1).splitlines() if sec else []) if line.strip()]
     for kind in ("blocked", "waiting"):
         for r in run.get(f"{kind}_reasons") or []:
-            fu.append((kind, html.escape(r), UNBLOCK.get(r.split(":")[0], "")))
+            fu.append((kind, esc(r), UNBLOCK.get(str(r).split(":")[0], "")))
     h.append("<h2>Follow-ups and blockers</h2>" + (_table(["Type", "Item", "What clears it"], fu) if fu else "<p>None.</p><p></p>"))
 
-    gates = []
-    for k, d in run["docs"].items():
-        if not isinstance(d, dict) or not d.get("id") or d.get("kind") in ("plan", "explainer"):
-            continue
-        versions = sum(1 for e in events if e.get("doc") == k and e["kind"] in ("published", "humanize"))
-        gates.append((_doc_link(d, k), str(versions or 1), d.get("status", "").replace("_", " "), hhmm(d.get("opened_at")),
-                      hhmm(d.get("accepted_at")), fmt_dur(_waiting_secs(events, k, now)), _qcount(run_dir, d)))
-    h.append("<h2>Gates</h2>" + _table(["Doc", "Version", "Status", "Opened", "Accepted", "Waiting on you", "Questions"], gates))
-
-    agents = sum(e.get("agents", 0) for e in events)
-    slops = [str(e["slop"]) for e in events if "slop" in e]
+    agents = sum(e.get("agents", 0) for e in events if isinstance(e.get("agents"), int))
+    slops = [esc(e["slop"]) for e in events if "slop" in e]
     counters = run.get("counters") or {}
     h.append("<h2>Metrics</h2>" + _table(["", ""], [
         ("Elapsed since request", fmt_dur((now - t0).total_seconds())),
         ("Comments answered", str(sum(e["kind"] in ("comment", "answer", "requirement") for e in events))),
         ("Requirements added from comments", str(sum(e["kind"] == "requirement" for e in events))),
-        ("Agents dispatched", str(agents or counters.get("agents", 0))),
-        ("Humanize passes", str(counters.get("humanize_passes", 0))),
-        ("Comment checks", str(counters.get("checks", 0))),
+        ("Agents dispatched", esc(agents or counters.get("agents", 0))),
+        ("Humanize passes", esc(counters.get("humanize_passes", 0))),
+        ("Comment checks", esc(counters.get("checks", 0))),
         ("Doc quality (slop score, lower is better)", " -> ".join(slops) or "n/a"),
     ]))
 
@@ -387,14 +415,18 @@ def render(run_dir: str, now: datetime) -> str:
         if not isinstance(d, dict) or not d.get("id"):
             continue
         opened, accepted = d.get("opened_at", ""), d.get("accepted_at", "")
-        wait = fmt_dur((parse_ts(accepted) - parse_ts(opened)).total_seconds()) if opened and accepted else (
-            f"open {fmt_dur((now - parse_ts(opened)).total_seconds())}" if opened else "")
-        docs.append((_doc_link(d, k), d.get("status", "").replace("_", " "), hhmm(opened), hhmm(accepted), wait,
+        if d.get("status") == "reference":
+            wait = "not gated"
+        elif opened and accepted:
+            wait = fmt_dur((parse_ts(accepted) - parse_ts(opened)).total_seconds())
+        else:
+            wait = f"open {fmt_dur((now - parse_ts(opened)).total_seconds())}" if opened else ""
+        docs.append((_doc_link(d, k), esc(d.get("status", "").replace("_", " ")), hhmm(opened), hhmm(accepted), wait,
                      _qcount(run_dir, d)))
     h.append("<h2>Docs produced</h2>" + _table(
         ["Doc", "Status", "Created (UTC)", "Accepted (UTC)", "Time to accept", "Questions answered"], docs))
 
-    acts = [(hhmm(e["ts"]), html.escape(e.get("verb", "")), html.escape(e["event"]), e.get("status", ""))
+    acts = [(hhmm(e["ts"]), esc(e.get("verb", "")), esc(e["event"]), esc(e.get("status", "")))
             for e in events if e["kind"] == "action"]
     h.append("<h2>Actions</h2>" + (_table(["Time (UTC)", "Verb", "Action", "Status"], acts) if acts else "<p>None yet.</p><p></p>"))
 
@@ -403,14 +435,17 @@ def render(run_dir: str, now: datetime) -> str:
               for n, s in states.items() if s == "parked"]
     h.append("<h2>Parked tasks</h2>" + (_table(["Task", "Doc", "Since"], parked) if parked else "<p>None.</p><p></p>"))
 
-    diffs = [(f'<a href="https://www.internalfb.com/diff/{d}">{d}</a>', s) for d, s in (run.get("diffs") or {}).items()]
+    diffs = []
+    for d, state_ in (run.get("diffs") or {}).items():
+        link = f'<a href="https://www.internalfb.com/diff/{esc(d)}">{esc(d)}</a>' if re.fullmatch(r"D\d+", str(d)) else esc(d)
+        diffs.append((link, esc(state_)))
     h.append("<h2>Diffs</h2>" + (_table(["Diff", "State"], diffs) if diffs else "<p>None recorded.</p><p></p>"))
 
-    h.append("<h2>Original request (verbatim)</h2><p><i>" + html.escape(request) + "</i></p><p></p>")
+    h.append("<h2>Original request (verbatim)</h2><p><i>" + esc(request) + "</i></p><p></p>")
     log, prev = [], None
     for e in events:
         t = parse_ts(e["ts"])
-        log.append((hhmm(e["ts"]), (e.get("phase") or "").title(), html.escape(e["event"]),
+        log.append((hhmm(e["ts"]), esc((e.get("phase") or "").title()), esc(e["event"]),
                     fmt_dur((t - prev).total_seconds()) if prev else ""))
         prev = t
     h.append("<h2>Event log</h2>" + _table(["Time (UTC)", "Phase", "Event", "Since previous"], log))
@@ -423,7 +458,7 @@ def main(argv: list[str]) -> int:
         return 2
     try:
         body = render(argv[0], now_utc())
-    except (ValueError, FileNotFoundError) as e:
+    except (ValueError, OSError, subprocess.CalledProcessError) as e:
         print(e, file=sys.stderr)
         return 1
     open(argv[1], "w").write(body)
