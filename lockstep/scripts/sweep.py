@@ -208,7 +208,8 @@ def main(argv: list[str]) -> int:
         return 2
     p = read_json(os.path.join(a.run, "pipeline.json"))
     docs = p.get("docs", {})
-    keys = a.doc or [*docs, *(["tracker"] if p.get("tracker_doc") else [])]
+    swept = [k for k, d in docs.items() if d.get("kind") != "external"]  # linked docs the run does not own
+    keys = a.doc or [*swept, *(["tracker"] if p.get("tracker_doc") else [])]
     result = {}
     for key in keys:
         try:  # one doc failing never aborts the others

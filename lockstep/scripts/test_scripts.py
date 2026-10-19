@@ -492,6 +492,23 @@ def test_task_retry_and_depends_parsing():
     assert states[1] == "in_progress"                     # restarted after its task_done
 
 
+def test_external_docs_linked_not_swept():
+    d = tempfile.mkdtemp()
+    json.dump({"owner_name": "Owner", "docs": {"x": {"id": "X", "title": "T", "kind": "external", "status": "reference"}}},
+              open(os.path.join(d, "pipeline.json"), "w"))
+    out = json.loads(subprocess.run([sys.executable, os.path.join(HERE, "sweep.py"), "--run", d, "--owner", "Owner"],
+                                    capture_output=True, text=True).stdout)
+    assert out["docs"] == {}
+    r = copy_run()
+    p = json.load(open(os.path.join(r, "pipeline.json")))
+    p["docs"]["exp"] = {"id": "EXP1", "title": "Experiment tracker", "kind": "external", "status": "reference"}
+    json.dump(p, open(os.path.join(r, "pipeline.json"), "w"))
+    h = render_tracker.render(r, state.parse_ts("2026-10-19T07:00:00Z"))
+    docs_sec = h.split("<h2>Docs produced</h2>")[1].split("<h2>")[0]
+    gates_sec = h.split("<h2>Gates</h2>")[1].split("<h2>")[0]
+    assert "Experiment tracker" in docs_sec and "Experiment tracker" not in gates_sec
+
+
 # ---------- velocity.py ----------
 
 def test_score_and_threshold():
