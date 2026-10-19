@@ -473,16 +473,22 @@ def test_render_done_keeps_plan_and_section_order():
     assert "Request to closure: 2h 50m." in h        # 04:00 request to 06:50 done, not "so far"
 
 
-def test_waiting_intervals_end_at_owner_comment():
-    t = state.parse_ts
-    ev = [{"ts": "2026-10-19T04:00:00Z", "kind": "gate_open", "doc": "p", "event": ""},
-          {"ts": "2026-10-19T04:05:00Z", "kind": "tick", "event": ""},
-          {"ts": "2026-10-19T04:10:00Z", "kind": "comment", "doc": "p", "event": ""},
-          {"ts": "2026-10-19T04:20:00Z", "kind": "confirm_pending", "doc": "p", "event": ""},
-          {"ts": "2026-10-19T04:30:00Z", "kind": "accept", "doc": "p", "event": ""}]
-    w = render_tracker.waiting_intervals(ev, t("2026-10-19T05:00:00Z"))
-    assert w == {"p": [(t("2026-10-19T04:00:00Z"), t("2026-10-19T04:10:00Z")),
-                       (t("2026-10-19T04:20:00Z"), t("2026-10-19T04:30:00Z"))]}
+def test_timeline_states_adopted_doc_and_dead_session():
+    T = state.parse_ts
+    docs = {"proposal": {"kind": "proposal", "status": "awaiting_acceptance", "opened_at": "2026-10-19T04:00:00Z"}}
+    ev = [{"ts": "2026-10-19T07:18:00Z", "kind": "tick", "doc": None, "event": "", "phase": "PROPOSAL"},
+          {"ts": "2026-10-19T17:21:00Z", "kind": "tick", "doc": None, "event": "", "phase": "PROPOSAL"},
+          {"ts": "2026-10-19T17:45:00Z", "kind": "comment", "doc": "proposal", "event": "", "phase": "PROPOSAL"},
+          {"ts": "2026-10-19T17:47:00Z", "kind": "tick", "doc": None, "event": "", "phase": "PROPOSAL"}]
+    st = [x[3] for x in render_tracker.classify(ev, docs, T("2026-10-19T17:50:00Z"))]
+    assert st == ["waiting", "waiting", "working", "waiting"]       # the 10 h gap is waiting on the owner, not work
+    w = render_tracker.waiting_secs(ev, docs, T("2026-10-19T17:50:00Z"))
+    assert w["proposal"] == (10 * 3600 + 3 * 60) + 24 * 60 + 3 * 60
+    closed = {"proposal": {"kind": "proposal", "status": "accepted", "opened_at": "2026-10-19T04:00:00Z",
+                           "accepted_at": "2026-10-19T05:00:00Z"}}
+    st = [x[3] for x in render_tracker.classify(ev[:2], closed, T("2026-10-19T17:22:00Z"))]
+    assert st == ["idle", "working"]                                  # no gate open, 10 h gap: no session running
+
 
 
 def test_task_retry_and_depends_parsing():

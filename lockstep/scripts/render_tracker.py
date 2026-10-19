@@ -66,24 +66,65 @@ def mask_credentials(text: str) -> tuple[str, list[str]]:
     return text, keys
 
 
-def waiting_intervals(events: list[dict], now: datetime) -> dict[str, list[tuple[datetime, datetime]]]:
-    """Per doc: waits run from gate_open, confirm_pending or a pre-accept publish to the next owner comment or accept."""
-    out, since, accepted = {}, {}, set()
-    for e in events:
-        doc, t = e.get("doc"), parse_ts(e["ts"])
-        if not doc:
+IDLE_GAP = 15 * 60  # seconds without an event, and nothing waiting on the owner: no session was running
+GATED = ("proposal", "spec", "task")
+
+
+def open_periods(events: list[dict], docs: dict, now: datetime) -> dict[str, list[tuple[datetime, datetime]]]:
+    """Per gated doc: spans while its gate was open (published or reopened, not yet accepted)."""
+    out = {}
+    for key, d in docs.items():
+        if not isinstance(d, dict) or d.get("kind", key if key in ("proposal", "spec") else None) not in GATED:
             continue
-        if e["kind"] in ("gate_open", "confirm_pending") or (e["kind"] == "published" and doc not in accepted):
-            since.setdefault(doc, t)
-        elif e["kind"] in OWNER_KINDS and doc in since:
-            out.setdefault(doc, []).append((since.pop(doc), t))
-        if e["kind"] == "accept":
-            accepted.add(doc)
-        elif e["kind"] == "reopen":
-            accepted.discard(doc)
-    for doc, t in since.items():
-        out.setdefault(doc, []).append((t, now))
+        start = parse_ts(d["opened_at"]) if d.get("opened_at") else None  # adopted docs have no gate_open event
+        spans = []
+        for e in events:
+            if e.get("doc") != key:
+                continue
+            t = parse_ts(e["ts"])
+            if e["kind"] in ("gate_open", "confirm_pending", "reopen", "published") and start is None:
+                start = t
+            elif e["kind"] == "accept" and start is not None:
+                spans.append((start, t))
+                start = None
+        if start is not None:
+            end = parse_ts(d["accepted_at"]) if d.get("status") == "accepted" and d.get("accepted_at") else now
+            if end > start:
+                spans.append((start, end))
+        out[key] = spans
     return out
+
+
+def classify(events: list[dict], docs: dict, now: datetime) -> list[tuple[str, datetime, datetime, str, list[str]]]:
+    """(phase, start, end, state, open docs) per gap between events; state is working, waiting or idle.
+
+    Waiting: some gate is open and the gap is not the skill handling an owner comment (or it ran past IDLE_GAP).
+    Idle: no gate open and nothing happened for IDLE_GAP, so no session was running. Otherwise working."""
+    periods = open_periods(events, docs, now)
+    out = []
+    for i, e in enumerate(events):
+        s = parse_ts(e["ts"])
+        t = parse_ts(events[i + 1]["ts"]) if i + 1 < len(events) else now
+        open_docs = [k for k, sp in periods.items() if any(a <= s < b for a, b in sp)]
+        long_gap = (t - s).total_seconds() > IDLE_GAP
+        if open_docs and (e["kind"] not in OWNER_KINDS or long_gap):
+            state = "waiting"
+        elif long_gap:
+            state = "idle"
+        else:
+            state = "working"
+        phase = e.get("phase") if e.get("phase") in PHASES else (out[-1][0] if out else "INIT")
+        out.append((phase, s, t, state, open_docs))
+    return out
+
+
+def waiting_secs(events: list[dict], docs: dict, now: datetime) -> dict[str, float]:
+    secs = {}
+    for _, s, t, state, open_docs in classify(events, docs, now):
+        if state == "waiting":
+            for k in open_docs:
+                secs[k] = secs.get(k, 0) + (t - s).total_seconds()
+    return secs
 
 
 def plan_tasks(plan_path):
@@ -197,22 +238,17 @@ def task_chart(tasks, states, out):
     subprocess.run(["dot", "-Tpng", "-Gdpi=150", dot, "-o", out], check=True)
 
 
-def timeline_chart(events, now, out):
-    waits = [w for ws in waiting_intervals(events, now).values() for w in ws]
-    spans = []
-    for i, e in enumerate(events):
-        start = parse_ts(e["ts"])
-        end = parse_ts(events[i + 1]["ts"]) if i + 1 < len(events) else now
-        phase = e.get("phase") if e.get("phase") in PHASES else (spans[-1][0] if spans else "INIT")
-        spans.append((phase, start, end, any(ws <= start and end <= we for ws, we in waits)))
+def timeline_chart(events, now, out, docs=None):
+    spans = [(ph, s, t, st) for ph, s, t, st, _ in classify(events, docs or {}, now)]
     fig, ax = plt.subplots(figsize=(10, 2.6), facecolor="#fcfcfb")
     ax.set_facecolor("#fcfcfb")
     t0 = parse_ts(events[0]["ts"])
     rows = [p for p in PHASES if any(s[0] == p for s in spans)]
-    for phase, s, e, wait in spans:
+    colour = {"working": BLUE, "waiting": ORANGE, "idle": LIGHT}
+    for phase, s, e, state in spans:
         y = rows.index(phase)
         ax.barh(y, (e - s).total_seconds() / 60, left=(s - t0).total_seconds() / 60, height=0.5,
-                color=ORANGE if wait else BLUE, edgecolor="#fcfcfb", linewidth=1.5)
+                color=colour[state], edgecolor="#fcfcfb", linewidth=1.5)
     ax.set_yticks(range(len(rows)))
     ax.set_yticklabels([r.title() for r in rows])
     ax.invert_yaxis()
@@ -221,8 +257,9 @@ def timeline_chart(events, now, out):
         ax.spines[side].set_visible(False)
     ax.grid(axis="x", color="#e5e4e0")
     from matplotlib.patches import Patch
-    ax.legend(handles=[Patch(color=BLUE, label="skill working"), Patch(color=ORANGE, label="waiting on you")],
-              loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=2, frameon=False, fontsize=9)
+    ax.legend(handles=[Patch(color=BLUE, label="skill working"), Patch(color=ORANGE, label="waiting on you"),
+                       Patch(color=LIGHT, label="no session running")],
+              loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=3, frameon=False, fontsize=9)
     plt.tight_layout()
     plt.savefig(out, dpi=150, facecolor="#fcfcfb")
     plt.close(fig)
@@ -280,8 +317,8 @@ def render(run_dir: str, now: datetime) -> str:
     os.makedirs(figdir, exist_ok=True)
     flow_chart(run, os.path.join(figdir, "flow.png"))
     if events:
-        timeline_chart(events, now, os.path.join(figdir, "timeline.png"))
-    waits = waiting_intervals(events, now)
+        timeline_chart(events, now, os.path.join(figdir, "timeline.png"), run["docs"])
+    waits = waiting_secs(events, run["docs"], now)
     t0 = parse_ts(events[0]["ts"]) if events else now
     st = run["tracker_status"]
     since = f" (since {hhmm(st['since'])})" if st.get("since") else ""
@@ -298,7 +335,7 @@ def render(run_dir: str, now: datetime) -> str:
              "and the dashed edges are the review loops."))
     if events:
         h.append("<h2>Timeline</h2>" + _figure(figdir, "timeline.png", "timeline", 2,
-                 "Time per phase, split into the skill working and waiting on you."))
+                 "Time per phase: the skill working, waiting on you, or no session running (a gap of more than 15 minutes with nothing waiting on you)."))
 
     plan_path = sdd.get("plan_path") and os.path.join(run_dir, sdd["plan_path"])
     tasks, states, times = [], {}, {}
@@ -346,7 +383,7 @@ def render(run_dir: str, now: datetime) -> str:
         if not isinstance(d, dict) or not d.get("id") or d.get("kind") in ("plan", "explainer", "external"):
             continue
         versions = sum(1 for e in events if e.get("doc") == k and e["kind"] in ("published", "humanize"))
-        wait = sum((we - ws).total_seconds() for ws, we in waits.get(k, []))
+        wait = waits.get(k, 0)
         gates.append((_doc_link(d, k), str(versions or 1), esc(d.get("status", "").replace("_", " ")),
                       hhmm(d.get("opened_at")), hhmm(d.get("accepted_at")), fmt_dur(wait), _qcount(run_dir, d)))
     h.append("<h2>Gates</h2>" + _table(["Doc", "Version", "Status", "Opened", "Accepted", "Waiting on you", "Questions"], gates))
