@@ -140,7 +140,7 @@ Every gated doc's body is capped at 1-2 pages, about 500-1,000 words, not counti
 
 An explainer is a separate doc that walks through a gated doc. Explainers are off by default. Turn one on for a doc when either of these happens:
 
-- `velocity.py doc` prints `explainer: on`, which means the score is at least 20.
+- `velocity.py doc` prints `explainer: on`, which means the score is at least 5.5 out of 10.
 - The owner comments `Action: add explainer`.
 
 `Action: no explainer` turns it off, even when the score is high.

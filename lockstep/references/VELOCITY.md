@@ -6,7 +6,7 @@ This page is the single owner of review velocity: per-doc complexity scores, rea
 
 | Term | Meaning |
 |---|---|
-| Complexity score | One number per gated doc that predicts how hard it is to review (formula below) |
+| Complexity score | One number from 0 to 10 per gated doc that predicts how hard it is to review; 10 is the hardest (formula below) |
 | Session | One sitting of review: a run of owner comments on one doc with gaps under 10 min between them |
 | Lead-in | Reading time before the first comment of a session, which Google Docs cannot observe. It has no view events, only comment and edit events |
 | Pace | Owner reading speed in words per active minute, measured across every recorded session |
@@ -15,8 +15,11 @@ This page is the single owner of review velocity: per-doc complexity scores, rea
 ## Formula and values
 
 ```
-score = words/100 + 2*figures + tables + 2*open_questions + max(0, grade - 10) + unknown_terms + slop/10
+raw   = words/100 + 2*figures + tables + 2*open_questions + max(0, grade - 10) + unknown_terms + slop/10
+score = round(10 * (1 - exp(-raw / 25)), 1)          # 0-10, 10 the hardest
 ```
+
+The score runs from 0 to 10. It rises with every input and flattens toward 10, so a very long or dense doc reads near 10 without passing it. `words/100` keeps it loosely tied to reading time, but figures, open questions and unknown terms can make a short doc score high. Example values: raw 10 is 3.3, raw 20 is 5.5, raw 40 is 8.0.
 
 | Input | Source (`velocity.py metrics`) |
 |---|---|
@@ -29,7 +32,7 @@ score = words/100 + 2*figures + tables + 2*open_questions + max(0, grade - 10) +
 
 | Rule | Value |
 |---|---|
-| Explainer threshold | score >= 20 prints `explainer: on`. What happens next is in references/DOCS.md |
+| Explainer threshold | score >= 5.5 (a raw score of 20) prints `explainer: on`. What happens next is in references/DOCS.md |
 | Session gap | Strictly under 10 min joins the session. A gap of exactly 10 min or more starts a new one |
 | Comments counted | Only `comment_ts` values on the doc's events at or after its latest `published` event |
 | Lead-in | Median of publish-to-first-comment over every recorded pair in `leadins.jsonl` (all runs and docs), capped at 15 min. Default 5 min with no pairs. Measured from the `published` event's `ts` to the first `comment_ts` |
@@ -68,7 +71,7 @@ python3 $S/velocity.py session $RUN <doc>                               # prints
 `<doc>` is the key under `pipeline.json.docs` (`proposal`, `spec`, `task-N`). `doc` prints two lines:
 
 ```
-Complexity 23.5 · about 3 min to read
+Complexity 6.1/10 · about 3 min to read
 explainer: on
 ```
 

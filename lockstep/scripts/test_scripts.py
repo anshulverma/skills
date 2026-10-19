@@ -549,7 +549,12 @@ def test_status_shows_time_spent_split():
 
 def test_score_and_threshold():
     m = {"words": 900, "figures": 2, "tables": 1, "open_questions": 3, "grade": 13, "unknown_terms": 2, "slop": 15}
-    assert abs(velocity.score(m) - (9 + 4 + 1 + 6 + 3 + 2 + 1.5)) < 1e-9 and velocity.score(m) >= velocity.EXPLAINER_THRESHOLD
+    assert abs(velocity.raw_score(m) - (9 + 4 + 1 + 6 + 3 + 2 + 1.5)) < 1e-9 and velocity.score(m) >= velocity.EXPLAINER_THRESHOLD
+    assert velocity.score({**m, "words": 0, "figures": 0, "tables": 0, "open_questions": 0, "grade": 0, "unknown_terms": 0, "slop": 0}) == 0
+    assert velocity.score({**m, "words": 100000}) == 10.0                      # bounded at 10
+    assert velocity.score({**m, "figures": 0}) < velocity.score(m)             # monotone in the raw inputs
+    assert abs(velocity.score({"words": 2000, "figures": 0, "tables": 0, "open_questions": 0, "grade": 0,
+                               "unknown_terms": 0, "slop": 0}) - velocity.EXPLAINER_THRESHOLD) < 0.05  # raw 20 is the threshold
 
 
 def test_sessions_gap_9_vs_11():
@@ -581,7 +586,7 @@ def test_grade_and_estimates():
     assert 0 < velocity.grade("The cat sat. The dog ran far away from home.") < 6
     assert velocity.pace_wpm([]) == 200 and velocity.estimate_minutes(450, 200) == 3
     assert velocity.header_line({"words": 400, "figures": 0, "tables": 0, "open_questions": 0, "grade": 8,
-                                 "unknown_terms": 0, "slop": 0}, 200) == "Complexity 4.0 · about 2 min to read"
+                                 "unknown_terms": 0, "slop": 0}, 200) == "Complexity 1.5/10 · about 2 min to read"
 
 
 def test_velocity_cli_appends_under_lock():
