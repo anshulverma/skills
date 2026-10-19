@@ -268,9 +268,17 @@ def timeline_chart(events, now, out):
     by_time = sorted(events, key=lambda e: parse_ts(e["ts"]))   # backfilled events sit out of file order
     phase_at = lambda t: next((e.get("phase") for e in reversed(by_time)
                                if parse_ts(e["ts"]) <= t and e.get("phase") in PHASES), "INIT")
-    rows = [p for p in PHASES if any(phase_at(a) == p for a, _, _ in pieces)] or ["INIT"]
-    x, prev = 0.0, None
+    # A piece that runs across a phase change is drawn in each phase's row, not all in the first.
+    changes = [parse_ts(e["ts"]) for p, e in zip(by_time, by_time[1:]) if e.get("phase") != p.get("phase")]
+    split = []
     for a, b, who in pieces:
+        for c in (c for c in changes if a < c < b):
+            split.append((a, c, who))
+            a = c
+        split.append((a, b, who))
+    rows = [p for p in PHASES if any(phase_at(a) == p for a, _, _ in split)] or ["INIT"]
+    x, prev = 0.0, None
+    for a, b, who in split:
         if prev is not None and (a - prev).total_seconds() >= 15 * 60:
             ax.axvline(x, color=GREY, linestyle=":", linewidth=1)
             ax.text(x, len(rows) - 0.45, f"idle {fmt_dur((a - prev).total_seconds())}", fontsize=7, color=GREY, ha="center")
