@@ -288,6 +288,25 @@ def test_md2ghtml_without_tldr():
     assert title == "T" and "<aside" not in html_ and "Just text." in html_
 
 
+# ---------- await_owner.sh ----------
+
+def test_await_owner_filters_bot_events():
+    d = tempfile.mkdtemp()
+    fake = os.path.join(d, "meta")
+    n = os.path.join(d, "n")
+    open(fake, "w").write(f"""#!/bin/bash
+c=$(cat {n} 2>/dev/null || echo 0); echo $((c+1)) > {n}
+case $c in
+  0) b='[🤖 Claude Code] ack' ;; 1) b="(cont'd 2/2) tail" ;; *) b='Approved' ;;
+esac
+printf '{{"seq":1,"payload":{{"gdrive":{{"comment_body":"%s"}}}}}}\\n' "$b"
+""")
+    os.chmod(fake, 0o755)
+    r = subprocess.run(["bash", os.path.join(HERE, "await_owner.sh"), "DOC1"], capture_output=True, text=True,
+                       timeout=30, env={**os.environ, "PATH": d + ":" + os.environ["PATH"]})
+    assert r.returncode == 0 and r.stdout.strip() == "HUMAN_EVENT doc=DOC1 body=Approved", (r.stdout, r.stderr)
+
+
 def main() -> None:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:
