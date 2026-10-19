@@ -539,6 +539,7 @@ def test_skill_spans_tolerate_out_of_order_events():
 def test_status_shows_time_spent_split():
     h = render_tracker.render(copy_run(), state.parse_ts("2026-10-19T07:00:00Z"))
     status = h.split("<h2>Status</h2>")[1].split("<h2>")[0]
+    assert "UTC" not in h and "2026-10-19 00:00 PDT" in status          # times shown in the owner's zone (07:00Z = 00:00 PDT)
     d = r"((?:\d+h )?\d+m)"
     m = re.search(rf"Time spent</b></td><td>{d} active: you {d} \+ agent {d}(?: − {d} when both)?", status)
     assert m, status
