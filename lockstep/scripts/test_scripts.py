@@ -536,6 +536,12 @@ def test_skill_spans_tolerate_out_of_order_events():
     assert render_tracker.skill_spans(ev, T("2026-10-19T10:12:00Z")) == [(T("2026-10-19T10:00:00Z"), T("2026-10-19T10:12:00Z"))]
 
 
+def test_status_shows_time_spent_split():
+    h = render_tracker.render(copy_run(), state.parse_ts("2026-10-19T07:00:00Z"))
+    status = h.split("<h2>Status</h2>")[1].split("<h2>")[0]
+    assert re.search(r"Time spent</b></td><td>\S+(?: \S+)? active: you \S+(?: \S+)?, agent \S+", status), status
+
+
 # ---------- velocity.py ----------
 
 def test_score_and_threshold():

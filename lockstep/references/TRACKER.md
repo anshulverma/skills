@@ -78,6 +78,7 @@ python3 $S/state.py <run> event <kind> "<text>" [doc=<key>] [task=<n>] [diff=D<n
   - **Skill working**: the gap after every event except quiet `tick` polls and `owner_active`, unless that gap runs past 45 minutes (nothing was running).
   - Everything else is time away (asleep, session down, idle polling) and counts as zero. The timeline cuts it out and marks each break with its length; wall clock appears only as a labelled reference.
   - The Gates column "Your active time" is the owner's sessions on that doc; task durations are skill time between task_start and task_done.
+  - The Status table's "Time spent" row gives total active time split into you (owner engaged) and agent (skill working); time both spent at once counts once in the total.
 
 ## Task events in PLAN and BUILD
 
