@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repository is
 
 A personal collection of Claude Code **skills** — each skill is a directory of Markdown
-files (no compiled code, no test suite, no build step). The content *is* the product:
+files (no compiled code and no build step; `humanize/` and `lockstep/` carry small script test suites). The content *is* the product:
 prose and protocols that get loaded into a Claude Code session as instructions.
 
 The skills are `auto-plan/` (an autonomous planning orchestrator), `auto-research/` (an
@@ -14,7 +14,7 @@ autonomous experimentation loop, ported from github/awesome-copilot), `diff-auth
 reply conventions), `docket/` (per-diff stack review, rendering monk's findings into a
 card and a ruling), `humanize/` (rewrites agent-drafted prose to a human shape and
 scores the slop per pass), `i-have-adhd/` (an output-shaping style skill, ported from
-ayghri/i-have-adhd), `monk/` (whole-chain diff review), `pr-authoring/` (GitHub PR
+ayghri/i-have-adhd), `lockstep/` (a doc-gated proposal, spec and build workflow driving `sdd`), `monk/` (whole-chain diff review), `pr-authoring/` (GitHub PR
 conventions), `sdd/` (spec-to-code pipeline), and `task-authoring/` (Meta Task conventions). New skills are added as sibling
 directories.
 
@@ -221,3 +221,29 @@ Nothing is written into `fbsource`.
 `~/workspace/investigations/reviews/D<number>.md`, and confirmed findings graduate into
 `~/workspace/investigations/knowledge/` and `LESSONS.md`, the same git-backed repo dexter
 uses. It creates `reviews/` on its first run; do not pre-create it here.
+
+## Architecture of the `lockstep` skill
+
+`lockstep` runs a task from request to landed code while the owner only acts in Google Docs. It is
+one of two skills here with executable code (with `humanize/`), so it has three layers:
+
+| Layer | Files | Role |
+|------|------|------|
+| Playbook | `SKILL.md` | Invocation, phases (INIT, RESEARCH, PROPOSAL, SPEC, PLAN, BUILD, LAND, DONE), the tick order, red flags |
+| Protocols | `references/{STATE,GATE,DOCS,TRACKER,LOOP,ACTIONS,VELOCITY}.md` | One normative owner per protocol; pages link each other instead of restating |
+| Scripts | `scripts/{state,sweep,md2ghtml,render_tracker,velocity}.py`, `scripts/await_owner.sh` | Deterministic work: derived status and the tick lease, comment classification, ghtml conversion, the tracker dashboard, review velocity, the owner-only wake |
+
+Consequences when editing:
+
+- Each script has a pure core the tests import and a thin CLI that does the I/O. Tests live in
+  `scripts/test_scripts.py` and run with `~/.cache/humanize-venv/bin/python lockstep/scripts/test_scripts.py`
+  (matplotlib, graphviz and `markdown` come from that venv). Tests never call `meta`; fake `meta`
+  scripts on `PATH` stand in for it.
+- The comment kinds `sweep.py` emits and the subsections of `references/GATE.md` are a contract,
+  as are the `Action:` verbs in `references/ACTIONS.md` and the classifier. Change both sides together.
+- Run state lives in `/data/users/anshulverma/sdd-runs/<slug>/`, never in this repo (dotsync reverts
+  writes under `~/workspace` and `~/.claude`).
+- `scripts/fixtures/scenarios.md` records the RED/GREEN pressure scenarios; rerun them after changing
+  `SKILL.md` or a red flag.
+- `sdd` has a matching "Driven by lockstep" mode (`run.json.driver`); keep the two in step.
+

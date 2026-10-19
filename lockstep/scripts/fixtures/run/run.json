@@ -1,0 +1,8 @@
+{
+ "slug": "demo",
+ "stage": "EXECUTE",
+ "status": "running",
+ "driver": "lockstep",
+ "plan_path": "plan.md",
+ "in_flight": null
+}

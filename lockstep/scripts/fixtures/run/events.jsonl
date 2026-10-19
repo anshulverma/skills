@@ -1,0 +1,16 @@
+{"ts": "2026-10-19T04:00:00Z", "phase": "PROPOSAL", "kind": "gate_open", "event": "Proposal published", "doc": "proposal"}
+{"ts": "2026-10-19T04:10:00Z", "phase": "PROPOSAL", "kind": "answer", "event": "Q1 answered", "doc": "proposal"}
+{"ts": "2026-10-19T04:30:00Z", "phase": "PROPOSAL", "kind": "accept", "event": "Proposal accepted", "doc": "proposal"}
+{"ts": "2026-10-19T04:40:00Z", "phase": "SPEC", "kind": "gate_open", "event": "Spec published", "doc": "spec"}
+{"ts": "2026-10-19T05:00:00Z", "phase": "SPEC", "kind": "accept", "event": "Spec accepted", "doc": "spec"}
+{"ts": "2026-10-19T05:01:00Z", "phase": "PLAN", "kind": "milestone", "event": "Planning started"}
+{"ts": "2026-10-19T05:30:00Z", "phase": "PLAN", "kind": "milestone", "event": "Plan written"}
+{"ts": "2026-10-19T05:40:00Z", "phase": "BUILD", "kind": "milestone", "event": "Build started"}
+{"ts": "2026-10-19T05:41:00Z", "phase": "BUILD", "kind": "action", "event": "Action: pause", "verb": "pause", "status": "done"}
+{"ts": "2026-10-19T05:45:00Z", "phase": "BUILD", "kind": "task_start", "event": "Task 1 started", "task": 1}
+{"ts": "2026-10-19T05:50:00Z", "phase": "BUILD", "kind": "test_run", "event": "Task 1 tests ok", "task": 1}
+{"ts": "2026-10-19T05:55:00Z", "phase": "BUILD", "kind": "task_done", "event": "Task 1 done", "task": 1}
+{"ts": "2026-10-19T06:00:00Z", "phase": "BUILD", "kind": "task_start", "event": "Task 3 started", "task": 3}
+{"ts": "2026-10-19T06:05:00Z", "phase": "BUILD", "kind": "diff_created", "event": "D123456789 created", "diff": "D123456789"}
+{"ts": "2026-10-19T06:06:00Z", "phase": "BUILD", "kind": "diff_published", "event": "D123456789 published", "diff": "D123456789"}
+{"ts": "2026-10-19T06:10:00Z", "phase": "BUILD", "kind": "task_parked", "event": "Task 2 parked", "task": 2}
