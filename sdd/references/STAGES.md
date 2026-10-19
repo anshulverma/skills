@@ -46,7 +46,8 @@ anything landed in the repo, move it out and re-state the override — do not le
 
 ## run.json
 
-Rewrite in full every tick. Never patch in place.
+Rewrite in full every tick. Never patch in place. A full rewrite keeps every field, including
+`driver` (`"lockstep"` when lockstep drives the run) and `idle_reason`.
 
 ```json
 {
@@ -59,6 +60,9 @@ Rewrite in full every tick. Never patch in place.
   "unresolved": [],
   "blocked_reason": "",
   "in_flight": null,
+  "cron_job_id": "",
+  "driver": "",
+  "idle_reason": "",
   "tick": 7,
   "stage_ticks": 3,
   "updated_at": "2026-08-04T18:22:00Z"
@@ -219,7 +223,7 @@ Transition rules are identical to stage 2. Terminal → `EXECUTE`.
 **one plan task per tick**.
 
 `ledger.md` — not the conversation — is the source of truth for progress. Resume at the first
-task not marked complete. Never re-dispatch a completed task.
+task that is neither complete nor parked. Never re-dispatch a completed task.
 
 First EXECUTE tick only: run the pre-flight plan-conflict scan; write findings to
 `questions.md`; confirm you are not on `master`.
@@ -248,13 +252,14 @@ Either way, append the task to `ledger.md` as `Task N: blocked (<reason>)` (bloc
 complete), so a resume stops there instead of skipping it. Leave `stage` and `plan_path` intact so the run is resumable
 once the blocker clears. Put the concrete remediation in `blocked_reason`.
 
-Implementer returns NEEDS_OWNER (an unknown whose answer changes the task's output; it writes
-`docs/task-N/questions.md`): append `Task N: parked (docs/task-N/questions.md)` to `ledger.md`
+Implementer returns NEEDS_OWNER (lockstep-driven runs only; a standalone run treats it as
+BLOCKED, since nobody answers): an unknown whose answer changes the task's output, written to
+`docs/task-N/questions.md`. Then append `Task N: parked (docs/task-N/questions.md)` to `ledger.md`
 and move to the next task whose dependencies are complete. Parked lines are skipped, not
 blocking. Lockstep publishes the questions as a gated doc and, on acceptance, writes
 `docs/task-N/answers.md` and deletes the parked line, so the task runs again with the answers
 in its brief. An implementer question that does not change the output is DONE_WITH_CONCERNS:
-the task completes and the question is appended to `questions.md`.
+the task completes and the question is appended to `<run>/questions.md`.
 
 When no unparked task is runnable, write `run.json.idle_reason: all_remaining_parked` and end
 the tick. Never run the whole-branch review or set `done` while a parked line exists.

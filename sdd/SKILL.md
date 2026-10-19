@@ -55,13 +55,19 @@ Every `/sdd` invocation after stage 1 does exactly this:
 When `run.json.driver == "lockstep"`, the `lockstep` skill owns the loop and calls sdd for one
 unit at a time:
 
-- Do tick steps 1-5 only; skip step 6 (lockstep sweeps its docs between units).
-- Never call `CronCreate`, `CronDelete` or `CronList`; lockstep owns the cron.
-- Name EXECUTE units `TASK_<n>`. Choose the next task from the plan's `**Depends on:**` lines.
+- Do tick steps 1-5 only; skip step 6 (lockstep sweeps its docs between units). In step 2,
+  print the reason and exit; do not stop or delete any loop.
+- Never call `CronCreate`, `CronDelete` or `CronList`; lockstep owns the cron. Rules elsewhere
+  that say to stop the loop or call `CronDelete` do not apply in this mode.
+- Keep `driver`, `idle_reason` and `cron_job_id` when rewriting `run.json` in full.
+- `in_flight.unit` for an EXECUTE task is `TASK_<n>`. Choose the next task from the plan's `**Depends on:**` lines.
 - Build each implementer brief in this order: the never-allowed list from
   `~/.claude/skills/lockstep/references/ACTIONS.md`, then the standing constraints from
   `<run>/decisions.md`, then `docs/task-N/answers.md` when it exists, then the task. The
-  never-allowed rules override any constraint.
+  never-allowed rules override any constraint. Tell the implementer it may return NEEDS_OWNER
+  (an unknown whose answer changes the task's output; write the questions to
+  `<run>/docs/task-N/questions.md`) or DONE_WITH_CONCERNS (a question that does not change the
+  output; it goes to `<run>/questions.md`).
 - Append task events with
   `python3 ~/.claude/skills/lockstep/scripts/state.py <run> event <kind> "<text>" task=<n>`:
   `task_start` before dispatching the implementer, `test_run` after each test command the
@@ -188,7 +194,7 @@ an unanswerable question degrades to an `UNRESOLVED:` marker instead of hanging.
 ## Red Flags — Stop and Re-read the Contract
 
 - About to ask the user something after stage 1
-- About to end the loop with anything other than `CronDelete({id})`
+- About to end the loop with anything other than `CronDelete({id})` (lockstep-driven runs end no loop at all)
 - About to re-dispatch a task the ledger already marks complete
 - About to advance a stage without reading its terminal condition off disk
 - Writing pipeline artifacts anywhere inside `fbsource`
