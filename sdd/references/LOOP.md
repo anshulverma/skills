@@ -69,25 +69,25 @@ CronDelete({id: <run.json.cron_job_id>})
 ```
 
 Then print the summary. If `cron_job_id` is missing from `run.json`, call `CronList` to find
-the job whose prompt is `/sdd <slug>` and delete that.
+the job whose prompt is exactly `/sdd <slug>` and delete that. Lockstep-driven runs
+(`run.json.driver == "lockstep"`) skip this: lockstep owns the cron.
 
-## No lock file is needed
+## Locking
 
-Scheduled jobs fire **only while the REPL is idle**, never mid-query. Two ticks cannot
-overlap, so there is no double-dispatch race and no reason for a pidfile or mtime lock.
-Baseline agents invent one anyway — it is dead complexity that can itself wedge the pipeline
-if a stale lock is left behind.
+The only locking rule is the `in_flight` claim in SKILL.md "In-flight marker", with its
+30-minute staleness window. Do not add a pidfile or mtime lock (lockstep-driven runs use
+lockstep's lease, which is not part of sdd).
 
 ## Interruption safety
 
 A tick can die at any point (context exhaustion, API error, user interrupt). The pipeline
 recovers because:
 
-- `run.json` is rewritten **only** after a unit of work completes, so a dead tick leaves the
-  previous consistent state.
+- `run.json` is rewritten **only** after a unit of work completes (apart from the `in_flight`
+  claim), so a dead tick leaves the previous consistent state.
 - `auto-plan --resume` restores an interrupted hardening pass from its own snapshot.
 - The execution ledger records completed tasks, so a re-run resumes at the first incomplete
   one.
 
-Never write `run.json` at the *start* of a tick to "claim" work. That converts a crashed tick
-into permanently skipped work.
+Claiming work at the start of a tick is the `in_flight` marker, not a stage change: a crashed
+tick leaves a marker that goes stale after 30 minutes and the unit is redone.
