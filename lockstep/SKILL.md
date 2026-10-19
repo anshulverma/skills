@@ -53,7 +53,7 @@ Run these in order. Each step's protocol lives on the linked page; do not improv
    `python3 ~/.claude/skills/lockstep/scripts/state.py <run> lease acquire $SID`; exit 3 means another
    session holds it: exit without bumping `tick` (references/GATE.md).
 2. **Cron.** Adopt, create or re-arm the one durable cron (references/LOOP.md).
-3. **Dead task ids.** Clear them (references/LOOP.md).
+3. **Dead task ids.** Clear them (references/LOOP.md). A task id this session knows is still running is never stale, however long it has run: long units (a spec draft, a humanize pass) routinely pass 30 minutes, and redoing them would duplicate work.
 3b. **Owner in the session.** If the owner sent a message in this Claude session since the last tick, append `state.py <run> event owner_active "<one-line summary>"` (it counts as engaged time; references/TRACKER.md).
 4. **Sweep and handle.** `sweep.py` over every published run doc, then handle each item oldest
    first, by kind (references/GATE.md; `Action:` verbs in references/ACTIONS.md).
@@ -64,7 +64,7 @@ Run these in order. Each step's protocol lives on the linked page; do not improv
    (sdd SKILL.md, "Driven by lockstep"), then the parked-task scan (references/STATE.md), the
    implementation-questions doc (`impl_questions`) when `run.json.unresolved` or `questions.md` has entries beyond `pipeline.json.impl_questions_seen` (references/DOCS.md),
    and in PLAN a plan doc re-publish. LAND: references/TRACKER.md.
-9. **Tracker.** Update `tracker_status`, render and apply (references/TRACKER.md).
+9. **Tracker.** Update `tracker_status`, then render and apply only when something changed this tick, or as a heartbeat when the last render is 30+ minutes old (references/TRACKER.md). Quiet ticks write nothing to the tracker.
 10. **Wake.** If the session is live and a gate is open, re-arm `await_owner.sh` only after the
    previous one exited (references/LOOP.md).
 11. **Heartbeat** the lease; loop to step 4 while the session is live in PLAN or BUILD and context

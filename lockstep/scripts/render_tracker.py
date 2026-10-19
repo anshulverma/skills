@@ -241,6 +241,17 @@ def task_chart(tasks, states, out):
     subprocess.run(["dot", "-Tpng", "-Gdpi=150", dot, "-o", out], check=True)
 
 
+def time_split(events: list[dict], now: datetime) -> tuple[float, float]:
+    """(owner seconds, agent seconds) that add up to the active total: time both were active counts as the owner's."""
+    you = agent = 0.0
+    for a, b, who in active_pieces(events, now):
+        if who == "you":
+            you += (b - a).total_seconds()
+        else:
+            agent += (b - a).total_seconds()
+    return you, agent
+
+
 def timeline_chart(events, now, out):
     """Active time only: idle stretches are cut out and marked with how long nothing was happening."""
     pieces = active_pieces(events, now)
@@ -325,6 +336,7 @@ def render(run_dir: str, now: datetime) -> str:
     if events:
         timeline_chart(events, now, os.path.join(figdir, "timeline.png"))
     own_all, skill_all = owner_spans(events), skill_spans(events, now)
+    you_s, agent_s = time_split(events, now)
     active = lambda a, b: overlap(_merge(own_all + skill_all), a, b)
     t0 = parse_ts(events[0]["ts"]) if events else now
     st = run["tracker_status"]
@@ -333,8 +345,8 @@ def render(run_dir: str, now: datetime) -> str:
     h.append("<h2>Status</h2>" + _table(["", ""], [
         ("<b>Last updated</b>", f"{now:%Y-%m-%d %H:%M} UTC (tick {esc(run.get('tick', 0))})"),
         ("<b>Status</b>", esc(run.get("status", ""))),
-        ("<b>Time spent</b>", f"{fmt_dur(active(t0, now))} active: you {fmt_dur(overlap(own_all, t0, now))}, "
-                              f"agent {fmt_dur(overlap(skill_all, t0, now))} (time you both spent counts once in the total)"),
+        ("<b>Time spent</b>", f"{fmt_dur(you_s + agent_s)} active: you {fmt_dur(you_s)} + agent {fmt_dur(agent_s)} "
+                              "(a minute when you were engaged counts as yours, even if the agent was also working)"),
         ("<b>Now</b>", esc(st.get("now", "")) + (f" (sdd stage {esc(sdd.get('stage'))})" if sdd else "")),
         ("<b>Waiting on</b>", esc(st.get("waiting_on", "")) + since),
         ("<b>Next wake</b>", esc(st.get("next_wake", ""))),
@@ -429,8 +441,8 @@ def render(run_dir: str, now: datetime) -> str:
     counters = run.get("counters") or {}
     h.append("<h2>Metrics</h2>" + _table(["", ""], [
         ("Active time on the project", fmt_dur(active(t0, now))),
-        ("Skill working", fmt_dur(overlap(skill_all, t0, now))),
-        ("You engaged (reading, commenting, messaging)", fmt_dur(overlap(own_all, t0, now))),
+        ("You engaged (reading, commenting, messaging)", fmt_dur(you_s)),
+        ("Agent working while you were away", fmt_dur(agent_s)),
         ("Wall clock since request (reference only)", fmt_dur((now - t0).total_seconds())),
         ("Comments answered", str(sum(e["kind"] in ("comment", "answer", "requirement") for e in events))),
         ("Requirements added from comments", str(sum(e["kind"] == "requirement" for e in events))),
