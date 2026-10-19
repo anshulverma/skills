@@ -13,6 +13,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import matplotlib
 
@@ -52,8 +53,15 @@ def fmt_dur(sec):
     return f"{h}h {m:02d}m" if h else f"{m}m"
 
 
+TZ = ZoneInfo("America/Los_Angeles")   # display zone; render() sets it from pipeline.json owner_tz
+
+
+def local(t: datetime) -> datetime:
+    return t.astimezone(TZ)
+
+
 def hhmm(s):
-    return s[:16].replace("T", " ") if s else ""
+    return f"{local(parse_ts(s)):%Y-%m-%d %H:%M}" if s else ""
 
 
 def mask_credentials(text: str) -> tuple[str, list[str]]:
@@ -333,6 +341,9 @@ def _figure(figdir, name, alt, n, caption):
 def render(run_dir: str, now: datetime) -> str:
     run_dir = os.path.abspath(run_dir)
     run = read_json(os.path.join(run_dir, "pipeline.json"))
+    global TZ
+    TZ = ZoneInfo(run.get("owner_tz") or "America/Los_Angeles")
+    tzl = f"{local(now):%Z}"
     for key in ("docs", "tracker_status"):
         if key not in run:
             raise ValueError(f"pipeline.json is missing {key}; refusing to render a tracker without it")
@@ -364,7 +375,7 @@ def render(run_dir: str, now: datetime) -> str:
     since = f" (since {hhmm(st['since'])})" if st.get("since") else ""
     h = ['<p data-style="TITLE">' + esc(run.get("tracker_title", "Tracker")) + "</p>", STEER]
     h.append("<h2>Status</h2>" + _table(["", ""], [
-        ("<b>Last updated</b>", f"{now:%Y-%m-%d %H:%M} UTC (tick {esc(run.get('tick', 0))})"),
+        ("<b>Last updated</b>", f"{local(now):%Y-%m-%d %H:%M %Z} (tick {esc(run.get('tick', 0))})"),
         ("<b>Status</b>", esc(run.get("status", ""))),
         ("<b>Time spent</b>", f"{fmt_dur(tot_m * 60)} active: you {fmt_dur(you_m * 60)} + agent {fmt_dur(agent_m * 60)}"
                               + (f" − {fmt_dur(both_m * 60)} when both of you were working" if both_m > 0 else "")
@@ -397,10 +408,10 @@ def render(run_dir: str, now: datetime) -> str:
         rows = []
         for n, title, deps in tasks:
             t = times.get(n, {})
-            start = f"{t['task_start']:%m-%d %H:%M}" if "task_start" in t else ""
+            start = f"{local(t['task_start']):%m-%d %H:%M}" if "task_start" in t else ""
             dur = fmt_dur(overlap(skill_all, t["task_start"], t.get("task_done") or now)) if "task_start" in t else ""
             rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-", TASK_STATES[states[n]][3], start, dur))
-        h.append(_table(["ID", "Task", "Depends on", "State", "Started (UTC)", "Duration"], rows))
+        h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration"], rows))
 
     tests = {}
     for e in events:
@@ -446,7 +457,7 @@ def render(run_dir: str, now: datetime) -> str:
                    fmt_dur((t - last).total_seconds()) if last else "", fmt_dur(cum)))
         last = t
     h.append("<h2>Milestones</h2>" + _table(
-        ["Time (UTC)", "Phase", "Milestone", "Since previous", "Since first milestone in phase"], ms))
+        [f"Time ({tzl})", "Phase", "Milestone", "Since previous", "Since first milestone in phase"], ms))
 
     fu = []
     dec = os.path.join(run_dir, "decisions.md")
@@ -490,11 +501,11 @@ def render(run_dir: str, now: datetime) -> str:
         docs.append((_doc_link(d, k), esc(d.get("status", "").replace("_", " ")), hhmm(opened), hhmm(accepted), wait,
                      _qcount(run_dir, d)))
     h.append("<h2>Docs produced</h2>" + _table(
-        ["Doc", "Status", "Created (UTC)", "Accepted (UTC)", "Time to accept", "Questions answered"], docs))
+        ["Doc", "Status", f"Created ({tzl})", f"Accepted ({tzl})", "Time to accept", "Questions answered"], docs))
 
     acts = [(hhmm(e["ts"]), esc(e.get("verb", "")), esc(e["event"]), esc(e.get("status", "")))
             for e in events if e["kind"] == "action"]
-    h.append("<h2>Actions</h2>" + (_table(["Time (UTC)", "Verb", "Action", "Status"], acts) if acts else "<p>None yet.</p><p></p>"))
+    h.append("<h2>Actions</h2>" + (_table([f"Time ({tzl})", "Verb", "Action", "Status"], acts) if acts else "<p>None yet.</p><p></p>"))
 
     parked = [(f"T{n}", _doc_link(run["docs"].get(f"task-{n}", {}), f"task-{n}"),
                hhmm(next((e["ts"] for e in events if e["kind"] == "task_parked" and e.get("task") == n), "")))
@@ -514,7 +525,7 @@ def render(run_dir: str, now: datetime) -> str:
         log.append((hhmm(e["ts"]), esc((e.get("phase") or "").title()), esc(e["event"]),
                     fmt_dur((t - prev).total_seconds()) if prev else ""))
         prev = t
-    h.append("<h2>Event log</h2>" + _table(["Time (UTC)", "Phase", "Event", "Since previous"], log))
+    h.append("<h2>Event log</h2>" + _table([f"Time ({tzl})", "Phase", "Event", "Since previous"], log))
     return "\n".join(h) + "\n"
 
 
