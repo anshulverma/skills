@@ -43,7 +43,6 @@ STEER = ('<h2>How to steer this run</h2><table><tr><th>Comment (on the title)</t
          "<tr><td>Action</td><td>Action: pause / resume / abort / unblock / close</td></tr>"
          "<tr><td>Confirm</td><td>reply Confirm under a \u201cNeeds Confirm\u201d reply</td></tr>"
          "<tr><td>Diff ids</td><td>D123456789 (recorded for the Land phase)</td></tr>"
-         "<tr><td>Reopen</td><td>Reopen: on an accepted doc, to put it back in review</td></tr>"
          "</table><p></p>")
 
 

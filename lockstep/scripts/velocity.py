@@ -236,12 +236,11 @@ def publish() -> str:
         doc_id = read_json(path)["id"]
     else:
         doc_id = _json_in(_meta("google.docs", "create", f"--title={TITLE}", "--output=json"))["id"]
+        atomic_write_json(path, {"id": doc_id, "title": TITLE})  # recorded before the check, so retries reuse it
     perms = _json_in(_meta("google.docs.share", "list", f"--id={doc_id}", "--output=json"))
     private = isinstance(perms, list) and perms and all(isinstance(p, dict) and p.get("role") == "owner" for p in perms)
     if not private:  # fails closed on any shape it does not recognise
         raise PermissionError(f"velocity doc {doc_id} is not private; not writing to it")
-    if not os.path.exists(path):
-        atomic_write_json(path, {"id": doc_id, "title": TITLE})
     body = os.path.join(root(), "body.html")
     open(body, "w").write(render_body(os.path.join(root(), "fig")))
     _meta("google.docs", "apply", f"--id={doc_id}", f"--from=file://{body}", "--conflict-resolution=ours")

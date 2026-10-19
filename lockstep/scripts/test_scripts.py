@@ -345,7 +345,7 @@ def test_render_every_section():
               "Follow-ups and blockers", "Gates", "Metrics", "Docs produced", "Actions", "Parked tasks",
               "Diffs", "Original request (verbatim)", "Event log"):
         assert f"<h2>{h}</h2>" in html_, h
-    assert html_.count('src="file:///') == 3 and "Confirm" in html_ and "Reopen" in html_
+    assert html_.count('src="file:///') == 3 and "Confirm" in html_ and "Diff ids" in html_
     assert "relocate the demo scripts" in html_ and "Action: unblock" in html_
 
 
