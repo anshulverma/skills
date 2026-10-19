@@ -333,6 +333,8 @@ def render(run_dir: str, now: datetime) -> str:
     h.append("<h2>Status</h2>" + _table(["", ""], [
         ("<b>Last updated</b>", f"{now:%Y-%m-%d %H:%M} UTC (tick {esc(run.get('tick', 0))})"),
         ("<b>Status</b>", esc(run.get("status", ""))),
+        ("<b>Time spent</b>", f"{fmt_dur(active(t0, now))} active: you {fmt_dur(overlap(own_all, t0, now))}, "
+                              f"agent {fmt_dur(overlap(skill_all, t0, now))} (time you both spent counts once in the total)"),
         ("<b>Now</b>", esc(st.get("now", "")) + (f" (sdd stage {esc(sdd.get('stage'))})" if sdd else "")),
         ("<b>Waiting on</b>", esc(st.get("waiting_on", "")) + since),
         ("<b>Next wake</b>", esc(st.get("next_wake", ""))),
