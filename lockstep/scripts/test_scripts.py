@@ -545,6 +545,11 @@ def test_external_docs_linked_not_swept():
     assert "Experiment tracker" in docs_sec and "Experiment tracker" not in gates_sec
 
 
+
+def test_watched_external_docs_are_swept():
+    docs = {"a": {"kind": "spec"}, "x": {"kind": "external"}, "w": {"kind": "external", "watch": True}}
+    assert sweep.swept_keys(docs) == ["a", "w"]
+
 def test_skill_spans_tolerate_out_of_order_events():
     T = state.parse_ts
     ev = [{"ts": "2026-10-19T10:00:00Z", "kind": "milestone", "event": ""},
