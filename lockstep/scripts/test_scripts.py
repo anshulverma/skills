@@ -617,7 +617,7 @@ def test_completed_boxes_split_agent_and_owner_time():
     assert "agent 1h 45m / you 15m" in t1 and 'fillcolor="#2a78d6;0.875:#eb6834"' in t1   # 105 / (105 + 15)
     assert 'style="filled,striped"' in t1 and 'color="#2e9e5b"' in t1                      # border keeps the state colour
     t2 = next(line for line in dot.splitlines() if line.startswith("T2 ["))
-    assert t2 == 'T2 [label="T2\\nRunning task", fillcolor="#2a78d6", color="#2a78d6", fontcolor="white"];'
+    assert t2 == 'T2 [label="T2\\nRunning task", fillcolor="#cfe2f3", color="#2a78d6", fontcolor="#0b0b0b"];'
     assert 'label="agent working"' in dot and 'label="you engaged"' in dot
     ev = [{"ts": "2026-10-19T08:00:00Z", "kind": "comment", "phase": "PROPOSAL", "event": ""},
           {"ts": "2026-10-19T08:10:00Z", "kind": "comment", "phase": "PROPOSAL", "event": ""},
