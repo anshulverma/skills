@@ -153,8 +153,9 @@ The run has one implementation-questions doc: `kind: impl_questions`, qprefix `I
 
 - It collects auto-plan `UNRESOLVED` markers and minor questions that come up during EXECUTE, using the Question format above.
 - Work goes ahead on each recommendation.
-- Answered questions are marked in the doc automatically. Every refresh adds one `Answered (owner, <date>): <the decision in one sentence>` paragraph directly after each question whose number is in `docs.impl_questions.answered` and has no such line yet. Insert it as a new paragraph in the fetched ghtml so the question text and its comment anchor stay byte-identical. Never wait for the owner to ask for it.
-- Refresh this doc on the normal debounce (references/GATE.md) whenever `answered` gained a number since the last refresh.
+- Answered questions are marked in the doc immediately, in the same tick that handles the answer, right after the thread reply. Do not wait for the debounced refresh: the owner reads a missing mark as "not recognized". Add one `Answered (owner, <date>): <the decision in one sentence>` paragraph directly after each question whose number is in `docs.impl_questions.answered` and has no such line yet. Insert it as a new paragraph in the freshly fetched ghtml so the question text and its comment anchor stay byte-identical, apply, and re-fetch to confirm the line is there. Never wait for the owner to ask for it.
+- An answer can arrive as a reply anywhere in a question's thread, including under the skill's own reply ("ok", "(b)", "drop it"). Treat it as the answer to that thread's question number.
+- Other edits to this doc (new questions, rewrites) still follow the normal debounce (references/GATE.md).
 - An answer that arrives later becomes a fix-up task appended to the plan.
 - An unknown whose answer changes a task's output does not go here. It gets its own `task` doc instead (lifecycle in references/STATE.md).
 
