@@ -356,6 +356,16 @@ def _figure(figdir, name, alt, n, caption):
             f'<p style="text-align:center"><i>Figure {n}. {caption}</i></p><p></p>')
 
 
+
+def _diff_cell(d, states: dict) -> str:
+    """A task's diff: a linked D-number (with its polled state), or a note such as a local commit."""
+    if not d:
+        return "-"
+    if not re.fullmatch(r"D\d+", str(d)):
+        return esc(d)
+    st = states.get(d)
+    return f'<a href="https://www.internalfb.com/diff/{esc(d)}">{esc(d)}</a>' + (f" ({esc(st)})" if st else "")
+
 def render(run_dir: str, now: datetime) -> str:
     run_dir = os.path.abspath(run_dir)
     run = read_json(os.path.join(run_dir, "pipeline.json"))
@@ -417,6 +427,7 @@ def render(run_dir: str, now: datetime) -> str:
 
     plan_path = sdd.get("plan_path") and os.path.join(run_dir, sdd["plan_path"])
     tasks, states, times = [], {}, {}
+    task_diffs, run_diffs = run.get("task_diffs") or {}, run.get("diffs") or {}
     if plan_path and os.path.exists(plan_path):
         tasks = plan_tasks(plan_path)
         states, times = task_states(run_dir, sdd, tasks, events)
@@ -433,8 +444,9 @@ def render(run_dir: str, now: datetime) -> str:
             t = times.get(n, {})
             start = f"{local(t['task_start']):%m-%d %H:%M}" if "task_start" in t else ""
             dur = fmt_dur(overlap(skill_all, t["task_start"], t.get("task_done") or now)) if "task_start" in t else ""
-            rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-", TASK_STATES[states[n]][3], start, dur))
-        h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration"], rows))
+            rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-", TASK_STATES[states[n]][3], start, dur,
+                         _diff_cell(task_diffs.get(str(n)), run_diffs)))
+        h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration", "Diff"], rows))
 
     tests = {}
     for e in events:
@@ -535,11 +547,10 @@ def render(run_dir: str, now: datetime) -> str:
               for n, s in states.items() if s == "parked"]
     h.append("<h2>Parked tasks</h2>" + (_table(["Task", "Doc", "Since"], parked) if parked else "<p>None.</p><p></p>"))
 
-    diffs = []
-    for d, state_ in (run.get("diffs") or {}).items():
-        link = f'<a href="https://www.internalfb.com/diff/{esc(d)}">{esc(d)}</a>' if re.fullmatch(r"D\d+", str(d)) else esc(d)
-        diffs.append((link, esc(state_)))
-    h.append("<h2>Diffs</h2>" + (_table(["Diff", "State"], diffs) if diffs else "<p>None recorded.</p><p></p>"))
+    shown = set(task_diffs.values()) if tasks else set()
+    diffs = [(_diff_cell(d, {}), esc(state_)) for d, state_ in run_diffs.items() if d not in shown]
+    if diffs or not shown:
+        h.append("<h2>Diffs</h2>" + (_table(["Diff", "State"], diffs) if diffs else "<p>None recorded.</p><p></p>"))
 
     h.append("<h2>Original request (verbatim)</h2><p><i>" + esc(request) + "</i></p><p></p>")
     log, prev = [], None

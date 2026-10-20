@@ -370,6 +370,23 @@ def test_render_every_section():
     assert "relocate the demo scripts" in html_ and "Action: unblock" in html_
 
 
+def test_render_task_diff_column():
+    d = copy_run()
+    p = json.load(open(os.path.join(d, "pipeline.json")))
+    html0 = render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+    import re as _re
+    n = _re.search(r"<td>T(\w+)</td>", html0).group(1)
+    p["task_diffs"] = {n: "D123456789"}
+    p["diffs"] = {"D123456789": "Needs Review", "D987654321": None}
+    json.dump(p, open(os.path.join(d, "pipeline.json"), "w"))
+    h = render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+    assert "<th>Diff</th>" in h or ">Diff<" in h
+    assert 'diff/D123456789">D123456789</a> (Needs Review)' in h
+    # the task's diff moves into the table; only the unmapped one stays in the Diffs section
+    tail = h.split("<h2>Diffs</h2>", 1)[1].split("<h2>", 1)[0]
+    assert "D987654321" in tail and "D123456789" not in tail
+
+
 def test_render_fails_loudly():
     for missing in ("docs", "tracker_status", "request.md"):
         d = copy_run()

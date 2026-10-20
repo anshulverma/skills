@@ -57,7 +57,7 @@ The renderer masks a credential value in `request.md` as `[credential masked]`, 
 | Follow-ups and blockers | From `decisions.md` and `blocked_reasons` / `waiting_reasons`, each with the exact owner action that clears it |
 | Docs produced (R7) | Every doc: status, created, accepted, time to accept, questions answered n/m. Always rendered |
 | Actions (R3) | Every `action` event: time, verb, action, status |
-| Parked tasks, Diffs | Parked tasks with their task-N docs; `pipeline.json.diffs` with state |
+| Parked tasks, Diffs | Parked tasks with their task-N docs. Each plan task's diff shows in the Implementation plan table's Diff column, from `pipeline.json.task_diffs` (`{"<task n>": "D<n>" or a note such as "none (local commit <hash>)"}`), with the state from `pipeline.json.diffs`. The Diffs section lists only diffs not mapped to a task |
 | Original request (verbatim, R8) | `request.md`, HTML-escaped. It is exempt from the no-data-paths rule because the tracker is verified private. Credentials are never exempt |
 | Event log | Every event with its time and the delta from the previous one |
 
