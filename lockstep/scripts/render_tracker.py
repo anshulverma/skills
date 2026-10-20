@@ -27,11 +27,14 @@ PHASE_LABEL = {"PLAN": "Plan\\n(write + harden)", "BUILD": "Build\\n(implement)"
 BLUE, ORANGE, GREY, LIGHT = "#2a78d6", "#eb6834", "#52514e", "#efeeea"
 TASK_STATES = {  # state: (fill, border, font, legend)
     "pending": ("#efeeea", "#8a8984", "#52514e", "not started"),
-    "in_progress": ("#cfe2f3", "#2a78d6", "#0b0b0b", "in progress"),  # light fill: solid blue means agent time on completed boxes
-    "complete": ("#2e9e5b", "#2e9e5b", "white", "complete"),
+    "in_progress": ("#cfe2f3", "#2a78d6", "#0b0b0b", "in progress"),
+    "diff_open": ("#8e6fd8", "#8e6fd8", "white", "done, diff not landed"),
+    "complete": ("#2e9e5b", "#2e9e5b", "white", "done (landed, or no code diff)"),
     "parked": ("#eb6834", "#eb6834", "white", "parked on your answer"),
     "blocked": ("#c8312b", "#c8312b", "white", "blocked"),
 }
+LANDED = ("closed", "landed")
+BAR_W = 100   # points: width of the agent/owner time bar under a completed box's label
 CREDENTIAL = [  # mask only the value; KEY=value (incl. MY_TOKEN, client_secret, "token: Bearer x"), then bare bearer tokens
     re.compile(r"(?i)(?<![A-Za-z0-9])([A-Za-z0-9_]*(?:token|secret|password|passwd|api[_-]?key|access[_-]?key))"
                r"([ \t]*[:=][ \t]*(?:bearer[ \t]+)?)([^\s\[][^\s]*)"),
@@ -163,13 +166,28 @@ def _dot_esc(t: str) -> str:
     return str(t).replace("\\", "\\\\").replace('"', '\\"')
 
 
-def split_box(own, sk, spans):
-    """(label line, striped fillcolor) splitting the agent and owner active time inside spans; None if neither worked."""
+def bar_label(lines, own, sk, spans):
+    """HTML-like label: the text lines, a thin agent/owner bar sized by their active time inside spans, and
+    'agent Xm / you Ym'; None if neither worked."""
     a = sum(overlap(sk, s, t) for s, t in spans)
     o = sum(overlap(own, s, t) for s, t in spans)
     if a + o <= 0:
         return None
-    return f"agent {fmt_dur(a)} / you {fmt_dur(o)}", f"{BLUE};{a / (a + o):.3f}:{ORANGE}"
+    w = round(BAR_W * a / (a + o))
+    cells = "".join(f'<TD WIDTH="{x}" HEIGHT="5" FIXEDSIZE="TRUE" BGCOLOR="{c}"></TD>'
+                    for x, c in ((w, BLUE), (BAR_W - w, ORANGE)) if x)
+    text = "<BR/>".join(html.escape(line) for line in lines)
+    return (f'<<TABLE BORDER="0" CELLSPACING="0" CELLPADDING="1"><TR><TD>{text}</TD></TR>'
+            f'<TR><TD><TABLE BORDER="1" COLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" FIXEDSIZE="TRUE" WIDTH="{BAR_W + 2}" HEIGHT="7"><TR>{cells}</TR></TABLE></TD></TR>'
+            f'<TR><TD><FONT POINT-SIZE="9">agent {fmt_dur(a)} / you {fmt_dur(o)}</FONT></TD></TR></TABLE>>')
+
+
+def shown_states(states, task_diffs, diffs):
+    """A complete task with any D-number not yet landed or closed shows as diff_open."""
+    def open_diff(n):
+        ids = re.findall(r"D\d+", str(task_diffs.get(str(n)) or ""))
+        return any(str(diffs.get(i) or "").lower() not in LANDED for i in ids)
+    return {n: "diff_open" if s == "complete" and open_diff(n) else s for n, s in states.items()}
 
 
 def phase_spans(events, now):
@@ -183,7 +201,7 @@ def phase_spans(events, now):
 
 def flow_chart(run, out, events=(), now=None):
     """Phase flowchart: start/end states, an accept decision with a revise loop for each gated doc.
-    Completed phases are striped agent/owner by their active time."""
+    Completed phases carry a bar splitting their agent/owner active time."""
     own, sk, spans = (owner_spans(events), skill_spans(events, now), phase_spans(events, now)) if events else ([], [], {})
     current = run.get("phase", "PROPOSAL")
     gates = {k: v.get("status", "") for k, v in run.get("docs", {}).items() if isinstance(v, dict)}
@@ -212,11 +230,9 @@ def flow_chart(run, out, events=(), now=None):
         g = gates.get(p.lower())
         if g:
             label += f"\\n({g.replace('_', ' ')})"
-        split = done and split_box(own, sk, spans.get(p, []))
-        style = ""
-        if split:
-            label, fill, font, style = label + "\\n" + split[0], split[1], "white", ', style="filled,striped"'
-        lines.append(f'{p} [label="{label}", fillcolor="{fill}", color="{col}", fontcolor="{font}"{style}];')
+        bar = done and bar_label(label.split("\\n"), own, sk, spans.get(p, []))
+        label = bar or f'"{label}"'
+        lines.append(f'{p} [label={label}, fillcolor="{fill}", color="{col}", fontcolor="{font}"];')
     chain = ["start"] + PHASES
     for a, b in zip(chain, chain[1:]):
         if a in ("PROPOSAL", "SPEC"):
@@ -287,20 +303,19 @@ def task_chart(tasks, states, out, times=None, own=(), sk=()):
         deps = sorted(d for d in direct[n] if d in known)
         fill, col, font, _ = TASK_STATES[states[n]]
         short = title if len(title) <= 28 else title[:26] + "…"
-        short = short.replace("\\", "\\\\").replace('"', '\\"')
-        t, style = (times or {}).get(n, {}), ""
-        split = states[n] == "complete" and "task_done" in t and split_box(own, sk, [(t["task_start"], t["task_done"])])
-        if split:
-            short, fill, font, style = short + "\\n" + split[0], split[1], "white", ', style="filled,striped"'
-        lines.append(f'T{n} [label="T{n}\\n{short}", fillcolor="{fill}", color="{col}", fontcolor="{font}"{style}];')
+        t = (times or {}).get(n, {})
+        bar = states[n] in ("complete", "diff_open") and "task_done" in t and bar_label(
+            [f"T{n}", short], own, sk, [(t["task_start"], t["task_done"])])
+        label = bar or f'"T{n}\\n{_dot_esc(short)}"'
+        lines.append(f'T{n} [label={label}, fillcolor="{fill}", color="{col}", fontcolor="{font}"];')
         lines += [f"T{d} -> T{n};" for d in deps] or [f"start -> T{n};"]
         if n not in have_children:
             lines.append(f"T{n} -> end;")
     lines.append('subgraph cluster_legend { label="Task state"; fontname="Liberation Sans"; fontsize=11; color="#d6d5d0";')
     for k, (fill, col, font, legend) in TASK_STATES.items():
         lines.append(f'L_{k} [label="{legend}", fillcolor="{fill}", color="{col}", fontcolor="{font}", fontsize=10];')
-    lines.append(f'L_agent [label="agent working", fillcolor="{BLUE}", color="{BLUE}", fontcolor="white", fontsize=10];')
-    lines.append(f'L_you [label="you engaged", fillcolor="{ORANGE}", color="{ORANGE}", fontcolor="white", fontsize=10];')
+    lines.append(f'L_agent [label="bar: agent working", fillcolor="{BLUE}", color="{BLUE}", fontcolor="white", fontsize=10];')
+    lines.append(f'L_you [label="bar: you engaged", fillcolor="{ORANGE}", color="{ORANGE}", fontcolor="white", fontsize=10];')
     lines.append(" -> ".join([f"L_{k}" for k in TASK_STATES] + ["L_agent", "L_you"]) + ' [style=invis]; }')
     lines.append("}")
     dot = out.replace(".png", ".dot")
@@ -446,7 +461,7 @@ def render(run_dir: str, now: datetime) -> str:
     ]))
     h.append("<h2>Where the run is</h2>" + _figure(figdir, "flow.png", "run phases", 1,
              "This run's phases from request to done, left to right inside its milestone; the current phase is filled blue, "
-             "each completed phase is split blue (agent) and orange (you) by its active time, "
+             "each completed phase carries a bar split blue (agent) and orange (you) by its active time, "
              "each gated doc shows its state, and the dashed edges are the review loops. Later milestones of the larger plan stack below."))
     if run.get("roadmap"):
         h.append("<h2>Larger plan</h2><p>This run is milestone 1. The later milestones are bookkeeping, not yet planned in detail.</p>" + _table(
@@ -463,21 +478,23 @@ def render(run_dir: str, now: datetime) -> str:
     if plan_path and os.path.exists(plan_path):
         tasks = plan_tasks(plan_path)
         states, times = task_states(run_dir, sdd, tasks, events)
-        task_chart(tasks, states, os.path.join(figdir, "tasks.png"), times, own_all, skill_all)
+        shown_st = shown_states(states, task_diffs, run_diffs)
+        task_chart(tasks, shown_st, os.path.join(figdir, "tasks.png"), times, own_all, skill_all)
         goal = re.search(r"^\*\*Goal:\*\* (.+)$", open(plan_path).read(), re.M)
         done = sum(v == "complete" for v in states.values())
         h.append(f"<h2>Implementation plan</h2><p>Full plan: {_doc_link(run['docs'].get('plan', {}), sdd['plan_path'])}. "
                  f"sdd stage: {esc(sdd.get('stage', ''))}. Tasks complete: {done}/{len(tasks)}.</p>")
         if goal:
             h.append(f"<p><b>Goal:</b> {esc(goal.group(1))}</p>")
-        h.append(_figure(figdir, "tasks.png", "task flow", 3, "Plan tasks with their dependencies, coloured by state; each completed task is split blue (agent) "
-                         "and orange (you) by its active time, with the border in the state colour."))
+        h.append(_figure(figdir, "tasks.png", "task flow", 3, "Plan tasks with their dependencies, coloured by state (a done task stays purple until "
+                         "every diff it produced has landed); the bar under each done task splits its active time blue (agent) "
+                         "and orange (you)."))
         rows = []
         for n, title, deps in tasks:
             t = times.get(n, {})
             start = f"{local(t['task_start']):%m-%d %H:%M}" if "task_start" in t else ""
             dur = fmt_dur(overlap(skill_all, t["task_start"], t.get("task_done") or now)) if "task_start" in t else ""
-            rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-", TASK_STATES[states[n]][3], start, dur,
+            rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-", TASK_STATES[shown_st[n]][3], start, dur,
                          _diff_cell(task_diffs.get(str(n)), run_diffs)))
         h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration", "Diff"], rows))
 
