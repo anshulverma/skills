@@ -347,7 +347,7 @@ def time_split(events: list[dict], now: datetime) -> tuple[float, float, float]:
 def timeline_chart(events, now, out):
     """Active time only: idle stretches are cut out and marked with how long nothing was happening."""
     pieces = active_pieces(events, now)
-    fig, ax = plt.subplots(figsize=(10, 3.6), facecolor="#fcfcfb")
+    fig, ax = plt.subplots(figsize=(10, 4.6), facecolor="#fcfcfb")
     ax.set_facecolor("#fcfcfb")
     by_time = sorted(events, key=lambda e: parse_ts(e["ts"]))   # backfilled events sit out of file order
     phase_at = lambda t: next((e.get("phase") for e in reversed(by_time)
@@ -371,8 +371,8 @@ def timeline_chart(events, now, out):
             colour, label = (PURPLE, f"waited {gap}: " + "; ".join(on)) if on else (GREY, f"idle {gap}")
             ax.axvline(x, color=colour, linestyle="--", linewidth=2)
             if last_label is None or x - last_label >= room:
-                ax.text(x, len(rows) - 0.5, textwrap.shorten(label, 48, placeholder="..."), fontsize=7, color=colour,
-                        rotation=90, ha="right", va="bottom")
+                ax.text(x, -0.55, textwrap.shorten(label, 30, placeholder="..."), fontsize=6.5, color=colour,
+                        rotation=90, ha="right", va="bottom")  # in the band above the top row, clear of the bars
                 last_label = x
         w, r = (b - a).total_seconds() / 60, rows.index(phase_at(a))
         if who in ("you", "both"):   # upper half: you engaged
@@ -382,7 +382,7 @@ def timeline_chart(events, now, out):
         x, prev = x + w, b
     ax.set_yticks(range(len(rows)))
     ax.set_yticklabels([r.title() for r in rows])
-    ax.invert_yaxis()
+    ax.set_ylim(len(rows) - 0.5, -3.0)  # inverted, with headroom above the top row for the gap labels
     ax.set_xlabel("active minutes (time when neither of you was working is cut out)")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
