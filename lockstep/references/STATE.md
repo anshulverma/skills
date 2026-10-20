@@ -102,7 +102,7 @@ Every transition also rewrites `tracker_status`. Append events with `python3 $S/
 |---|---|
 | `id` | The Google Doc id, recorded right after `create` |
 | `title` | The exact title, byte-identical after publish. `sweep.py` errors if it is empty |
-| `kind` | `proposal`, `spec`, `task`, `plan`, `explainer`, `impl_questions`, or `external` (a doc the owner keeps, such as an experiment tracker: linked in the tracker's Docs table, never swept or written) |
+| `kind` | `proposal`, `spec`, `task`, `plan`, `explainer`, `impl_questions`, or `external` (a doc the owner keeps, such as an experiment tracker: linked in the tracker's Docs table; never swept or written by lockstep; the run's own experiment code may write it after its own privacy check) |
 | `qprefix` | Question prefix (table below). `sweep.py` errors if it is empty |
 | `explainer` | `auto` (default), `on` or `off`; `Action: add explainer` / `no explainer` set `on` / `off`, and `velocity.py doc`'s verdict applies only while `auto` |
 | `status` | `drafting`, `awaiting_acceptance`, `confirm_pending`, `accepted`, `superseded` or `reference` |

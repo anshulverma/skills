@@ -129,6 +129,25 @@ python3 $S/state.py <run> event diff_published "D<n> published" diff=D<n>
 
 Leave LAND for DONE when `diffs` is non-empty and every entry is landed or abandoned. Under either `repo_kind`, also leave when the owner confirms `Action: close` (references/ACTIONS.md), even with diffs still open.
 
+**Experiment sweep**: when `<run>/sweep/sweep.py` exists, each LAND tick, after the diff poll, runs once each, in this order:
+
+```bash
+~/.cache/humanize-venv/bin/python <run>/sweep/sweep.py tick --c3-worktree=/data/users/anshulverma/fbsource-shopev-c
+~/.cache/humanize-venv/bin/python <run>/sweep/render.py
+```
+
+`sweep.py tick` polls MAST, updates `<run>/sweep/state.json`, plans and launches. `render.py` writes the run's experiment tracker (`docs.experiment_tracker`, kind `external`) only after its own privacy check. Both exit 0 without writing while `paused` is set, and neither touches crons. For a nonzero exit other than `render.py` exit 3 (which logs its own privacy block), append `python3 $S/state.py <run> event sweep_error "<script> exit <code>"` and go on with the tick. While the file exists, both leave rules above also need `jq -r .sweep.stopped <run>/sweep/state.json` to be non-`null`. A confirmed `Action: close` sets it, then leaves:
+
+```bash
+~/.cache/humanize-venv/bin/python - <run> <<'EOF'
+import sys
+sys.path.insert(0, sys.argv[1] + "/sweep")
+import ops
+with ops.locked_state() as s:
+    s["sweep"]["stopped"] = s["sweep"]["stopped"] or "owner: Action: close"
+EOF
+```
+
 **DONE**: append `done`, do the final render and apply. After a confirmed abort, append `abort` and render so the tracker shows the run as aborted.
 
 ## Security
