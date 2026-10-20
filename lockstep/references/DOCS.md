@@ -153,6 +153,8 @@ The run has one implementation-questions doc: `kind: impl_questions`, qprefix `I
 
 - It collects auto-plan `UNRESOLVED` markers and minor questions that come up during EXECUTE, using the Question format above.
 - Work goes ahead on each recommendation.
+- Answered questions are marked in the doc automatically. Every refresh adds one `Answered (owner, <date>): <the decision in one sentence>` paragraph directly after each question whose number is in `docs.impl_questions.answered` and has no such line yet. Insert it as a new paragraph in the fetched ghtml so the question text and its comment anchor stay byte-identical. Never wait for the owner to ask for it.
+- Refresh this doc on the normal debounce (references/GATE.md) whenever `answered` gained a number since the last refresh.
 - An answer that arrives later becomes a fix-up task appended to the plan.
 - An unknown whose answer changes a task's output does not go here. It gets its own `task` doc instead (lifecycle in references/STATE.md).
 
