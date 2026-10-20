@@ -385,6 +385,8 @@ def test_render_task_diff_column():
     # the task's diff moves into the table; only the unmapped one stays in the Diffs section
     tail = h.split("<h2>Diffs</h2>", 1)[1].split("<h2>", 1)[0]
     assert "D987654321" in tail and "D123456789" not in tail
+    assert render_tracker._diff_cell("D1, D2", {"D2": "Draft"}) == ('<a href="https://www.internalfb.com/diff/D1">D1</a>, '
+                                                               '<a href="https://www.internalfb.com/diff/D2">D2</a> (Draft)')
 
 
 def test_render_fails_loudly():

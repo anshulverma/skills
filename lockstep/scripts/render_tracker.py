@@ -361,10 +361,11 @@ def _diff_cell(d, states: dict) -> str:
     """A task's diff: a linked D-number (with its polled state), or a note such as a local commit."""
     if not d:
         return "-"
-    if not re.fullmatch(r"D\d+", str(d)):
+    ids = re.split(r",\s*", str(d))
+    if not all(re.fullmatch(r"D\d+", i) for i in ids):
         return esc(d)
-    st = states.get(d)
-    return f'<a href="https://www.internalfb.com/diff/{esc(d)}">{esc(d)}</a>' + (f" ({esc(st)})" if st else "")
+    return ", ".join(f'<a href="https://www.internalfb.com/diff/{esc(i)}">{esc(i)}</a>'
+                     + (f" ({esc(states[i])})" if states.get(i) else "") for i in ids)
 
 def render(run_dir: str, now: datetime) -> str:
     run_dir = os.path.abspath(run_dir)
