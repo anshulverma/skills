@@ -10,6 +10,7 @@ import html
 import json
 import os
 import re
+import textwrap
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -25,6 +26,7 @@ from state import now_utc, parse_ts, read_events, read_json  # noqa: E402,F401
 PHASES = ["INIT", "RESEARCH", "PROPOSAL", "SPEC", "PLAN", "BUILD", "LAND", "DONE"]
 PHASE_LABEL = {"PLAN": "Plan\\n(write + harden)", "BUILD": "Build\\n(implement)", "LAND": "Land\\n(optional review, merge)"}
 BLUE, ORANGE, GREY, LIGHT = "#2a78d6", "#eb6834", "#52514e", "#efeeea"
+PURPLE = "#7b3fbf"
 TASK_STATES = {  # state: (fill, border, font, legend)
     "pending": ("#efeeea", "#8a8984", "#52514e", "not started"),
     "in_progress": ("#cfe2f3", "#2a78d6", "#0b0b0b", "in progress"),
@@ -130,6 +132,17 @@ def skill_spans(events: list[dict], now: datetime) -> list[tuple[datetime, datet
             spans.append((s, t))
     spans += [(s, now) for s in open_units.values()]
     return _merge(spans)
+
+
+def wait_spans(events: list[dict], now: datetime) -> list[tuple[datetime, datetime, str]]:
+    """What the run waited on (a MAST job, an owner answer): wait_start to wait_done with the same text, or to now."""
+    out, open_w = [], {}
+    for e in sorted(events, key=lambda e: parse_ts(e["ts"])):
+        if e["kind"] == "wait_start":
+            open_w.setdefault(e["event"], parse_ts(e["ts"]))
+        elif e["kind"] == "wait_done" and e["event"] in open_w:
+            out.append((open_w.pop(e["event"]), parse_ts(e["ts"]), e["event"]))
+    return out + [(s, now, t) for t, s in open_w.items()]
 
 
 def overlap(spans, a: datetime, b: datetime) -> float:
@@ -334,7 +347,7 @@ def time_split(events: list[dict], now: datetime) -> tuple[float, float, float]:
 def timeline_chart(events, now, out):
     """Active time only: idle stretches are cut out and marked with how long nothing was happening."""
     pieces = active_pieces(events, now)
-    fig, ax = plt.subplots(figsize=(10, 2.8), facecolor="#fcfcfb")
+    fig, ax = plt.subplots(figsize=(10, 3.6), facecolor="#fcfcfb")
     ax.set_facecolor("#fcfcfb")
     by_time = sorted(events, key=lambda e: parse_ts(e["ts"]))   # backfilled events sit out of file order
     phase_at = lambda t: next((e.get("phase") for e in reversed(by_time)
@@ -348,11 +361,19 @@ def timeline_chart(events, now, out):
             a = c
         split.append((a, b, who))
     rows = [p for p in PHASES if any(phase_at(a) == p for a, _, _ in split)] or ["INIT"]
-    x, prev = 0.0, None
+    waits = wait_spans(events, now)
+    room = sum((b - a).total_seconds() for a, b, _ in split) / 60 * 0.03  # labels closer than this would overlap
+    x, prev, last_label = 0.0, None, None
     for a, b, who in split:
         if prev is not None and (a - prev).total_seconds() >= 15 * 60:
-            ax.axvline(x, color=GREY, linestyle=":", linewidth=1)
-            ax.text(x, len(rows) - 0.45, f"idle {fmt_dur((a - prev).total_seconds())}", fontsize=7, color=GREY, ha="center")
+            gap = fmt_dur((a - prev).total_seconds())
+            on = list(dict.fromkeys(t for s, e, t in waits if s < a and e > prev))  # waits overlapping the cut gap
+            colour, label = (PURPLE, f"waited {gap}: " + "; ".join(on)) if on else (GREY, f"idle {gap}")
+            ax.axvline(x, color=colour, linestyle="--", linewidth=2)
+            if last_label is None or x - last_label >= room:
+                ax.text(x, len(rows) - 0.5, textwrap.shorten(label, 48, placeholder="..."), fontsize=7, color=colour,
+                        rotation=90, ha="right", va="bottom")
+                last_label = x
         w, r = (b - a).total_seconds() / 60, rows.index(phase_at(a))
         if who in ("you", "both"):   # upper half: you engaged
             ax.barh(r - 0.13, w, left=x, height=0.26, color=ORANGE, edgecolor="#fcfcfb", linewidth=0.5)
@@ -367,8 +388,11 @@ def timeline_chart(events, now, out):
         ax.spines[side].set_visible(False)
     ax.grid(axis="x", color="#e5e4e0")
     from matplotlib.patches import Patch
-    ax.legend(handles=[Patch(color=ORANGE, label="you engaged (reading, commenting)"), Patch(color=BLUE, label="agent working")],
-              loc="lower center", bbox_to_anchor=(0.5, 1.08), ncol=2, frameon=False, fontsize=9)
+    from matplotlib.lines import Line2D
+    ax.legend(handles=[Patch(color=ORANGE, label="you engaged (reading, commenting)"), Patch(color=BLUE, label="agent working"),
+                       Line2D([], [], color=GREY, linestyle="--", linewidth=2, label="break (nothing running)"),
+                       Line2D([], [], color=PURPLE, linestyle="--", linewidth=2, label="waiting on something")],
+              loc="lower center", bbox_to_anchor=(0.5, 1.08), ncol=4, frameon=False, fontsize=8)
     plt.tight_layout()
     plt.savefig(out, dpi=150, facecolor="#fcfcfb")
     plt.close(fig)

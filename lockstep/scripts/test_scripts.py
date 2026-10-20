@@ -855,6 +855,17 @@ esac
 
 
 
+def test_wait_spans_pair_and_stay_open():
+    T = state.parse_ts
+    ev = [{"ts": "2026-10-20T10:00:00Z", "kind": "wait_start", "event": "MAST: gate 3 stage 2"},
+          {"ts": "2026-10-20T11:00:00Z", "kind": "wait_done", "event": "MAST: gate 3 stage 2"},
+          {"ts": "2026-10-20T11:30:00Z", "kind": "wait_start", "event": "owner: I26"}]
+    now = T("2026-10-20T12:00:00Z")
+    assert render_tracker.wait_spans(ev, now) == [
+        (T("2026-10-20T10:00:00Z"), T("2026-10-20T11:00:00Z"), "MAST: gate 3 stage 2"),
+        (T("2026-10-20T11:30:00Z"), now, "owner: I26")]
+
+
 def main() -> None:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:
