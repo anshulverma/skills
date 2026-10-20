@@ -27,7 +27,7 @@ PHASE_LABEL = {"PLAN": "Plan\\n(write + harden)", "BUILD": "Build\\n(implement)"
 BLUE, ORANGE, GREY, LIGHT = "#2a78d6", "#eb6834", "#52514e", "#efeeea"
 TASK_STATES = {  # state: (fill, border, font, legend)
     "pending": ("#efeeea", "#8a8984", "#52514e", "not started"),
-    "in_progress": ("#2a78d6", "#2a78d6", "white", "in progress"),
+    "in_progress": ("#cfe2f3", "#2a78d6", "#0b0b0b", "in progress"),  # light fill: solid blue means agent time on completed boxes
     "complete": ("#2e9e5b", "#2e9e5b", "white", "complete"),
     "parked": ("#eb6834", "#eb6834", "white", "parked on your answer"),
     "blocked": ("#c8312b", "#c8312b", "white", "blocked"),
