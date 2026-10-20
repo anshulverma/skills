@@ -601,6 +601,34 @@ def test_agent_time_counts_while_owner_away_but_not_while_waiting():
     assert render_tracker.skill_spans(ev, now)[-1] == (T("2026-10-19T09:55:00Z"), now)   # a running unit counts until now
 
 
+
+def test_completed_boxes_split_agent_and_owner_time():
+    T = state.parse_ts
+    d = tempfile.mkdtemp()
+    tasks = [(1, "Done task", []), (2, "Running task", [1])]
+    states = {1: "complete", 2: "in_progress"}
+    times = {1: {"task_start": T("2026-10-19T08:00:00Z"), "task_done": T("2026-10-19T10:00:00Z")},
+             2: {"task_start": T("2026-10-19T10:00:00Z"), "last_start": T("2026-10-19T10:00:00Z")}}
+    own = [(T("2026-10-19T09:00:00Z"), T("2026-10-19T09:15:00Z")), (T("2026-10-19T10:30:00Z"), T("2026-10-19T10:40:00Z"))]
+    sk = [(T("2026-10-19T08:00:00Z"), T("2026-10-19T09:45:00Z")), (T("2026-10-19T10:00:00Z"), T("2026-10-19T11:00:00Z"))]
+    render_tracker.task_chart(tasks, states, os.path.join(d, "tasks.png"), times, own, sk)
+    dot = open(os.path.join(d, "tasks.dot")).read()
+    t1 = next(line for line in dot.splitlines() if line.startswith("T1 ["))
+    assert "agent 1h 45m / you 15m" in t1 and 'fillcolor="#2a78d6;0.875:#eb6834"' in t1   # 105 / (105 + 15)
+    assert 'style="filled,striped"' in t1 and 'color="#2e9e5b"' in t1                      # border keeps the state colour
+    t2 = next(line for line in dot.splitlines() if line.startswith("T2 ["))
+    assert t2 == 'T2 [label="T2\\nRunning task", fillcolor="#2a78d6", color="#2a78d6", fontcolor="white"];'
+    assert 'label="agent working"' in dot and 'label="you engaged"' in dot
+    ev = [{"ts": "2026-10-19T08:00:00Z", "kind": "comment", "phase": "PROPOSAL", "event": ""},
+          {"ts": "2026-10-19T08:10:00Z", "kind": "comment", "phase": "PROPOSAL", "event": ""},
+          {"ts": "2026-10-19T08:30:00Z", "kind": "milestone", "phase": "SPEC", "event": ""}]
+    render_tracker.flow_chart({"phase": "SPEC"}, os.path.join(d, "flow.png"), ev, T("2026-10-19T09:00:00Z"))
+    flow = open(os.path.join(d, "flow.dot")).read()
+    prop = next(line for line in flow.splitlines() if line.startswith("PROPOSAL ["))
+    assert "agent 30m / you 5m" in prop and "#2a78d6;0.857:#eb6834" in prop   # phase 08:00-08:30; owner 08:05-08:10 counts, 07:55 lead-in falls before
+    spec = next(line for line in flow.splitlines() if line.startswith("SPEC ["))
+    assert "striped" not in spec and "agent" not in spec
+
 # ---------- velocity.py ----------
 
 def test_score_and_threshold():

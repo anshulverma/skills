@@ -163,8 +163,28 @@ def _dot_esc(t: str) -> str:
     return str(t).replace("\\", "\\\\").replace('"', '\\"')
 
 
-def flow_chart(run, out):
-    """Phase flowchart: start/end states, an accept decision with a revise loop for each gated doc."""
+def split_box(own, sk, spans):
+    """(label line, striped fillcolor) splitting the agent and owner active time inside spans; None if neither worked."""
+    a = sum(overlap(sk, s, t) for s, t in spans)
+    o = sum(overlap(own, s, t) for s, t in spans)
+    if a + o <= 0:
+        return None
+    return f"agent {fmt_dur(a)} / you {fmt_dur(o)}", f"{BLUE};{a / (a + o):.3f}:{ORANGE}"
+
+
+def phase_spans(events, now):
+    """{phase: [(start, end)]}: each instant belongs to the phase of the latest event at or before it, as in the Timeline."""
+    ev = sorted((e for e in events if e.get("phase") in PHASES), key=lambda e: parse_ts(e["ts"]))
+    out = {}
+    for e, nxt in zip(ev, ev[1:] + [None]):
+        out.setdefault(e["phase"], []).append((parse_ts(e["ts"]), parse_ts(nxt["ts"]) if nxt else now))
+    return out
+
+
+def flow_chart(run, out, events=(), now=None):
+    """Phase flowchart: start/end states, an accept decision with a revise loop for each gated doc.
+    Completed phases are striped agent/owner by their active time."""
+    own, sk, spans = (owner_spans(events), skill_spans(events, now), phase_spans(events, now)) if events else ([], [], {})
     current = run.get("phase", "PROPOSAL")
     gates = {k: v.get("status", "") for k, v in run.get("docs", {}).items() if isinstance(v, dict)}
     roadmap = run.get("roadmap") or []
@@ -192,7 +212,11 @@ def flow_chart(run, out):
         g = gates.get(p.lower())
         if g:
             label += f"\\n({g.replace('_', ' ')})"
-        lines.append(f'{p} [label="{label}", fillcolor="{fill}", color="{col}", fontcolor="{font}"];')
+        split = done and split_box(own, sk, spans.get(p, []))
+        style = ""
+        if split:
+            label, fill, font, style = label + "\\n" + split[0], split[1], "white", ', style="filled,striped"'
+        lines.append(f'{p} [label="{label}", fillcolor="{fill}", color="{col}", fontcolor="{font}"{style}];')
     chain = ["start"] + PHASES
     for a, b in zip(chain, chain[1:]):
         if a in ("PROPOSAL", "SPEC"):
@@ -242,7 +266,7 @@ def task_states(run_dir, sdd, tasks, events):
     return states, times
 
 
-def task_chart(tasks, states, out):
+def task_chart(tasks, states, out, times=None, own=(), sk=()):
     lines = ['digraph T { graph [rankdir=LR, bgcolor="#fcfcfb", pad=0.3, nodesep=0.25, ranksep=0.45];',
              'node [shape=box, style="rounded,filled", fontname="Liberation Sans", fontsize=12, penwidth=2];',
              'edge [color="#8a8984", penwidth=1.5];',
@@ -264,14 +288,20 @@ def task_chart(tasks, states, out):
         fill, col, font, _ = TASK_STATES[states[n]]
         short = title if len(title) <= 28 else title[:26] + "…"
         short = short.replace("\\", "\\\\").replace('"', '\\"')
-        lines.append(f'T{n} [label="T{n}\\n{short}", fillcolor="{fill}", color="{col}", fontcolor="{font}"];')
+        t, style = (times or {}).get(n, {}), ""
+        split = states[n] == "complete" and "task_done" in t and split_box(own, sk, [(t["task_start"], t["task_done"])])
+        if split:
+            short, fill, font, style = short + "\\n" + split[0], split[1], "white", ', style="filled,striped"'
+        lines.append(f'T{n} [label="T{n}\\n{short}", fillcolor="{fill}", color="{col}", fontcolor="{font}"{style}];')
         lines += [f"T{d} -> T{n};" for d in deps] or [f"start -> T{n};"]
         if n not in have_children:
             lines.append(f"T{n} -> end;")
     lines.append('subgraph cluster_legend { label="Task state"; fontname="Liberation Sans"; fontsize=11; color="#d6d5d0";')
     for k, (fill, col, font, legend) in TASK_STATES.items():
         lines.append(f'L_{k} [label="{legend}", fillcolor="{fill}", color="{col}", fontcolor="{font}", fontsize=10];')
-    lines.append(" -> ".join(f"L_{k}" for k in TASK_STATES) + ' [style=invis]; }')
+    lines.append(f'L_agent [label="agent working", fillcolor="{BLUE}", color="{BLUE}", fontcolor="white", fontsize=10];')
+    lines.append(f'L_you [label="you engaged", fillcolor="{ORANGE}", color="{ORANGE}", fontcolor="white", fontsize=10];')
+    lines.append(" -> ".join([f"L_{k}" for k in TASK_STATES] + ["L_agent", "L_you"]) + ' [style=invis]; }')
     lines.append("}")
     dot = out.replace(".png", ".dot")
     open(dot, "w").write("\n".join(lines))
@@ -391,7 +421,7 @@ def render(run_dir: str, now: datetime) -> str:
             events.append(append_event(run_dir, "blocked", note, now=now))
     figdir = os.path.join(run_dir, "tracker")
     os.makedirs(figdir, exist_ok=True)
-    flow_chart(run, os.path.join(figdir, "flow.png"))
+    flow_chart(run, os.path.join(figdir, "flow.png"), events, now)
     if events:
         timeline_chart(events, now, os.path.join(figdir, "timeline.png"))
     own_all, skill_all = owner_spans(events), skill_spans(events, now)
@@ -416,6 +446,7 @@ def render(run_dir: str, now: datetime) -> str:
     ]))
     h.append("<h2>Where the run is</h2>" + _figure(figdir, "flow.png", "run phases", 1,
              "This run's phases from request to done, left to right inside its milestone; the current phase is filled blue, "
+             "each completed phase is split blue (agent) and orange (you) by its active time, "
              "each gated doc shows its state, and the dashed edges are the review loops. Later milestones of the larger plan stack below."))
     if run.get("roadmap"):
         h.append("<h2>Larger plan</h2><p>This run is milestone 1. The later milestones are bookkeeping, not yet planned in detail.</p>" + _table(
@@ -432,14 +463,15 @@ def render(run_dir: str, now: datetime) -> str:
     if plan_path and os.path.exists(plan_path):
         tasks = plan_tasks(plan_path)
         states, times = task_states(run_dir, sdd, tasks, events)
-        task_chart(tasks, states, os.path.join(figdir, "tasks.png"))
+        task_chart(tasks, states, os.path.join(figdir, "tasks.png"), times, own_all, skill_all)
         goal = re.search(r"^\*\*Goal:\*\* (.+)$", open(plan_path).read(), re.M)
         done = sum(v == "complete" for v in states.values())
         h.append(f"<h2>Implementation plan</h2><p>Full plan: {_doc_link(run['docs'].get('plan', {}), sdd['plan_path'])}. "
                  f"sdd stage: {esc(sdd.get('stage', ''))}. Tasks complete: {done}/{len(tasks)}.</p>")
         if goal:
             h.append(f"<p><b>Goal:</b> {esc(goal.group(1))}</p>")
-        h.append(_figure(figdir, "tasks.png", "task flow", 3, "Plan tasks with their dependencies, coloured by state."))
+        h.append(_figure(figdir, "tasks.png", "task flow", 3, "Plan tasks with their dependencies, coloured by state; each completed task is split blue (agent) "
+                         "and orange (you) by its active time, with the border in the state colour."))
         rows = []
         for n, title, deps in tasks:
             t = times.get(n, {})
