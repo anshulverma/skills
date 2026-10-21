@@ -496,6 +496,10 @@ def render(run_dir: str, now: datetime) -> str:
         h.append("<h2>Timeline</h2>" + _figure(figdir, "timeline.png", "timeline", 2,
                  "Active time only, by phase: you engaged (upper bar) and the agent working (lower bar), counted separately. Stretches when neither of you was working (you away and the agent idle or waiting on you) are cut out; dotted lines mark the breaks."))
 
+    tests = {}
+    for e in events:
+        if e["kind"] == "test_run":
+            tests[e.get("task")] = tests.get(e.get("task"), 0) + 1
     plan_path = sdd.get("plan_path") and os.path.join(run_dir, sdd["plan_path"])
     tasks, states, times = [], {}, {}
     task_diffs, run_diffs = run.get("task_diffs") or {}, run.get("diffs") or {}
@@ -519,13 +523,9 @@ def render(run_dir: str, now: datetime) -> str:
             start = f"{local(t['task_start']):%m-%d %H:%M}" if "task_start" in t else ""
             dur = fmt_dur(overlap(skill_all, t["task_start"], t.get("task_done") or now)) if "task_start" in t else ""
             rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-", TASK_STATES[shown_st[n]][3], start, dur,
-                         _diff_cell(task_diffs.get(str(n)), run_diffs)))
-        h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration", "Diff"], rows))
+                         str(tests.get(n, 0)), _diff_cell(task_diffs.get(str(n)), run_diffs)))
+        h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration", "Test runs", "Diff"], rows))
 
-    tests = {}
-    for e in events:
-        if e["kind"] == "test_run":
-            tests[e.get("task")] = tests.get(e.get("task"), 0) + 1
     diff_ev = {}
     for e in events:
         if e["kind"].startswith("diff_") and e.get("diff"):
@@ -534,10 +534,6 @@ def render(run_dir: str, now: datetime) -> str:
     h.append("<h2>Build to closure</h2><p>Request to closure: "
              f"{fmt_dur(active(t0, end or now))} active{'' if end else ' so far'} "
              f"({fmt_dur(((end or now) - t0).total_seconds())} wall clock). Test runs: {sum(tests.values())}.</p>")
-    closure = [(f"T{n}", fmt_dur(overlap(skill_all, t["task_start"], t["task_done"])) if "task_done" in t else "running",
-                str(tests.get(n, 0))) for n, t in sorted(times.items()) if "task_start" in t]
-    if closure:
-        h.append(_table(["Task", "Implementation time", "Test runs"], closure))
     if diff_ev:
         h.append(_table(["Diff", "Created", "Published", "Reviewed", "Landed"],
                         [(esc(d), v.get("created", ""), v.get("published", ""), v.get("reviewed", ""), v.get("landed", ""))
