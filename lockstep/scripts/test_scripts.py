@@ -364,7 +364,7 @@ def test_render_every_section():
     html_ = render_tracker.render(copy_run(), state.parse_ts("2026-10-19T07:00:00Z"))
     for h in ("How to steer this run", "Status", "Implementation plan", "Build to closure", "Milestones",
               "Follow-ups and blockers", "Gates", "Metrics", "Docs produced", "Actions", "Parked tasks",
-              "Diffs", "Original request (verbatim)", "Event log"):
+              "Original request (verbatim)", "Event log"):
         assert f"<h2>{h}</h2>" in html_, h
     assert html_.count('src="file:///') == 3 and "Confirm" in html_ and "Diff ids" in html_
     assert "relocate the demo scripts" in html_ and "Action: unblock" in html_
@@ -382,9 +382,7 @@ def test_render_task_diff_column():
     h = render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
     assert "<th>Diff</th>" in h or ">Diff<" in h
     assert 'diff/D123456789">D123456789</a> (Needs Review)' in h
-    # the task's diff moves into the table; only the unmapped one stays in the Diffs section
-    tail = h.split("<h2>Diffs</h2>", 1)[1].split("<h2>", 1)[0]
-    assert "D987654321" in tail and "D123456789" not in tail
+    assert "<h2>Diffs</h2>" not in h  # owner: diffs are linked from the tasks already
     assert render_tracker._diff_cell("D1, D2", {"D2": "Draft"}) == ('<a href="https://www.internalfb.com/diff/D1">D1</a>, '
                                                                '<a href="https://www.internalfb.com/diff/D2">D2</a> (Draft)')
 
@@ -875,3 +873,11 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def test_event_log_to_separate_file():
+    d = copy_run()
+    out, ev = os.path.join(d, "o.html"), os.path.join(d, "ev.html")
+    r = subprocess.run([sys.executable, os.path.join(HERE, "render_tracker.py"), d, out, ev], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "<h2>Event log</h2>" not in open(out).read() and open(ev).read().startswith("<h2>Event log</h2>")

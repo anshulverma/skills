@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Render the live tracker dashboard from run state.
 
-Usage: render_tracker.py RUN_DIR OUT.html
+Usage: render_tracker.py RUN_DIR OUT.html [EVENTS.html]
 Reads RUN_DIR/pipeline.json, RUN_DIR/run.json (sdd state, PLAN/BUILD/LAND), RUN_DIR/events.jsonl and RUN_DIR/request.md;
-writes figures to RUN_DIR/tracker/ and a ghtml body to OUT.html. Images are absolute file:// paths, so deliver with
+writes figures to RUN_DIR/tracker/ and a ghtml body to OUT.html; with EVENTS.html the event log goes there
+(for its own doc tab) instead of OUT.html. Images are absolute file:// paths, so deliver with
 `meta google.docs apply` (create cannot stage local images).
 """
 import html
@@ -436,7 +437,8 @@ def _diff_cell(d, states: dict) -> str:
     return ", ".join(f'<a href="https://www.internalfb.com/diff/{esc(i)}">{esc(i)}</a>'
                      + (f" ({esc(states[i])})" if states.get(i) else "") for i in ids)
 
-def render(run_dir: str, now: datetime) -> str:
+def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> str:
+    """Body html; when `events_out` is a list, the Event log section is appended to it instead of the body."""
     run_dir = os.path.abspath(run_dir)
     run = read_json(os.path.join(run_dir, "pipeline.json"))
     global TZ
@@ -617,11 +619,6 @@ def render(run_dir: str, now: datetime) -> str:
               for n, s in states.items() if s == "parked"]
     h.append("<h2>Parked tasks</h2>" + (_table(["Task", "Doc", "Since"], parked) if parked else "<p>None.</p><p></p>"))
 
-    shown = set(task_diffs.values()) if tasks else set()
-    diffs = [(_diff_cell(d, {}), esc(state_)) for d, state_ in run_diffs.items() if d not in shown]
-    if diffs or not shown:
-        h.append("<h2>Diffs</h2>" + (_table(["Diff", "State"], diffs) if diffs else "<p>None recorded.</p><p></p>"))
-
     h.append("<h2>Original request (verbatim)</h2><p><i>" + esc(request) + "</i></p><p></p>")
     log, prev = [], None
     for e in events:
@@ -629,20 +626,27 @@ def render(run_dir: str, now: datetime) -> str:
         log.append((hhmm(e["ts"]), esc((e.get("phase") or "").title()), esc(e["event"]),
                     fmt_dur((t - prev).total_seconds()) if prev else ""))
         prev = t
-    h.append("<h2>Event log</h2>" + _table([f"Time ({tzl})", "Phase", "Event", "Since previous"], log))
+    section = "<h2>Event log</h2>" + _table([f"Time ({tzl})", "Phase", "Event", "Since previous"], log)
+    if events_out is None:
+        h.append(section)
+    else:
+        events_out.append(section + "\n")
     return "\n".join(h) + "\n"
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
+    if len(argv) not in (2, 3):
         print(__doc__, file=sys.stderr)
         return 2
+    events = [] if len(argv) == 3 else None
     try:
-        body = render(argv[0], now_utc())
+        body = render(argv[0], now_utc(), events)
     except (ValueError, OSError, subprocess.CalledProcessError) as e:
         print(e, file=sys.stderr)
         return 1
     open(argv[1], "w").write(body)
+    if events is not None:
+        open(argv[2], "w").write("".join(events))
     return 0
 
 

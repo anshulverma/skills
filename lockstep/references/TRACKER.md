@@ -57,9 +57,9 @@ The renderer masks a credential value in `request.md` as `[credential masked]`, 
 | Follow-ups and blockers | From `decisions.md` and `blocked_reasons` / `waiting_reasons`, each with the exact owner action that clears it |
 | Docs produced (R7) | Every doc: status, created, accepted, time to accept, questions answered n/m. Always rendered |
 | Actions (R3) | Every `action` event: time, verb, action, status |
-| Parked tasks, Diffs | Parked tasks with their task-N docs. Each plan task's diff shows in the Implementation plan table's Diff column, from `pipeline.json.task_diffs` (`{"<task n>": "D<n>" or a note such as "none (local commit <hash>)"}`), with the state from `pipeline.json.diffs`. The Diffs section lists only diffs not mapped to a task |
+| Parked tasks | Parked tasks with their task-N docs. Each plan task's diff shows in the Implementation plan table's Diff column, from `pipeline.json.task_diffs` (`{"<task n>": "D<n>" or a note such as "none (local commit <hash>)"}`), with the state from `pipeline.json.diffs`. There is no separate Diffs section (owner: the tasks link the diffs) |
 | Original request (verbatim, R8) | `request.md`, HTML-escaped. It is exempt from the no-data-paths rule because the tracker is verified private. Credentials are never exempt |
-| Event log | Every event with its time and the delta from the previous one |
+| Event log | Every event with its time and the delta from the previous one. Rendered to its own doc tab ("Event log", id in `pipeline.json.tracker_events_tab`) when `render_tracker.py` gets a third EVENTS.html argument, because it grows long |
 
 Task flowchart: one node per task labelled `T<n>` plus a short title. Edges come from each `**Depends on:**` line after transitive reduction (an edge is dropped when a longer path already connects the same two tasks). It has a start node "spec accepted", an end node "all tasks complete" and a legend. Node colour follows task state: not started grey, in progress blue, complete green, parked orange, blocked red. State comes from `ledger.md` (`Task N: complete|parked|blocked`), else in progress when a task_start has no later task_done, else not started; the task events also supply the timings.
 
