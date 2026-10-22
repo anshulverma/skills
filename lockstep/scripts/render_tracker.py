@@ -36,6 +36,15 @@ TASK_STATES = {  # state: (fill, border, font, legend)
     "parked": ("#eb6834", "#eb6834", "white", "parked on your answer"),
     "blocked": ("#c8312b", "#c8312b", "white", "blocked"),
 }
+DIFF_STATES = {  # Phabricator state from tracker/diff_status.json, least advanced first: (fill, border, font, legend)
+    "draft": ("#8a8984", "#8a8984", "white", "diff draft"),
+    "published": ("#2a78d6", "#2a78d6", "white", "diff published, in review"),
+    "accepted": ("#13827e", "#13827e", "white", "diff accepted, not landed"),
+    "landed": ("#2e9e5b", "#2e9e5b", "white", "diff landed"),
+    "abandoned": ("#fbe3e2", "#c8312b", "#c8312b", "diff abandoned"),
+}
+TASK_STATES.update(DIFF_STATES)
+BASE_STATES = [k for k in TASK_STATES if k not in DIFF_STATES]
 LANDED = ("closed", "landed")
 BAR_W = 100   # points: width of the agent/owner time bar under a completed box's label
 CREDENTIAL = [  # mask only the value; KEY=value (incl. MY_TOKEN, client_secret, "token: Bearer x"), then bare bearer tokens
@@ -196,12 +205,25 @@ def bar_label(lines, own, sk, spans):
             f'<TR><TD><FONT POINT-SIZE="9">agent {fmt_dur(a)} / you {fmt_dur(o)}</FONT></TD></TR></TABLE>>')
 
 
-def shown_states(states, task_diffs, diffs):
-    """A complete task with any D-number not yet landed or closed shows as diff_open."""
-    def open_diff(n):
+def shown_states(states, task_diffs, diffs, status=None):
+    """With polled diff status, a task with diffs shows its least advanced live diff (abandoned only when all are).
+    Otherwise a complete task with any D-number not yet landed or closed shows as diff_open."""
+    order = list(DIFF_STATES)
+    out = {}
+    for n, s in states.items():
         ids = re.findall(r"D\d+", str(task_diffs.get(str(n)) or ""))
-        return any(str(diffs.get(i) or "").lower() not in LANDED for i in ids)
-    return {n: "diff_open" if s == "complete" and open_diff(n) else s for n, s in states.items()}
+        known = [status[i]["state"] for i in ids if i in (status or {}) and status[i].get("state") in DIFF_STATES]
+        if known:
+            live = [k for k in known if k != "abandoned"] or ["abandoned"]
+            out[n] = min(live, key=order.index)
+        else:
+            out[n] = "diff_open" if s == "complete" and any(str(diffs.get(i) or "").lower() not in LANDED for i in ids) else s
+    return out
+
+
+def _chip(state: str, text: str) -> str:
+    fill, _, font, _ = TASK_STATES[state]
+    return f'<span style="color:{font}; background-color:{fill}">{esc(text)}</span>'
 
 
 def phase_spans(events, now):
@@ -296,7 +318,7 @@ def task_states(run_dir, sdd, tasks, events):
     return states, times
 
 
-def task_chart(tasks, states, out, times=None, own=(), sk=()):
+def task_chart(tasks, states, out, times=None, own=(), sk=(), diff_legend=False):
     lines = ['digraph T { graph [rankdir=LR, bgcolor="#fcfcfb", pad=0.3, nodesep=0.25, ranksep=0.45];',
              'node [shape=box, style="rounded,filled", fontname="Liberation Sans", fontsize=12, penwidth=2];',
              'edge [color="#8a8984", penwidth=1.5];',
@@ -318,7 +340,7 @@ def task_chart(tasks, states, out, times=None, own=(), sk=()):
         fill, col, font, _ = TASK_STATES[states[n]]
         short = title if len(title) <= 28 else title[:26] + "…"
         t = (times or {}).get(n, {})
-        bar = states[n] in ("complete", "diff_open") and "task_done" in t and bar_label(
+        bar = states[n] in ("complete", "diff_open", *DIFF_STATES) and "task_done" in t and bar_label(
             [f"T{n}", short], own, sk, [(t["task_start"], t["task_done"])])
         label = bar or f'"T{n}\\n{_dot_esc(short)}"'
         lines.append(f'T{n} [label={label}, fillcolor="{fill}", color="{col}", fontcolor="{font}"];')
@@ -326,11 +348,13 @@ def task_chart(tasks, states, out, times=None, own=(), sk=()):
         if n not in have_children:
             lines.append(f"T{n} -> end;")
     lines.append('subgraph cluster_legend { label="Task state"; fontname="Liberation Sans"; fontsize=11; color="#d6d5d0";')
-    for k, (fill, col, font, legend) in TASK_STATES.items():
+    keys = BASE_STATES + (list(DIFF_STATES) if diff_legend else [])
+    for k in keys:
+        fill, col, font, legend = TASK_STATES[k]
         lines.append(f'L_{k} [label="{legend}", fillcolor="{fill}", color="{col}", fontcolor="{font}", fontsize=10];')
     lines.append(f'L_agent [label="bar: agent working", fillcolor="{BLUE}", color="{BLUE}", fontcolor="white", fontsize=10];')
     lines.append(f'L_you [label="bar: you engaged", fillcolor="{ORANGE}", color="{ORANGE}", fontcolor="white", fontsize=10];')
-    lines.append(" -> ".join([f"L_{k}" for k in TASK_STATES] + ["L_agent", "L_you"]) + ' [style=invis]; }')
+    lines.append(" -> ".join([f"L_{k}" for k in keys] + ["L_agent", "L_you"]) + ' [style=invis]; }')
     lines.append("}")
     dot = out.replace(".png", ".dot")
     open(dot, "w").write("\n".join(lines))
@@ -427,15 +451,19 @@ def _figure(figdir, name, alt, n, caption):
 
 
 
-def _diff_cell(d, states: dict) -> str:
-    """A task's diff: a linked D-number (with its polled state), or a note such as a local commit."""
+def _diff_cell(d, states: dict, status=None) -> str:
+    """A task's diff: a linked D-number (with its polled state, colour-coded when diff_status.json has it), or a note."""
     if not d:
         return "-"
     ids = re.split(r",\s*", str(d))
     if not all(re.fullmatch(r"D\d+", i) for i in ids):
         return esc(d)
-    return ", ".join(f'<a href="https://www.internalfb.com/diff/{esc(i)}">{esc(i)}</a>'
-                     + (f" ({esc(states[i])})" if states.get(i) else "") for i in ids)
+    def label(i):
+        st = (status or {}).get(i, {}).get("state")
+        if st in DIFF_STATES:
+            return " " + _chip(st, st)
+        return f" ({esc(states[i])})" if states.get(i) else ""
+    return ", ".join(f'<a href="https://www.internalfb.com/diff/{esc(i)}">{esc(i)}</a>' + label(i) for i in ids)
 
 def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> str:
     """Body html; when `events_out` is a list, the Event log section is appended to it instead of the body."""
@@ -508,24 +536,34 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
     if plan_path and os.path.exists(plan_path):
         tasks = plan_tasks(plan_path)
         states, times = task_states(run_dir, sdd, tasks, events)
-        shown_st = shown_states(states, task_diffs, run_diffs)
-        task_chart(tasks, shown_st, os.path.join(figdir, "tasks.png"), times, own_all, skill_all)
+        ds_path = os.path.join(figdir, "diff_status.json")
+        dstat = read_json(ds_path) if os.path.exists(ds_path) else None
+        shown_st = shown_states(states, task_diffs, run_diffs, dstat)
+        task_chart(tasks, shown_st, os.path.join(figdir, "tasks.png"), times, own_all, skill_all, bool(dstat))
         goal = re.search(r"^\*\*Goal:\*\* (.+)$", open(plan_path).read(), re.M)
         done = sum(v == "complete" for v in states.values())
         h.append(f"<h2>Implementation plan</h2><p>Full plan: {_doc_link(run['docs'].get('plan', {}), sdd['plan_path'])}. "
                  f"sdd stage: {esc(sdd.get('stage', ''))}. Tasks complete: {done}/{len(tasks)}.</p>")
         if goal:
             h.append(f"<p><b>Goal:</b> {esc(goal.group(1))}</p>")
-        h.append(_figure(figdir, "tasks.png", "task flow", 3, "Plan tasks with their dependencies, coloured by state (a done task stays purple until "
-                         "every diff it produced has landed); the bar under each done task splits its active time blue (agent) "
-                         "and orange (you)."))
+        colour = ("a task with diffs takes the colour of its least advanced live diff: grey draft, blue published, "
+                  "teal accepted, green landed, red outline all abandoned" if dstat else
+                  "a done task stays purple until every diff it produced has landed")
+        h.append(_figure(figdir, "tasks.png", "task flow", 3, f"Plan tasks with their dependencies, coloured by state ({colour}); "
+                         "the bar under each done task splits its active time blue (agent) and orange (you)."))
         rows = []
         for n, title, deps in tasks:
             t = times.get(n, {})
             start = f"{local(t['task_start']):%m-%d %H:%M}" if "task_start" in t else ""
             dur = fmt_dur(overlap(skill_all, t["task_start"], t.get("task_done") or now)) if "task_start" in t else ""
-            rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-", TASK_STATES[shown_st[n]][3], start, dur,
-                         str(tests.get(n, 0)), _diff_cell(task_diffs.get(str(n)), run_diffs)))
+            legend = TASK_STATES[shown_st[n]][3]
+            rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-",
+                         _chip(shown_st[n], legend) if dstat else legend, start, dur,
+                         str(tests.get(n, 0)), _diff_cell(task_diffs.get(str(n)), run_diffs, dstat)))
+        if dstat:
+            h.append("<p>Diff state (from Phabricator, " + f"{len(dstat)} diffs): "
+                     + " ".join(_chip(k, k) for k in DIFF_STATES)
+                     + ". A task shows its least advanced live diff; abandoned only when all its diffs are.</p>")
         h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration", "Test runs", "Diff"], rows))
 
     diff_ev = {}

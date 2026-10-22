@@ -63,6 +63,8 @@ The renderer masks a credential value in `request.md` as `[credential masked]`, 
 
 Task flowchart: one node per task labelled `T<n>` plus a short title. Edges come from each `**Depends on:**` line after transitive reduction (an edge is dropped when a longer path already connects the same two tasks). It has a start node "spec accepted", an end node "all tasks complete" and a legend. Node colour follows task state: not started grey, in progress blue, complete green, parked orange, blocked red. State comes from `ledger.md` (`Task N: complete|parked|blocked`), else in progress when a task_start has no later task_done, else not started; the task events also supply the timings.
 
+Diff status: before each render, `~/.cache/humanize-venv/bin/python $S/diff_status.py <run>` polls every diff in `task_diffs` and `diffs` with `describe` and writes `<run>/tracker/diff_status.json` (`{"D<n>": {"state": "landed|accepted|published|draft|abandoned", "title"}}`; AI Approved counts as accepted). When that file exists, a task with diffs takes the state of its least advanced live diff (abandoned only when all are): grey draft, blue published, teal accepted, green landed, red outline abandoned, in both the task flowchart and the task table, whose State and Diff cells are colour-coded under a one-line legend. Without the file the output is unchanged.
+
 ## events.jsonl
 
 The file is append-only, with one JSON object per line: `{ts (date -u ISO Z), phase, kind, event, doc?, task?, diff?, agents?, slop?, comment_ts?}`. Append with `state.py`, which stamps `ts` and `phase` and holds `flock` for the append:

@@ -17,6 +17,7 @@ import state  # noqa: E402
 import sweep  # noqa: E402
 import md2ghtml  # noqa: E402
 import render_tracker  # noqa: E402
+import diff_status  # noqa: E402
 import velocity  # noqa: E402
 
 
@@ -609,6 +610,48 @@ def test_completed_task_state_follows_its_diffs():
     assert render_tracker.shown_states({1: "complete"}, {"1": "D1, D2"}, {"D1": "Closed", "D2": None}) == {1: "diff_open"}
     assert render_tracker.TASK_STATES["diff_open"][:3] == ("#8e6fd8", "#8e6fd8", "white")
 
+
+
+def test_diff_status_state_and_ids():
+    st = diff_status.state_of
+    assert st({"status": "Abandoned", "is_landed": False}) == "abandoned"
+    assert st({"status": "Committed", "is_landed": True}) == "landed"
+    assert st({"status": "AI Approved", "published": "2026-10-21"}) == "accepted"
+    assert st({"status": "AI Reviewing", "ai_approved": True, "published": "x"}) == "published"  # stale flag
+    assert st({"status": "Needs Review", "published": "2026-10-21T15:47:54-07:00"}) == "published"
+    assert st({"status": "Needs Review", "published": "N/A"}) == "draft"
+    p = {"task_diffs": {"1": "D1234567, D7654321", "2": "none (local commit abc)"}, "diffs": {"D1234567": "Draft", "D5555555": None}}
+    assert diff_status.diff_ids(p) == ["D1234567", "D5555555", "D7654321"]
+
+
+def test_task_state_follows_polled_diff_status():
+    td = {"1": "D1, D2", "2": "D3, D4", "3": "D5", "4": "none (run-dir code)", "5": "D9"}
+    status = {"D1": {"state": "landed"}, "D2": {"state": "published"}, "D3": {"state": "abandoned"},
+              "D4": {"state": "landed"}, "D5": {"state": "abandoned"}}
+    states = {1: "complete", 2: "complete", 3: "complete", 4: "complete", 5: "complete"}
+    assert render_tracker.shown_states(states, td, {}, status) == {
+        1: "published", 2: "landed", 3: "abandoned", 4: "complete", 5: "diff_open"}  # D9 unpolled: old rule
+
+
+def test_render_colours_diffs_from_status_file():
+    d = copy_run()
+    p = json.load(open(os.path.join(d, "pipeline.json")))
+    p["task_diffs"] = {"1": "D123456789, D111111111", "3": "D222222222"}
+    json.dump(p, open(os.path.join(d, "pipeline.json"), "w"))
+    now = state.parse_ts("2026-10-19T07:00:00Z")
+    plain = render_tracker.render(d, now)
+    assert "Diff state" not in plain and "background-color" not in plain
+    assert "L_landed" not in open(os.path.join(d, "tracker", "tasks.dot")).read()
+    json.dump({"D123456789": {"state": "landed", "title": "a"}, "D111111111": {"state": "abandoned", "title": "b"},
+               "D222222222": {"state": "accepted", "title": "c"}}, open(os.path.join(d, "tracker", "diff_status.json"), "w"))
+    h = render_tracker.render(d, now)
+    landed = render_tracker.DIFF_STATES["landed"]
+    assert f'diff/D123456789">D123456789</a> <span style="color:white; background-color:{landed[0]}">landed</span>' in h
+    assert ">abandoned</span>" in h and "Diff state (from Phabricator, 3 diffs)" in h
+    dot = open(os.path.join(d, "tracker", "tasks.dot")).read()
+    t1 = next(line for line in dot.splitlines() if line.startswith("T1 ["))
+    t3 = next(line for line in dot.splitlines() if line.startswith("T3 ["))
+    assert landed[0] in t1 and render_tracker.DIFF_STATES["accepted"][0] in t3 and "L_abandoned" in dot
 
 def test_completed_boxes_show_time_bar():
     T = state.parse_ts
