@@ -369,9 +369,31 @@ def time_split(events: list[dict], now: datetime) -> tuple[float, float, float]:
     return span(owner_spans(events)), span(skill_spans(events, now)), total
 
 
-def timeline_chart(events, now, out):
-    """Active time only: idle stretches are cut out and marked with how long nothing was happening."""
+TIMELINE_WINDOW = timedelta(hours=48)
+
+
+def timeline_windows(events, now):
+    """Completed TIMELINE_WINDOW blocks counted from the first event, newest first; the main tab shows the
+    rolling latest window, these go to the Event log tab."""
+    if not events:
+        return []
+    t0 = min(parse_ts(e["ts"]) for e in events)
+    out, a = [], t0
+    while a + TIMELINE_WINDOW <= now:
+        out.append((a, a + TIMELINE_WINDOW))
+        a += TIMELINE_WINDOW
+    return out[::-1]
+
+
+def timeline_chart(events, now, out, lo=None, hi=None):
+    """Active time only: idle stretches are cut out and marked with how long nothing was happening.
+    `lo`/`hi` clip the chart to a time window."""
     pieces = active_pieces(events, now)
+    waits = wait_spans(events, now)
+    if lo is not None or hi is not None:
+        lo, hi = lo or datetime.min.replace(tzinfo=now.tzinfo), hi or now
+        clip = lambda xs: [(max(a, lo), min(b, hi), *r) for a, b, *r in xs if b > lo and a < hi]
+        pieces, waits = clip(pieces), clip(waits)
     fig, ax = plt.subplots(figsize=(10, 4.6), facecolor="#fcfcfb")
     ax.set_facecolor("#fcfcfb")
     by_time = sorted(events, key=lambda e: parse_ts(e["ts"]))   # backfilled events sit out of file order
@@ -386,7 +408,6 @@ def timeline_chart(events, now, out):
             a = c
         split.append((a, b, who))
     rows = [p for p in PHASES if any(phase_at(a) == p for a, _, _ in split)] or ["INIT"]
-    waits = wait_spans(events, now)
     room = sum((b - a).total_seconds() for a, b, _ in split) / 60 * 0.03  # labels closer than this would overlap
     x, prev, last_label, segs = 0.0, None, None, []
     for a, b, who in split:
@@ -500,8 +521,11 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
     figdir = os.path.join(run_dir, "tracker")
     os.makedirs(figdir, exist_ok=True)
     flow_chart(run, os.path.join(figdir, "flow.png"), events, now)
+    windows = timeline_windows(events, now)
     if events:
-        timeline_chart(events, now, os.path.join(figdir, "timeline.png"))
+        timeline_chart(events, now, os.path.join(figdir, "timeline.png"), lo=now - TIMELINE_WINDOW)
+        for a, b in windows:
+            timeline_chart(events, now, os.path.join(figdir, f"timeline-{local(a):%Y%m%d%H%M}.png"), lo=a, hi=b)
     own_all, skill_all = owner_spans(events), skill_spans(events, now)
     you_s, agent_s, tot_s = time_split(events, now)
     tot_m, you_m, agent_m = round(tot_s / 60), round(you_s / 60), round(agent_s / 60)
@@ -533,7 +557,7 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
              for i, m in enumerate(run["roadmap"], 1)]))
     if events:
         h.append("<h2>Timeline</h2>" + _figure(figdir, "timeline.png", "timeline", 2,
-                 "Active time only, by phase: you engaged (upper bar) and the agent working (lower bar), counted separately. Stretches when neither of you was working (you away and the agent idle or waiting on you) are cut out; dotted lines mark the breaks."))
+                 "The last 48 hours" + (" (earlier 48-hour blocks are on the Event log tab)" if windows else "") + ". Active time only, by phase: you engaged (upper bar) and the agent working (lower bar), counted separately. Stretches when neither of you was working (you away and the agent idle or waiting on you) are cut out; dotted lines mark the breaks."))
 
     tests = {}
     for e in events:
@@ -673,7 +697,11 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
         log.append((hhmm(e["ts"]), esc((e.get("phase") or "").title()), esc(e["event"]),
                     fmt_dur((t - prev).total_seconds()) if prev else ""))
         prev = t
-    section = "<h2>Event log</h2>" + _table([f"Time ({tzl})", "Phase", "Event", "Since previous"], log)
+    blocks = "".join("<h2>Timeline, " + f"{local(a):%b %d %H:%M} to {local(b):%b %d %H:%M} {tzl}</h2>"
+                     + _figure(figdir, f"timeline-{local(a):%Y%m%d%H%M}.png", "timeline", f"E{i}",
+                               "Active time in this 48-hour block, drawn as on the main tab.")
+                     for i, (a, b) in enumerate(windows, 1))
+    section = blocks + "<h2>Event log</h2>" + _table([f"Time ({tzl})", "Phase", "Event", "Since previous"], log)
     if events_out is None:
         h.append(section)
     else:
