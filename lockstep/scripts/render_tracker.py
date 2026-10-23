@@ -409,7 +409,7 @@ def timeline_chart(events, now, out, lo=None, hi=None):
         split.append((a, b, who))
     rows = [p for p in PHASES if any(phase_at(a) == p for a, _, _ in split)] or ["INIT"]
     room = sum((b - a).total_seconds() for a, b, _ in split) / 60 * 0.03  # labels closer than this would overlap
-    x, prev, last_label, segs = 0.0, None, None, []
+    x, prev, last_label, segs, ticks = 0.0, None, None, [], []
     for a, b, who in split:
         if prev is not None and (a - prev).total_seconds() >= 15 * 60:
             gap = fmt_dur((a - prev).total_seconds())
@@ -425,6 +425,12 @@ def timeline_chart(events, now, out, lo=None, hi=None):
             ax.barh(r - 0.13, w, left=x, height=0.26, color=ORANGE, edgecolor="#fcfcfb", linewidth=0.5)
         if who in ("skill", "both"):  # lower half: agent working
             ax.barh(r + 0.13, w, left=x, height=0.26, color=BLUE, edgecolor="#fcfcfb", linewidth=0.5)
+        if prev is None or (a - prev).total_seconds() >= 15 * 60:
+            ticks.append((x, a))   # clock time where each run of activity starts
+        h = a.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        while h < b:               # and every clock hour inside it
+            ticks.append((x + (h - a).total_seconds() / 60, h))
+            h += timedelta(hours=1)
         segs.append((a, b, x))
         x, prev = x + w, b
     # Bottom lane: whenever the run was waiting on jobs, even while someone was also working.
@@ -438,7 +444,13 @@ def timeline_chart(events, now, out, lo=None, hi=None):
     ax.set_yticks(range(len(rows) + 1))
     ax.set_yticklabels([r.title() for r in rows] + ["Waiting on jobs"])
     ax.set_ylim(len(rows) + 0.5, -3.0)  # inverted, with headroom above the top row for the gap labels
-    ax.set_xlabel("active minutes (time when neither of you was working is cut out)")
+    kept, gap = [], max(x, 1) * 0.06   # thin the clock labels so they never overlap
+    for tx, t in ticks:
+        if not kept or tx - kept[-1][0] >= gap:
+            kept.append((tx, t))
+    ax.set_xticks([tx for tx, _ in kept])
+    ax.set_xticklabels([f"{local(t):%a %H:%M}" for _, t in kept], rotation=35, ha="right", fontsize=7)
+    ax.set_xlabel(f"clock time ({local(now):%Z}); time when neither of you was working is cut out")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     ax.grid(axis="x", color="#e5e4e0")
@@ -557,7 +569,7 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
              for i, m in enumerate(run["roadmap"], 1)]))
     if events:
         h.append("<h2>Timeline</h2>" + _figure(figdir, "timeline.png", "timeline", 2,
-                 "The last 48 hours" + (" (earlier 48-hour blocks are on the Event log tab)" if windows else "") + ". Active time only, by phase: you engaged (upper bar) and the agent working (lower bar), counted separately. Stretches when neither of you was working (you away and the agent idle or waiting on you) are cut out; dotted lines mark the breaks."))
+                 "The last 48 hours" + ((" (earlier 48-hour blocks are on the " + (f'<a href="https://docs.google.com/document/d/{run["tracker_doc"]}/edit?tab={run["tracker_events_tab"]}">Event log tab</a>' if run.get("tracker_events_tab") and run.get("tracker_doc") else "Event log tab") + ", under Timeline)") if windows else "") + ". Active time only, by phase: you engaged (upper bar) and the agent working (lower bar), counted separately. Stretches when neither of you was working (you away and the agent idle or waiting on you) are cut out; dotted lines mark the breaks."))
 
     tests = {}
     for e in events:
@@ -697,7 +709,7 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
         log.append((hhmm(e["ts"]), esc((e.get("phase") or "").title()), esc(e["event"]),
                     fmt_dur((t - prev).total_seconds()) if prev else ""))
         prev = t
-    blocks = "".join("<h2>Timeline, " + f"{local(a):%b %d %H:%M} to {local(b):%b %d %H:%M} {tzl}</h2>"
+    blocks = ("<h2>Timeline</h2>" if windows else "") + "".join(f"<h3>{local(a):%b %d %H:%M} to {local(b):%b %d %H:%M} {tzl}</h3>"
                      + _figure(figdir, f"timeline-{local(a):%Y%m%d%H%M}.png", "timeline", f"E{i}",
                                "Active time in this 48-hour block, drawn as on the main tab.")
                      for i, (a, b) in enumerate(windows, 1))

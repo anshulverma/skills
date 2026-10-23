@@ -379,8 +379,8 @@ def test_timeline_latest_48h_on_main_older_blocks_on_event_log():
     assert wins == [(t0 + timedelta(hours=48), t0 + timedelta(hours=96)), (t0, t0 + timedelta(hours=48))]
     ev = []
     body = render_tracker.render(d, now, ev)
-    assert body.count('src="file:///') == 3 and "The last 48 hours (earlier 48-hour blocks are on the Event log tab)" in body
-    assert ev[0].count("<h2>Timeline, ") == 2 and ev[0].index("Figure E1") < ev[0].index("<h2>Event log</h2>")
+    assert body.count('src="file:///') == 3 and "The last 48 hours (earlier 48-hour blocks are on the Event log tab, under Timeline)" in body
+    assert ev[0].count("<h2>Timeline</h2>") == 1 and ev[0].count("<h3>") == 2 and ev[0].index("Figure E1") < ev[0].index("<h2>Event log</h2>")
     for a, _ in wins:
         assert os.path.exists(os.path.join(d, "tracker", f"timeline-{render_tracker.local(a):%Y%m%d%H%M}.png"))
 
@@ -937,4 +937,4 @@ def test_event_log_to_separate_file():
     out, ev = os.path.join(d, "o.html"), os.path.join(d, "ev.html")
     r = subprocess.run([sys.executable, os.path.join(HERE, "render_tracker.py"), d, out, ev], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
-    assert "<h2>Event log</h2>" not in open(out).read() and re.match(r"(<h2>Timeline, .*?)*<h2>Event log</h2>", open(ev).read(), re.S)
+    assert "<h2>Event log</h2>" not in open(out).read() and re.match(r"(<h2>Timeline</h2>.*?)?<h2>Event log</h2>", open(ev).read(), re.S)
