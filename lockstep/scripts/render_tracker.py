@@ -388,7 +388,7 @@ def timeline_chart(events, now, out):
     rows = [p for p in PHASES if any(phase_at(a) == p for a, _, _ in split)] or ["INIT"]
     waits = wait_spans(events, now)
     room = sum((b - a).total_seconds() for a, b, _ in split) / 60 * 0.03  # labels closer than this would overlap
-    x, prev, last_label = 0.0, None, None
+    x, prev, last_label, segs = 0.0, None, None, []
     for a, b, who in split:
         if prev is not None and (a - prev).total_seconds() >= 15 * 60:
             gap = fmt_dur((a - prev).total_seconds())
@@ -404,10 +404,19 @@ def timeline_chart(events, now, out):
             ax.barh(r - 0.13, w, left=x, height=0.26, color=ORANGE, edgecolor="#fcfcfb", linewidth=0.5)
         if who in ("skill", "both"):  # lower half: agent working
             ax.barh(r + 0.13, w, left=x, height=0.26, color=BLUE, edgecolor="#fcfcfb", linewidth=0.5)
+        segs.append((a, b, x))
         x, prev = x + w, b
-    ax.set_yticks(range(len(rows)))
-    ax.set_yticklabels([r.title() for r in rows])
-    ax.set_ylim(len(rows) - 0.5, -3.0)  # inverted, with headroom above the top row for the gap labels
+    # Bottom lane: whenever the run was waiting on jobs, even while someone was also working.
+    lane = len(rows)
+    for s, e, _ in waits:
+        for a, b, x0 in segs:
+            lo, hi = max(a, s), min(b, e)
+            if hi > lo:
+                ax.barh(lane, (hi - lo).total_seconds() / 60, left=x0 + (lo - a).total_seconds() / 60,
+                        height=0.3, color=PURPLE, alpha=0.55, linewidth=0)
+    ax.set_yticks(range(len(rows) + 1))
+    ax.set_yticklabels([r.title() for r in rows] + ["Waiting on jobs"])
+    ax.set_ylim(len(rows) + 0.5, -3.0)  # inverted, with headroom above the top row for the gap labels
     ax.set_xlabel("active minutes (time when neither of you was working is cut out)")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
@@ -416,7 +425,7 @@ def timeline_chart(events, now, out):
     from matplotlib.lines import Line2D
     ax.legend(handles=[Patch(color=ORANGE, label="you engaged (reading, commenting)"), Patch(color=BLUE, label="agent working"),
                        Line2D([], [], color=GREY, linestyle="--", linewidth=2, label="break (nothing running)"),
-                       Line2D([], [], color=PURPLE, linestyle="--", linewidth=2, label="waiting on something")],
+                       Line2D([], [], color=PURPLE, linestyle="--", linewidth=2, label="only waiting (nobody working)")],
               loc="lower center", bbox_to_anchor=(0.5, 1.08), ncol=4, frameon=False, fontsize=8)
     plt.tight_layout()
     plt.savefig(out, dpi=150, facecolor="#fcfcfb")
