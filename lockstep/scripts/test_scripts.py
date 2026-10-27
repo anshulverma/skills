@@ -17,6 +17,7 @@ import state  # noqa: E402
 import sweep  # noqa: E402
 import md2ghtml  # noqa: E402
 import render_tracker  # noqa: E402
+import diff_status  # noqa: E402
 import velocity  # noqa: E402
 
 
@@ -364,10 +365,24 @@ def test_render_every_section():
     html_ = render_tracker.render(copy_run(), state.parse_ts("2026-10-19T07:00:00Z"))
     for h in ("How to steer this run", "Status", "Implementation plan", "Build to closure", "Milestones",
               "Follow-ups and blockers", "Gates", "Metrics", "Docs produced", "Actions", "Parked tasks",
-              "Diffs", "Original request (verbatim)", "Event log"):
+              "Original request (verbatim)", "Event log"):
         assert f"<h2>{h}</h2>" in html_, h
     assert html_.count('src="file:///') == 3 and "Confirm" in html_ and "Diff ids" in html_
     assert "relocate the demo scripts" in html_ and "Action: unblock" in html_
+
+
+def test_timeline_latest_48h_on_main_older_blocks_on_event_log():
+    d = copy_run()
+    t0 = min(state.parse_ts(e["ts"]) for e in render_tracker.read_events(d))
+    now = t0 + timedelta(hours=100)
+    wins = render_tracker.timeline_windows(render_tracker.read_events(d), now)
+    assert wins == [(t0 + timedelta(hours=48), t0 + timedelta(hours=96)), (t0, t0 + timedelta(hours=48))]
+    ev = []
+    body = render_tracker.render(d, now, ev)
+    assert body.count('src="file:///') == 3 and "The last 48 hours (earlier 48-hour blocks are on the Event log tab, under Timeline)" in body
+    assert ev[0].count("<h2>Timeline</h2>") == 1 and ev[0].count("<h3>") == 2 and ev[0].index("Figure E1") < ev[0].index("<h2>Event log</h2>")
+    for a, _ in wins:
+        assert os.path.exists(os.path.join(d, "tracker", f"timeline-{render_tracker.local(a):%Y%m%d%H%M}.png"))
 
 
 def test_render_task_diff_column():
@@ -382,9 +397,9 @@ def test_render_task_diff_column():
     h = render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
     assert "<th>Diff</th>" in h or ">Diff<" in h
     assert 'diff/D123456789">D123456789</a> (Needs Review)' in h
-    # the task's diff moves into the table; only the unmapped one stays in the Diffs section
-    tail = h.split("<h2>Diffs</h2>", 1)[1].split("<h2>", 1)[0]
-    assert "D987654321" in tail and "D123456789" not in tail
+    assert "<h2>Diffs</h2>" not in h  # owner: diffs are linked from the tasks already
+    assert render_tracker._diff_cell("D1, D2", {"D2": "Draft"}) == ('<a href="https://www.internalfb.com/diff/D1">D1</a>, '
+                                                               '<a href="https://www.internalfb.com/diff/D2">D2</a> (Draft)')
 
 
 def test_render_fails_loudly():
@@ -545,6 +560,11 @@ def test_external_docs_linked_not_swept():
     assert "Experiment tracker" in docs_sec and "Experiment tracker" not in gates_sec
 
 
+
+def test_watched_external_docs_are_swept():
+    docs = {"a": {"kind": "spec"}, "x": {"kind": "external"}, "w": {"kind": "external", "watch": True}}
+    assert sweep.swept_keys(docs) == ["a", "w"]
+
 def test_skill_spans_tolerate_out_of_order_events():
     T = state.parse_ts
     ev = [{"ts": "2026-10-19T10:00:00Z", "kind": "milestone", "event": ""},
@@ -592,6 +612,88 @@ def test_agent_time_counts_while_owner_away_but_not_while_waiting():
     assert you == 5 * 60 and agent == 93 * 60 and total == 98 * 60           # owner: 5 min lead-in; agent counts while owner away
     ev.append({"ts": "2026-10-19T09:55:00Z", "kind": "unit_start", "event": "PLAN_WRITE"})
     assert render_tracker.skill_spans(ev, now)[-1] == (T("2026-10-19T09:55:00Z"), now)   # a running unit counts until now
+
+
+
+def test_completed_task_state_follows_its_diffs():
+    td = {"1": "D1", "2": "D2, D3", "3": "none (run-dir code, no repo change)", "4": "D4"}
+    diffs = {"D1": "Draft", "D2": "Closed", "D3": "Landed", "D4": "Needs Review"}
+    states = {1: "complete", 2: "complete", 3: "complete", 4: "in_progress", 5: "complete"}
+    assert render_tracker.shown_states(states, td, diffs) == {
+        1: "diff_open", 2: "complete", 3: "complete", 4: "in_progress", 5: "complete"}
+    assert render_tracker.shown_states({1: "complete"}, {"1": "D1, D2"}, {"D1": "Closed", "D2": None}) == {1: "diff_open"}
+    assert render_tracker.TASK_STATES["diff_open"][:3] == ("#8e6fd8", "#8e6fd8", "white")
+
+
+
+def test_diff_status_state_and_ids():
+    st = diff_status.state_of
+    assert st({"status": "Abandoned", "is_landed": False}) == "abandoned"
+    assert st({"status": "Committed", "is_landed": True}) == "landed"
+    assert st({"status": "AI Approved", "published": "2026-10-21"}) == "accepted"
+    assert st({"status": "AI Reviewing", "ai_approved": True, "published": "x"}) == "published"  # stale flag
+    assert st({"status": "Needs Review", "published": "2026-10-21T15:47:54-07:00"}) == "published"
+    assert st({"status": "Needs Review", "published": "N/A"}) == "draft"
+    p = {"task_diffs": {"1": "D1234567, D7654321", "2": "none (local commit abc)"}, "diffs": {"D1234567": "Draft", "D5555555": None}}
+    assert diff_status.diff_ids(p) == ["D1234567", "D5555555", "D7654321"]
+
+
+def test_task_state_follows_polled_diff_status():
+    td = {"1": "D1, D2", "2": "D3, D4", "3": "D5", "4": "none (run-dir code)", "5": "D9"}
+    status = {"D1": {"state": "landed"}, "D2": {"state": "published"}, "D3": {"state": "abandoned"},
+              "D4": {"state": "landed"}, "D5": {"state": "abandoned"}}
+    states = {1: "complete", 2: "complete", 3: "complete", 4: "complete", 5: "complete"}
+    assert render_tracker.shown_states(states, td, {}, status) == {
+        1: "published", 2: "landed", 3: "abandoned", 4: "complete", 5: "diff_open"}  # D9 unpolled: old rule
+
+
+def test_render_colours_diffs_from_status_file():
+    d = copy_run()
+    p = json.load(open(os.path.join(d, "pipeline.json")))
+    p["task_diffs"] = {"1": "D123456789, D111111111", "3": "D222222222"}
+    json.dump(p, open(os.path.join(d, "pipeline.json"), "w"))
+    now = state.parse_ts("2026-10-19T07:00:00Z")
+    plain = render_tracker.render(d, now)
+    assert "Diff state" not in plain and "background-color" not in plain
+    assert "L_landed" not in open(os.path.join(d, "tracker", "tasks.dot")).read()
+    json.dump({"D123456789": {"state": "landed", "title": "a"}, "D111111111": {"state": "abandoned", "title": "b"},
+               "D222222222": {"state": "accepted", "title": "c"}}, open(os.path.join(d, "tracker", "diff_status.json"), "w"))
+    h = render_tracker.render(d, now)
+    landed = render_tracker.DIFF_STATES["landed"]
+    assert f'diff/D123456789">D123456789</a> <span style="color:white; background-color:{landed[0]}">landed</span>' in h
+    assert ">abandoned</span>" in h and "Diff state (from Phabricator, 3 diffs)" in h
+    dot = open(os.path.join(d, "tracker", "tasks.dot")).read()
+    t1 = next(line for line in dot.splitlines() if line.startswith("T1 ["))
+    t3 = next(line for line in dot.splitlines() if line.startswith("T3 ["))
+    assert landed[0] in t1 and render_tracker.DIFF_STATES["accepted"][0] in t3 and "L_abandoned" in dot
+
+def test_completed_boxes_show_time_bar():
+    T = state.parse_ts
+    d = tempfile.mkdtemp()
+    tasks = [(1, "Done task", []), (2, "Running task", [1])]
+    states = {1: "diff_open", 2: "in_progress"}
+    times = {1: {"task_start": T("2026-10-19T08:00:00Z"), "task_done": T("2026-10-19T10:00:00Z")},
+             2: {"task_start": T("2026-10-19T10:00:00Z"), "last_start": T("2026-10-19T10:00:00Z")}}
+    own = [(T("2026-10-19T09:00:00Z"), T("2026-10-19T09:15:00Z")), (T("2026-10-19T10:30:00Z"), T("2026-10-19T10:40:00Z"))]
+    sk = [(T("2026-10-19T08:00:00Z"), T("2026-10-19T09:45:00Z")), (T("2026-10-19T10:00:00Z"), T("2026-10-19T11:00:00Z"))]
+    render_tracker.task_chart(tasks, states, os.path.join(d, "tasks.png"), times, own, sk)
+    dot = open(os.path.join(d, "tasks.dot")).read()
+    t1 = next(line for line in dot.splitlines() if line.startswith("T1 ["))
+    assert "agent 1h 45m / you 15m" in t1 and 'fillcolor="#8e6fd8"' in t1 and "striped" not in t1
+    assert 'WIDTH="88"' in t1 and 'BGCOLOR="#2a78d6"' in t1 and 'WIDTH="12"' in t1 and 'BGCOLOR="#eb6834"' in t1  # 105 : 15
+    t2 = next(line for line in dot.splitlines() if line.startswith("T2 ["))
+    assert t2 == 'T2 [label="T2\\nRunning task", fillcolor="#cfe2f3", color="#2a78d6", fontcolor="#0b0b0b"];'
+    assert "done, diff not landed" in dot
+    ev = [{"ts": "2026-10-19T08:00:00Z", "kind": "comment", "phase": "PROPOSAL", "event": ""},
+          {"ts": "2026-10-19T08:10:00Z", "kind": "comment", "phase": "PROPOSAL", "event": ""},
+          {"ts": "2026-10-19T08:30:00Z", "kind": "milestone", "phase": "SPEC", "event": ""}]
+    render_tracker.flow_chart({"phase": "SPEC"}, os.path.join(d, "flow.png"), ev, T("2026-10-19T09:00:00Z"))
+    flow = open(os.path.join(d, "flow.dot")).read()
+    prop = next(line for line in flow.splitlines() if line.startswith("PROPOSAL ["))
+    assert "agent 30m / you 5m" in prop and 'WIDTH="86"' in prop and 'WIDTH="14"' in prop   # phase 08:00-08:30; owner 08:05-08:10
+    assert 'fillcolor="#e3eefb"' in prop and "striped" not in prop
+    spec = next(line for line in flow.splitlines() if line.startswith("SPEC ["))
+    assert "agent" not in spec and "TABLE" not in spec
 
 
 # ---------- velocity.py ----------
@@ -808,6 +910,17 @@ esac
 
 
 
+def test_wait_spans_pair_and_stay_open():
+    T = state.parse_ts
+    ev = [{"ts": "2026-10-20T10:00:00Z", "kind": "wait_start", "event": "MAST: gate 3 stage 2"},
+          {"ts": "2026-10-20T11:00:00Z", "kind": "wait_done", "event": "MAST: gate 3 stage 2"},
+          {"ts": "2026-10-20T11:30:00Z", "kind": "wait_start", "event": "owner: I26"}]
+    now = T("2026-10-20T12:00:00Z")
+    assert render_tracker.wait_spans(ev, now) == [
+        (T("2026-10-20T10:00:00Z"), T("2026-10-20T11:00:00Z"), "MAST: gate 3 stage 2"),
+        (T("2026-10-20T11:30:00Z"), now, "owner: I26")]
+
+
 def main() -> None:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:
@@ -817,3 +930,11 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def test_event_log_to_separate_file():
+    d = copy_run()
+    out, ev = os.path.join(d, "o.html"), os.path.join(d, "ev.html")
+    r = subprocess.run([sys.executable, os.path.join(HERE, "render_tracker.py"), d, out, ev], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "<h2>Event log</h2>" not in open(out).read() and re.match(r"(<h2>Timeline</h2>.*?)?<h2>Event log</h2>", open(ev).read(), re.S)

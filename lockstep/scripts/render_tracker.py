@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Render the live tracker dashboard from run state.
 
-Usage: render_tracker.py RUN_DIR OUT.html
+Usage: render_tracker.py RUN_DIR OUT.html [EVENTS.html]
 Reads RUN_DIR/pipeline.json, RUN_DIR/run.json (sdd state, PLAN/BUILD/LAND), RUN_DIR/events.jsonl and RUN_DIR/request.md;
-writes figures to RUN_DIR/tracker/ and a ghtml body to OUT.html. Images are absolute file:// paths, so deliver with
+writes figures to RUN_DIR/tracker/ and a ghtml body to OUT.html; with EVENTS.html the event log goes there
+(for its own doc tab) instead of OUT.html. Images are absolute file:// paths, so deliver with
 `meta google.docs apply` (create cannot stage local images).
 """
 import html
 import json
 import os
 import re
+import textwrap
 import subprocess
 import sys
 from datetime import datetime, timedelta
@@ -25,13 +27,26 @@ from state import now_utc, parse_ts, read_events, read_json  # noqa: E402,F401
 PHASES = ["INIT", "RESEARCH", "PROPOSAL", "SPEC", "PLAN", "BUILD", "LAND", "DONE"]
 PHASE_LABEL = {"PLAN": "Plan\\n(write + harden)", "BUILD": "Build\\n(implement)", "LAND": "Land\\n(optional review, merge)"}
 BLUE, ORANGE, GREY, LIGHT = "#2a78d6", "#eb6834", "#52514e", "#efeeea"
+PURPLE = "#7b3fbf"
 TASK_STATES = {  # state: (fill, border, font, legend)
     "pending": ("#efeeea", "#8a8984", "#52514e", "not started"),
-    "in_progress": ("#2a78d6", "#2a78d6", "white", "in progress"),
-    "complete": ("#2e9e5b", "#2e9e5b", "white", "complete"),
+    "in_progress": ("#cfe2f3", "#2a78d6", "#0b0b0b", "in progress"),
+    "diff_open": ("#8e6fd8", "#8e6fd8", "white", "done, diff not landed"),
+    "complete": ("#2e9e5b", "#2e9e5b", "white", "done (landed, or no code diff)"),
     "parked": ("#eb6834", "#eb6834", "white", "parked on your answer"),
     "blocked": ("#c8312b", "#c8312b", "white", "blocked"),
 }
+DIFF_STATES = {  # Phabricator state from tracker/diff_status.json, least advanced first: (fill, border, font, legend)
+    "draft": ("#8a8984", "#8a8984", "white", "diff draft"),
+    "published": ("#2a78d6", "#2a78d6", "white", "diff published, in review"),
+    "accepted": ("#13827e", "#13827e", "white", "diff accepted, not landed"),
+    "landed": ("#2e9e5b", "#2e9e5b", "white", "diff landed"),
+    "abandoned": ("#fbe3e2", "#c8312b", "#c8312b", "diff abandoned"),
+}
+TASK_STATES.update(DIFF_STATES)
+BASE_STATES = [k for k in TASK_STATES if k not in DIFF_STATES]
+LANDED = ("closed", "landed")
+BAR_W = 100   # points: width of the agent/owner time bar under a completed box's label
 CREDENTIAL = [  # mask only the value; KEY=value (incl. MY_TOKEN, client_secret, "token: Bearer x"), then bare bearer tokens
     re.compile(r"(?i)(?<![A-Za-z0-9])([A-Za-z0-9_]*(?:token|secret|password|passwd|api[_-]?key|access[_-]?key))"
                r"([ \t]*[:=][ \t]*(?:bearer[ \t]+)?)([^\s\[][^\s]*)"),
@@ -129,6 +144,17 @@ def skill_spans(events: list[dict], now: datetime) -> list[tuple[datetime, datet
     return _merge(spans)
 
 
+def wait_spans(events: list[dict], now: datetime) -> list[tuple[datetime, datetime, str]]:
+    """What the run waited on (a MAST job, an owner answer): wait_start to wait_done with the same text, or to now."""
+    out, open_w = [], {}
+    for e in sorted(events, key=lambda e: parse_ts(e["ts"])):
+        if e["kind"] == "wait_start":
+            open_w.setdefault(e["event"], parse_ts(e["ts"]))
+        elif e["kind"] == "wait_done" and e["event"] in open_w:
+            out.append((open_w.pop(e["event"]), parse_ts(e["ts"]), e["event"]))
+    return out + [(s, now, t) for t, s in open_w.items()]
+
+
 def overlap(spans, a: datetime, b: datetime) -> float:
     return sum(max(0.0, (min(t, b) - max(s, a)).total_seconds()) for s, t in spans)
 
@@ -163,8 +189,56 @@ def _dot_esc(t: str) -> str:
     return str(t).replace("\\", "\\\\").replace('"', '\\"')
 
 
-def flow_chart(run, out):
-    """Phase flowchart: start/end states, an accept decision with a revise loop for each gated doc."""
+def bar_label(lines, own, sk, spans):
+    """HTML-like label: the text lines, a thin agent/owner bar sized by their active time inside spans, and
+    'agent Xm / you Ym'; None if neither worked."""
+    a = sum(overlap(sk, s, t) for s, t in spans)
+    o = sum(overlap(own, s, t) for s, t in spans)
+    if a + o <= 0:
+        return None
+    w = round(BAR_W * a / (a + o))
+    cells = "".join(f'<TD WIDTH="{x}" HEIGHT="5" FIXEDSIZE="TRUE" BGCOLOR="{c}"></TD>'
+                    for x, c in ((w, BLUE), (BAR_W - w, ORANGE)) if x)
+    text = "<BR/>".join(html.escape(line) for line in lines)
+    return (f'<<TABLE BORDER="0" CELLSPACING="0" CELLPADDING="1"><TR><TD>{text}</TD></TR>'
+            f'<TR><TD><TABLE BORDER="1" COLOR="white" CELLBORDER="0" CELLSPACING="0" CELLPADDING="0" FIXEDSIZE="TRUE" WIDTH="{BAR_W + 2}" HEIGHT="7"><TR>{cells}</TR></TABLE></TD></TR>'
+            f'<TR><TD><FONT POINT-SIZE="9">agent {fmt_dur(a)} / you {fmt_dur(o)}</FONT></TD></TR></TABLE>>')
+
+
+def shown_states(states, task_diffs, diffs, status=None):
+    """With polled diff status, a task with diffs shows its least advanced live diff (abandoned only when all are).
+    Otherwise a complete task with any D-number not yet landed or closed shows as diff_open."""
+    order = list(DIFF_STATES)
+    out = {}
+    for n, s in states.items():
+        ids = re.findall(r"D\d+", str(task_diffs.get(str(n)) or ""))
+        known = [status[i]["state"] for i in ids if i in (status or {}) and status[i].get("state") in DIFF_STATES]
+        if known:
+            live = [k for k in known if k != "abandoned"] or ["abandoned"]
+            out[n] = min(live, key=order.index)
+        else:
+            out[n] = "diff_open" if s == "complete" and any(str(diffs.get(i) or "").lower() not in LANDED for i in ids) else s
+    return out
+
+
+def _chip(state: str, text: str) -> str:
+    fill, _, font, _ = TASK_STATES[state]
+    return f'<span style="color:{font}; background-color:{fill}">{esc(text)}</span>'
+
+
+def phase_spans(events, now):
+    """{phase: [(start, end)]}: each instant belongs to the phase of the latest event at or before it, as in the Timeline."""
+    ev = sorted((e for e in events if e.get("phase") in PHASES), key=lambda e: parse_ts(e["ts"]))
+    out = {}
+    for e, nxt in zip(ev, ev[1:] + [None]):
+        out.setdefault(e["phase"], []).append((parse_ts(e["ts"]), parse_ts(nxt["ts"]) if nxt else now))
+    return out
+
+
+def flow_chart(run, out, events=(), now=None):
+    """Phase flowchart: start/end states, an accept decision with a revise loop for each gated doc.
+    Completed phases carry a bar splitting their agent/owner active time."""
+    own, sk, spans = (owner_spans(events), skill_spans(events, now), phase_spans(events, now)) if events else ([], [], {})
     current = run.get("phase", "PROPOSAL")
     gates = {k: v.get("status", "") for k, v in run.get("docs", {}).items() if isinstance(v, dict)}
     roadmap = run.get("roadmap") or []
@@ -192,7 +266,9 @@ def flow_chart(run, out):
         g = gates.get(p.lower())
         if g:
             label += f"\\n({g.replace('_', ' ')})"
-        lines.append(f'{p} [label="{label}", fillcolor="{fill}", color="{col}", fontcolor="{font}"];')
+        bar = done and bar_label(label.split("\\n"), own, sk, spans.get(p, []))
+        label = bar or f'"{label}"'
+        lines.append(f'{p} [label={label}, fillcolor="{fill}", color="{col}", fontcolor="{font}"];')
     chain = ["start"] + PHASES
     for a, b in zip(chain, chain[1:]):
         if a in ("PROPOSAL", "SPEC"):
@@ -242,7 +318,7 @@ def task_states(run_dir, sdd, tasks, events):
     return states, times
 
 
-def task_chart(tasks, states, out):
+def task_chart(tasks, states, out, times=None, own=(), sk=(), diff_legend=False):
     lines = ['digraph T { graph [rankdir=LR, bgcolor="#fcfcfb", pad=0.3, nodesep=0.25, ranksep=0.45];',
              'node [shape=box, style="rounded,filled", fontname="Liberation Sans", fontsize=12, penwidth=2];',
              'edge [color="#8a8984", penwidth=1.5];',
@@ -263,15 +339,22 @@ def task_chart(tasks, states, out):
         deps = sorted(d for d in direct[n] if d in known)
         fill, col, font, _ = TASK_STATES[states[n]]
         short = title if len(title) <= 28 else title[:26] + "…"
-        short = short.replace("\\", "\\\\").replace('"', '\\"')
-        lines.append(f'T{n} [label="T{n}\\n{short}", fillcolor="{fill}", color="{col}", fontcolor="{font}"];')
+        t = (times or {}).get(n, {})
+        bar = states[n] in ("complete", "diff_open", *DIFF_STATES) and "task_done" in t and bar_label(
+            [f"T{n}", short], own, sk, [(t["task_start"], t["task_done"])])
+        label = bar or f'"T{n}\\n{_dot_esc(short)}"'
+        lines.append(f'T{n} [label={label}, fillcolor="{fill}", color="{col}", fontcolor="{font}"];')
         lines += [f"T{d} -> T{n};" for d in deps] or [f"start -> T{n};"]
         if n not in have_children:
             lines.append(f"T{n} -> end;")
     lines.append('subgraph cluster_legend { label="Task state"; fontname="Liberation Sans"; fontsize=11; color="#d6d5d0";')
-    for k, (fill, col, font, legend) in TASK_STATES.items():
+    keys = BASE_STATES + (list(DIFF_STATES) if diff_legend else [])
+    for k in keys:
+        fill, col, font, legend = TASK_STATES[k]
         lines.append(f'L_{k} [label="{legend}", fillcolor="{fill}", color="{col}", fontcolor="{font}", fontsize=10];')
-    lines.append(" -> ".join(f"L_{k}" for k in TASK_STATES) + ' [style=invis]; }')
+    lines.append(f'L_agent [label="bar: agent working", fillcolor="{BLUE}", color="{BLUE}", fontcolor="white", fontsize=10];')
+    lines.append(f'L_you [label="bar: you engaged", fillcolor="{ORANGE}", color="{ORANGE}", fontcolor="white", fontsize=10];')
+    lines.append(" -> ".join([f"L_{k}" for k in keys] + ["L_agent", "L_you"]) + ' [style=invis]; }')
     lines.append("}")
     dot = out.replace(".png", ".dot")
     open(dot, "w").write("\n".join(lines))
@@ -286,10 +369,32 @@ def time_split(events: list[dict], now: datetime) -> tuple[float, float, float]:
     return span(owner_spans(events)), span(skill_spans(events, now)), total
 
 
-def timeline_chart(events, now, out):
-    """Active time only: idle stretches are cut out and marked with how long nothing was happening."""
+TIMELINE_WINDOW = timedelta(hours=48)
+
+
+def timeline_windows(events, now):
+    """Completed TIMELINE_WINDOW blocks counted from the first event, newest first; the main tab shows the
+    rolling latest window, these go to the Event log tab."""
+    if not events:
+        return []
+    t0 = min(parse_ts(e["ts"]) for e in events)
+    out, a = [], t0
+    while a + TIMELINE_WINDOW <= now:
+        out.append((a, a + TIMELINE_WINDOW))
+        a += TIMELINE_WINDOW
+    return out[::-1]
+
+
+def timeline_chart(events, now, out, lo=None, hi=None):
+    """Active time only: idle stretches are cut out and marked with how long nothing was happening.
+    `lo`/`hi` clip the chart to a time window."""
     pieces = active_pieces(events, now)
-    fig, ax = plt.subplots(figsize=(10, 2.8), facecolor="#fcfcfb")
+    waits = wait_spans(events, now)
+    if lo is not None or hi is not None:
+        lo, hi = lo or datetime.min.replace(tzinfo=now.tzinfo), hi or now
+        clip = lambda xs: [(max(a, lo), min(b, hi), *r) for a, b, *r in xs if b > lo and a < hi]
+        pieces, waits = clip(pieces), clip(waits)
+    fig, ax = plt.subplots(figsize=(10, 4.6), facecolor="#fcfcfb")
     ax.set_facecolor("#fcfcfb")
     by_time = sorted(events, key=lambda e: parse_ts(e["ts"]))   # backfilled events sit out of file order
     phase_at = lambda t: next((e.get("phase") for e in reversed(by_time)
@@ -303,27 +408,58 @@ def timeline_chart(events, now, out):
             a = c
         split.append((a, b, who))
     rows = [p for p in PHASES if any(phase_at(a) == p for a, _, _ in split)] or ["INIT"]
-    x, prev = 0.0, None
+    room = sum((b - a).total_seconds() for a, b, _ in split) / 60 * 0.03  # labels closer than this would overlap
+    x, prev, last_label, segs, ticks = 0.0, None, None, [], []
     for a, b, who in split:
         if prev is not None and (a - prev).total_seconds() >= 15 * 60:
-            ax.axvline(x, color=GREY, linestyle=":", linewidth=1)
-            ax.text(x, len(rows) - 0.45, f"idle {fmt_dur((a - prev).total_seconds())}", fontsize=7, color=GREY, ha="center")
+            gap = fmt_dur((a - prev).total_seconds())
+            on = list(dict.fromkeys(t for s, e, t in waits if s < a and e > prev))  # waits overlapping the cut gap
+            colour, label = (PURPLE, f"waited {gap}: " + "; ".join(on)) if on else (GREY, f"idle {gap}")
+            ax.axvline(x, color=colour, linestyle="--", linewidth=2)
+            if last_label is None or x - last_label >= room:
+                ax.text(x, -0.55, textwrap.shorten(label, 30, placeholder="..."), fontsize=6.5, color=colour,
+                        rotation=90, ha="right", va="bottom")  # in the band above the top row, clear of the bars
+                last_label = x
         w, r = (b - a).total_seconds() / 60, rows.index(phase_at(a))
         if who in ("you", "both"):   # upper half: you engaged
             ax.barh(r - 0.13, w, left=x, height=0.26, color=ORANGE, edgecolor="#fcfcfb", linewidth=0.5)
         if who in ("skill", "both"):  # lower half: agent working
             ax.barh(r + 0.13, w, left=x, height=0.26, color=BLUE, edgecolor="#fcfcfb", linewidth=0.5)
+        if prev is None or (a - prev).total_seconds() >= 15 * 60:
+            ticks.append((x, a))   # clock time where each run of activity starts
+        h = a.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+        while h < b:               # and every clock hour inside it
+            ticks.append((x + (h - a).total_seconds() / 60, h))
+            h += timedelta(hours=1)
+        segs.append((a, b, x))
         x, prev = x + w, b
-    ax.set_yticks(range(len(rows)))
-    ax.set_yticklabels([r.title() for r in rows])
-    ax.invert_yaxis()
-    ax.set_xlabel("active minutes (time when neither of you was working is cut out)")
+    # Bottom lane: whenever the run was waiting on jobs, even while someone was also working.
+    lane = len(rows)
+    for s, e, _ in waits:
+        for a, b, x0 in segs:
+            lo, hi = max(a, s), min(b, e)
+            if hi > lo:
+                ax.barh(lane, (hi - lo).total_seconds() / 60, left=x0 + (lo - a).total_seconds() / 60,
+                        height=0.3, color=PURPLE, alpha=0.55, linewidth=0)
+    ax.set_yticks(range(len(rows) + 1))
+    ax.set_yticklabels([r.title() for r in rows] + ["Waiting on jobs"])
+    ax.set_ylim(len(rows) + 0.5, -3.0)  # inverted, with headroom above the top row for the gap labels
+    kept, gap = [], max(x, 1) * 0.06   # thin the clock labels so they never overlap
+    for tx, t in ticks:
+        if not kept or tx - kept[-1][0] >= gap:
+            kept.append((tx, t))
+    ax.set_xticks([tx for tx, _ in kept])
+    ax.set_xticklabels([f"{local(t):%a %H:%M}" for _, t in kept], rotation=35, ha="right", fontsize=7)
+    ax.set_xlabel(f"clock time ({local(now):%Z}); time when neither of you was working is cut out")
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
     ax.grid(axis="x", color="#e5e4e0")
     from matplotlib.patches import Patch
-    ax.legend(handles=[Patch(color=ORANGE, label="you engaged (reading, commenting)"), Patch(color=BLUE, label="agent working")],
-              loc="lower center", bbox_to_anchor=(0.5, 1.08), ncol=2, frameon=False, fontsize=9)
+    from matplotlib.lines import Line2D
+    ax.legend(handles=[Patch(color=ORANGE, label="you engaged (reading, commenting)"), Patch(color=BLUE, label="agent working"),
+                       Line2D([], [], color=GREY, linestyle="--", linewidth=2, label="break (nothing running)"),
+                       Line2D([], [], color=PURPLE, linestyle="--", linewidth=2, label="only waiting (nobody working)")],
+              loc="lower center", bbox_to_anchor=(0.5, 1.08), ncol=4, frameon=False, fontsize=8)
     plt.tight_layout()
     plt.savefig(out, dpi=150, facecolor="#fcfcfb")
     plt.close(fig)
@@ -357,16 +493,22 @@ def _figure(figdir, name, alt, n, caption):
 
 
 
-def _diff_cell(d, states: dict) -> str:
-    """A task's diff: a linked D-number (with its polled state), or a note such as a local commit."""
+def _diff_cell(d, states: dict, status=None) -> str:
+    """A task's diff: a linked D-number (with its polled state, colour-coded when diff_status.json has it), or a note."""
     if not d:
         return "-"
-    if not re.fullmatch(r"D\d+", str(d)):
+    ids = re.split(r",\s*", str(d))
+    if not all(re.fullmatch(r"D\d+", i) for i in ids):
         return esc(d)
-    st = states.get(d)
-    return f'<a href="https://www.internalfb.com/diff/{esc(d)}">{esc(d)}</a>' + (f" ({esc(st)})" if st else "")
+    def label(i):
+        st = (status or {}).get(i, {}).get("state")
+        if st in DIFF_STATES:
+            return " " + _chip(st, st)
+        return f" ({esc(states[i])})" if states.get(i) else ""
+    return ", ".join(f'<a href="https://www.internalfb.com/diff/{esc(i)}">{esc(i)}</a>' + label(i) for i in ids)
 
-def render(run_dir: str, now: datetime) -> str:
+def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> str:
+    """Body html; when `events_out` is a list, the Event log section is appended to it instead of the body."""
     run_dir = os.path.abspath(run_dir)
     run = read_json(os.path.join(run_dir, "pipeline.json"))
     global TZ
@@ -390,9 +532,12 @@ def render(run_dir: str, now: datetime) -> str:
             events.append(append_event(run_dir, "blocked", note, now=now))
     figdir = os.path.join(run_dir, "tracker")
     os.makedirs(figdir, exist_ok=True)
-    flow_chart(run, os.path.join(figdir, "flow.png"))
+    flow_chart(run, os.path.join(figdir, "flow.png"), events, now)
+    windows = timeline_windows(events, now)
     if events:
-        timeline_chart(events, now, os.path.join(figdir, "timeline.png"))
+        timeline_chart(events, now, os.path.join(figdir, "timeline.png"), lo=now - TIMELINE_WINDOW)
+        for a, b in windows:
+            timeline_chart(events, now, os.path.join(figdir, f"timeline-{local(a):%Y%m%d%H%M}.png"), lo=a, hi=b)
     own_all, skill_all = owner_spans(events), skill_spans(events, now)
     you_s, agent_s, tot_s = time_split(events, now)
     tot_m, you_m, agent_m = round(tot_s / 60), round(you_s / 60), round(agent_s / 60)
@@ -415,6 +560,7 @@ def render(run_dir: str, now: datetime) -> str:
     ]))
     h.append("<h2>Where the run is</h2>" + _figure(figdir, "flow.png", "run phases", 1,
              "This run's phases from request to done, left to right inside its milestone; the current phase is filled blue, "
+             "each completed phase carries a bar split blue (agent) and orange (you) by its active time, "
              "each gated doc shows its state, and the dashed edges are the review loops. Later milestones of the larger plan stack below."))
     if run.get("roadmap"):
         h.append("<h2>Larger plan</h2><p>This run is milestone 1. The later milestones are bookkeeping, not yet planned in detail.</p>" + _table(
@@ -423,35 +569,48 @@ def render(run_dir: str, now: datetime) -> str:
              for i, m in enumerate(run["roadmap"], 1)]))
     if events:
         h.append("<h2>Timeline</h2>" + _figure(figdir, "timeline.png", "timeline", 2,
-                 "Active time only, by phase: you engaged (upper bar) and the agent working (lower bar), counted separately. Stretches when neither of you was working (you away and the agent idle or waiting on you) are cut out; dotted lines mark the breaks."))
+                 "The last 48 hours" + ((" (earlier 48-hour blocks are on the " + (f'<a href="https://docs.google.com/document/d/{run["tracker_doc"]}/edit?tab={run["tracker_events_tab"]}">Event log tab</a>' if run.get("tracker_events_tab") and run.get("tracker_doc") else "Event log tab") + ", under Timeline)") if windows else "") + ". Active time only, by phase: you engaged (upper bar) and the agent working (lower bar), counted separately. Stretches when neither of you was working (you away and the agent idle or waiting on you) are cut out; dotted lines mark the breaks."))
 
+    tests = {}
+    for e in events:
+        if e["kind"] == "test_run":
+            tests[e.get("task")] = tests.get(e.get("task"), 0) + 1
     plan_path = sdd.get("plan_path") and os.path.join(run_dir, sdd["plan_path"])
     tasks, states, times = [], {}, {}
     task_diffs, run_diffs = run.get("task_diffs") or {}, run.get("diffs") or {}
     if plan_path and os.path.exists(plan_path):
         tasks = plan_tasks(plan_path)
         states, times = task_states(run_dir, sdd, tasks, events)
-        task_chart(tasks, states, os.path.join(figdir, "tasks.png"))
+        ds_path = os.path.join(figdir, "diff_status.json")
+        dstat = read_json(ds_path) if os.path.exists(ds_path) else None
+        shown_st = shown_states(states, task_diffs, run_diffs, dstat)
+        task_chart(tasks, shown_st, os.path.join(figdir, "tasks.png"), times, own_all, skill_all, bool(dstat))
         goal = re.search(r"^\*\*Goal:\*\* (.+)$", open(plan_path).read(), re.M)
         done = sum(v == "complete" for v in states.values())
         h.append(f"<h2>Implementation plan</h2><p>Full plan: {_doc_link(run['docs'].get('plan', {}), sdd['plan_path'])}. "
                  f"sdd stage: {esc(sdd.get('stage', ''))}. Tasks complete: {done}/{len(tasks)}.</p>")
         if goal:
             h.append(f"<p><b>Goal:</b> {esc(goal.group(1))}</p>")
-        h.append(_figure(figdir, "tasks.png", "task flow", 3, "Plan tasks with their dependencies, coloured by state."))
+        colour = ("a task with diffs takes the colour of its least advanced live diff: grey draft, blue published, "
+                  "teal accepted, green landed, red outline all abandoned" if dstat else
+                  "a done task stays purple until every diff it produced has landed")
+        h.append(_figure(figdir, "tasks.png", "task flow", 3, f"Plan tasks with their dependencies, coloured by state ({colour}); "
+                         "the bar under each done task splits its active time blue (agent) and orange (you)."))
         rows = []
         for n, title, deps in tasks:
             t = times.get(n, {})
             start = f"{local(t['task_start']):%m-%d %H:%M}" if "task_start" in t else ""
             dur = fmt_dur(overlap(skill_all, t["task_start"], t.get("task_done") or now)) if "task_start" in t else ""
-            rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-", TASK_STATES[states[n]][3], start, dur,
-                         _diff_cell(task_diffs.get(str(n)), run_diffs)))
-        h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration", "Diff"], rows))
+            legend = TASK_STATES[shown_st[n]][3]
+            rows.append((f"T{n}", esc(title), ", ".join(f"T{d}" for d in deps) or "-",
+                         _chip(shown_st[n], legend) if dstat else legend, start, dur,
+                         str(tests.get(n, 0)), _diff_cell(task_diffs.get(str(n)), run_diffs, dstat)))
+        if dstat:
+            h.append("<p>Diff state (from Phabricator, " + f"{len(dstat)} diffs): "
+                     + " ".join(_chip(k, k) for k in DIFF_STATES)
+                     + ". A task shows its least advanced live diff; abandoned only when all its diffs are.</p>")
+        h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration", "Test runs", "Diff"], rows))
 
-    tests = {}
-    for e in events:
-        if e["kind"] == "test_run":
-            tests[e.get("task")] = tests.get(e.get("task"), 0) + 1
     diff_ev = {}
     for e in events:
         if e["kind"].startswith("diff_") and e.get("diff"):
@@ -460,10 +619,6 @@ def render(run_dir: str, now: datetime) -> str:
     h.append("<h2>Build to closure</h2><p>Request to closure: "
              f"{fmt_dur(active(t0, end or now))} active{'' if end else ' so far'} "
              f"({fmt_dur(((end or now) - t0).total_seconds())} wall clock). Test runs: {sum(tests.values())}.</p>")
-    closure = [(f"T{n}", fmt_dur(overlap(skill_all, t["task_start"], t["task_done"])) if "task_done" in t else "running",
-                str(tests.get(n, 0))) for n, t in sorted(times.items()) if "task_start" in t]
-    if closure:
-        h.append(_table(["Task", "Implementation time", "Test runs"], closure))
     if diff_ev:
         h.append(_table(["Diff", "Created", "Published", "Reviewed", "Landed"],
                         [(esc(d), v.get("created", ""), v.get("published", ""), v.get("reviewed", ""), v.get("landed", ""))
@@ -547,11 +702,6 @@ def render(run_dir: str, now: datetime) -> str:
               for n, s in states.items() if s == "parked"]
     h.append("<h2>Parked tasks</h2>" + (_table(["Task", "Doc", "Since"], parked) if parked else "<p>None.</p><p></p>"))
 
-    shown = set(task_diffs.values()) if tasks else set()
-    diffs = [(_diff_cell(d, {}), esc(state_)) for d, state_ in run_diffs.items() if d not in shown]
-    if diffs or not shown:
-        h.append("<h2>Diffs</h2>" + (_table(["Diff", "State"], diffs) if diffs else "<p>None recorded.</p><p></p>"))
-
     h.append("<h2>Original request (verbatim)</h2><p><i>" + esc(request) + "</i></p><p></p>")
     log, prev = [], None
     for e in events:
@@ -559,20 +709,31 @@ def render(run_dir: str, now: datetime) -> str:
         log.append((hhmm(e["ts"]), esc((e.get("phase") or "").title()), esc(e["event"]),
                     fmt_dur((t - prev).total_seconds()) if prev else ""))
         prev = t
-    h.append("<h2>Event log</h2>" + _table([f"Time ({tzl})", "Phase", "Event", "Since previous"], log))
+    blocks = ("<h2>Timeline</h2>" if windows else "") + "".join(f"<h3>{local(a):%b %d %H:%M} to {local(b):%b %d %H:%M} {tzl}</h3>"
+                     + _figure(figdir, f"timeline-{local(a):%Y%m%d%H%M}.png", "timeline", f"E{i}",
+                               "Active time in this 48-hour block, drawn as on the main tab.")
+                     for i, (a, b) in enumerate(windows, 1))
+    section = blocks + "<h2>Event log</h2>" + _table([f"Time ({tzl})", "Phase", "Event", "Since previous"], log)
+    if events_out is None:
+        h.append(section)
+    else:
+        events_out.append(section + "\n")
     return "\n".join(h) + "\n"
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
+    if len(argv) not in (2, 3):
         print(__doc__, file=sys.stderr)
         return 2
+    events = [] if len(argv) == 3 else None
     try:
-        body = render(argv[0], now_utc())
+        body = render(argv[0], now_utc(), events)
     except (ValueError, OSError, subprocess.CalledProcessError) as e:
         print(e, file=sys.stderr)
         return 1
     open(argv[1], "w").write(body)
+    if events is not None:
+        open(argv[2], "w").write("".join(events))
     return 0
 
 

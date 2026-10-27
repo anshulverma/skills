@@ -57,7 +57,7 @@ def parse_list_output(out: str) -> tuple[list[dict], str | None]:
 def list_comments(doc_id: str) -> list[dict]:
     rows, token = [], None
     while True:
-        cmd = ["meta", "google.docs.comment", "list", f"--id={doc_id}", "--output=json", "-l", "200", "--columns=all"]
+        cmd = ["meta", "google.docs.comment", "list", f"--id={doc_id}", "--output=json", "-l", "2000", "--columns=all"]
         if token:
             cmd.append(f"--page-token={token}")
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
@@ -197,6 +197,11 @@ def _handled(run_dir: str, key: str) -> set[str]:
     return set(read_json(path)) if os.path.exists(path) else set()
 
 
+
+def swept_keys(docs: dict) -> list[str]:
+    """Docs whose comments the sweep reads: every run doc, plus linked (external) docs marked `watch`."""
+    return [k for k, d in docs.items() if d.get("kind") != "external" or d.get("watch")]
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True)
@@ -208,7 +213,7 @@ def main(argv: list[str]) -> int:
         return 2
     p = read_json(os.path.join(a.run, "pipeline.json"))
     docs = p.get("docs", {})
-    swept = [k for k, d in docs.items() if d.get("kind") != "external"]  # linked docs the run does not own
+    swept = swept_keys(docs)
     keys = a.doc or [*swept, *(["tracker"] if p.get("tracker_doc") else [])]
     result = {}
     for key in keys:

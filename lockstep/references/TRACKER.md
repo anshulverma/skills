@@ -57,11 +57,13 @@ The renderer masks a credential value in `request.md` as `[credential masked]`, 
 | Follow-ups and blockers | From `decisions.md` and `blocked_reasons` / `waiting_reasons`, each with the exact owner action that clears it |
 | Docs produced (R7) | Every doc: status, created, accepted, time to accept, questions answered n/m. Always rendered |
 | Actions (R3) | Every `action` event: time, verb, action, status |
-| Parked tasks, Diffs | Parked tasks with their task-N docs. Each plan task's diff shows in the Implementation plan table's Diff column, from `pipeline.json.task_diffs` (`{"<task n>": "D<n>" or a note such as "none (local commit <hash>)"}`), with the state from `pipeline.json.diffs`. The Diffs section lists only diffs not mapped to a task |
+| Parked tasks | Parked tasks with their task-N docs. Each plan task's diff shows in the Implementation plan table's Diff column, from `pipeline.json.task_diffs` (`{"<task n>": "D<n>" or a note such as "none (local commit <hash>)"}`), with the state from `pipeline.json.diffs`. There is no separate Diffs section (owner: the tasks link the diffs) |
 | Original request (verbatim, R8) | `request.md`, HTML-escaped. It is exempt from the no-data-paths rule because the tracker is verified private. Credentials are never exempt |
-| Event log | Every event with its time and the delta from the previous one |
+| Event log | Every event with its time and the delta from the previous one. Rendered to its own doc tab ("Event log", id in `pipeline.json.tracker_events_tab`) when `render_tracker.py` gets a third EVENTS.html argument, because it grows long |
 
 Task flowchart: one node per task labelled `T<n>` plus a short title. Edges come from each `**Depends on:**` line after transitive reduction (an edge is dropped when a longer path already connects the same two tasks). It has a start node "spec accepted", an end node "all tasks complete" and a legend. Node colour follows task state: not started grey, in progress blue, complete green, parked orange, blocked red. State comes from `ledger.md` (`Task N: complete|parked|blocked`), else in progress when a task_start has no later task_done, else not started; the task events also supply the timings.
+
+Diff status: before each render, `~/.cache/humanize-venv/bin/python $S/diff_status.py <run>` polls every diff in `task_diffs` and `diffs` with `describe` and writes `<run>/tracker/diff_status.json` (`{"D<n>": {"state": "landed|accepted|published|draft|abandoned", "title"}}`; AI Approved counts as accepted). When that file exists, a task with diffs takes the state of its least advanced live diff (abandoned only when all are): grey draft, blue published, teal accepted, green landed, red outline abandoned, in both the task flowchart and the task table, whose State and Diff cells are colour-coded under a one-line legend. Without the file the output is unchanged.
 
 ## events.jsonl
 
@@ -73,12 +75,13 @@ python3 $S/state.py <run> event <kind> "<text>" [doc=<key>] [task=<n>] [diff=D<n
 
 `action` events also carry `verb=<verb>` and `status=<outcome>` for the Actions table. `lease_takeover` is written by `state.py lease acquire`; never append it by hand.
 
-`kind` is one of: milestone, tick, published, gate_open, comment, requirement, answer, accept, confirm_pending, changes, reopen, action, humanize, task_start, task_done, task_parked, test_run, diff_created, diff_published, diff_reviewed, diff_landed, blocked, done, abort, cron_rearmed, local_merge, lease_takeover, owner_active, unit_start, unit_done.
+`kind` is one of: milestone, tick, published, gate_open, comment, requirement, answer, accept, confirm_pending, changes, reopen, action, humanize, task_start, task_done, task_parked, test_run, diff_created, diff_published, diff_reviewed, diff_landed, blocked, done, abort, cron_rearmed, local_merge, lease_takeover, owner_active, unit_start, unit_done, wait_start, wait_done.
 
 - `comment_ts` is the API `created_time` of the owner comment (each sweep item carries it as `created_time`). Set it on comment, answer, requirement and accept events. Review sessions are built from it (references/VELOCITY.md).
 - Only active time counts (`render_tracker.active_pieces`). The purpose is measuring how fast the owner completes a task. You and the agent are counted separately: your time away lowers only your time, and the agent's working time counts whether or not you are around. Time when neither is working counts for nobody.
   - **You engaged**: owner activity (comment kinds with their `comment_ts`, plus `owner_active` events) grouped into sessions with gaps under 10 minutes; each session starts 5 minutes before its first comment (reading lead-in, decision Q8).
   - **Agent working**: every unit from its `unit_start` to its `unit_done` event (or to now while it runs), however long and quiet, plus the gap after any other event except quiet `tick` polls, `gate_open` and `owner_active`, unless that gap runs past 45 minutes. An open gate with no unit running is the agent waiting on the owner and counts as zero.
+  - **Waiting on something** (a long MAST job, an owner answer): log `wait_start "<what>"` when the wait begins and `wait_done "<what>"` with the same text when it ends. A cut-out gap in the timeline that overlaps a wait is drawn as a purple dashed line labelled `waited <dur>: <what>`; a gap with no wait is a grey dashed break. Waits never count as agent working.
   - Log `state.py <run> event unit_start "<unit>"` whenever `in_flight` is claimed, and `unit_done "<unit>"` with the same text whenever it is cleared, including when a dead unit is cleared (references/LOOP.md). Without these, a long background unit (a workflow, a humanize pass) after its last event would count only its first 45 minutes.
   - Everything else (you away and the agent idle, waiting on you, or its session down) counts as zero. The timeline cuts it out and marks each break with its length; wall clock appears only as a labelled reference.
   - The Gates column "Your active time" is the owner's sessions on that doc; task durations are skill time between task_start and task_done.
