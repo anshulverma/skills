@@ -151,6 +151,11 @@ After each pass, compute two numbers and record them in `run.json` (`harden_metr
 - artifact line count
 - markers raised this pass minus markers retired this pass
 
+Also record the `--history` path auto-plan's `metrics.py` writes, relative to the run directory:
+`harden_history` for stage 2, `plan_harden_history` for stage 4. lockstep's tracker embeds the
+progress chart beside it (`<history stem>-progress.png`); without `plan_harden_history` it looks
+for `docs/auto-plan/reports/plan-history.jsonl`.
+
 **Stop the loop when, over 2 consecutive passes, line count grows AND raised exceeds retired.**
 That is a pass adding surface rather than resolving it. Record the triggering metrics, then
 advance the stage.

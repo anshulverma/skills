@@ -500,6 +500,30 @@ def test_no_plan_section_before_plan():
     assert "<h2>Implementation plan</h2>" not in render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
 
 
+def test_render_embeds_hardening_chart():
+    d, t = copy_run(), state.parse_ts("2026-10-19T07:00:00Z")
+    assert "hardening progress" not in render_tracker.render(d, t)
+    rep = os.path.join(d, "docs", "auto-plan", "reports")
+    os.makedirs(rep, exist_ok=True)
+
+    def history(stem, *rows):
+        open(os.path.join(rep, stem + ".jsonl"), "w").write("".join(json.dumps(r) + "\n" for r in rows))
+        open(os.path.join(rep, stem + "-progress.png"), "wb").write(b"png")
+    history("plan-history", {"pass": 1, "verdict": "CONTINUE"}, {"pass": 2, "verdict": "CONVERGED", "chart_url": "https://pxl.cl/abC12"})
+    h = render_tracker.render(d, t)
+    assert f'src="file://{rep}/plan-history-progress.png"' in h and 'href="https://pxl.cl/abC12"' in h
+    assert "Plan hardening by pass" in h and "latest verdict CONVERGED at pass 2" in h
+    assert h.index("<h2>Implementation plan</h2>") < h.index("hardening progress") < h.index("<h2>Build to closure</h2>")
+    # SPEC_HARDEN: no plan yet, so the chart comes from run.json's harden_history under a bare plan heading.
+    sdd = json.load(open(os.path.join(d, "run.json")))
+    sdd.update(stage="SPEC_HARDEN", plan_path="", harden_history="docs/auto-plan/reports/spec-history.jsonl")
+    json.dump(sdd, open(os.path.join(d, "run.json"), "w"))
+    history("spec-history", {"pass": 3, "verdict": "CONTINUE"})
+    h = render_tracker.render(d, t)
+    assert h.count("<h2>Implementation plan</h2>") == 1 and "Spec hardening by pass" in h
+    assert "latest verdict CONTINUE at pass 3." in h and "pxl.cl" not in h
+
+
 
 def test_mask_credentials_variants():
     m = render_tracker.mask_credentials

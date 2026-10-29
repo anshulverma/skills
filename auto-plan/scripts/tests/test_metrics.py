@@ -1,9 +1,10 @@
 # scripts/tests/test_metrics.py
-import json, os, subprocess, sys, tempfile, unittest
+import importlib.util, json, os, subprocess, sys, tempfile, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import metrics
 
 SCRIPT = os.path.join(os.path.dirname(__file__), "..", "metrics.py")
+HAS_MPL = importlib.util.find_spec("matplotlib") is not None
 
 
 def judge(**kw):
@@ -109,6 +110,40 @@ class T(unittest.TestCase):
             call(1, judge(material_changes=1))
             self.assertEqual([x["pass"] for x in metrics.load_run(hist)], [1])
             self.assertEqual(metrics.load_run(hist)[0]["length_ratio"], 1.0)
+
+
+    @unittest.skipUnless(HAS_MPL, "needs matplotlib (run with ~/.cache/humanize-venv/bin/python)")
+    def test_progress_chart_and_upload(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = lambda name: os.path.join(d, name)
+            open(p("plan.md"), "w").write("Task 1: run it. " * 50)
+            hist, png = p("plan-history.jsonl"), p("plan-history-progress.png")
+            os.mkdir(p("bin"))
+
+            def stub(body):
+                open(p("bin/meta"), "w").write("#!/bin/sh\n" + body + "\n")
+                os.chmod(p("bin/meta"), 0o755)
+
+            def call(n, j, *extra):
+                open(p("judge.md"), "w").write("```json\n" + json.dumps(j) + "\n```\n")
+                env = dict(os.environ, PATH=p("bin") + os.pathsep + os.environ["PATH"])
+                return subprocess.run([sys.executable, SCRIPT, "--judge", p("judge.md"), "--artifact", p("plan.md"),
+                                       "--pass", str(n), "--history", hist, "--max-passes", "6", *extra],
+                                      capture_output=True, text=True, env=env)
+            r = call(1, judge(material_changes=2, regions_changed=["a"]))
+            self.assertTrue(os.path.getsize(png) > 0, r.stdout + r.stderr)
+            self.assertNotIn("chart_url", metrics.load_run(hist)[-1])
+            self.assertEqual(metrics.load_run(hist)[-1]["verdict"], "CONTINUE")
+            stub('echo "Uploaded: https://pxl.cl/abC12"')
+            r = call(2, judge(scope="scoped", tasks_read=3), "--upload")
+            self.assertIn("https://pxl.cl/abC12", r.stdout)
+            self.assertEqual(metrics.load_run(hist)[-1]["chart_url"], "https://pxl.cl/abC12")
+            stub('echo "permission denied" >&2; exit 3')
+            r = call(3, judge(), "--upload")
+            self.assertIn("upload failed", r.stdout)
+            self.assertEqual((r.returncode, r.stdout.strip().splitlines()[-1]), (0, "CONVERGED"))
+            last = metrics.load_run(hist)[-1]
+            self.assertEqual((last["verdict"], last.get("chart_url")), ("CONVERGED", None))
 
 
 if __name__ == "__main__":

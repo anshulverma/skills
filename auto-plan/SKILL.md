@@ -70,7 +70,7 @@ digraph auto_plan {
 | `--dry-run` | 0 → 0.5 → 1 | nothing (shows skeleton) |
 | `--resume` | load state → continue | remaining artifacts |
 | `--redo` | load state → 2 → 3 → 4 | updated artifacts |
-| `--harden` | 0 → … → 4, then Phase 5 loop | artifacts + convergence CSV/PNG + metrics history + report |
+| `--harden` | 0 → … → 4, then Phase 5 loop | artifacts + convergence CSV + progress chart + metrics history + report |
 
 ## Input Mode Detection
 
@@ -291,12 +291,13 @@ mutation; never patched in place).
   "passes": [
     {
       "pass": 1,
+      "chart_url": "https://pxl.cl/abC12",
+      "verdict": "CONTINUE",
       "started_at": "2026-06-05T10:00:00Z",
       "completed_at": "2026-06-05T10:08:00Z",
       "status": "complete",
       "snapshot_path": "docs/auto-plan/reports/snapshots/pass-1",
       "judge_verdict": "NOT CONVERGED",
-      "verdict": "CONTINUE",
       "judge_rationale": "Spec gained an error-handling section; 2 ADRs revised.",
       "fingerprint": ["d014", "d015", "spec:error-handling"],
       "gaps_filled": ["partial-write recovery", "retry semantics"],
@@ -313,7 +314,8 @@ mutation; never patched in place).
 ```
 
 `convergence_status` ∈ `in_progress | converged | plateau | max_passes_reached | oscillation | failed | interrupted`.
-`verdict` is the last line `scripts/metrics.py` printed for the pass; `metrics` is the pass's
+Each pass entry leads with `chart_url` (the `pxl.cl` link `metrics.py --upload` printed; omitted when
+the upload failed) and `verdict` (the last line `metrics.py` printed); `metrics` is the pass's
 `history.jsonl` row (see Convergence Metrics). Older passes may carry only the first six keys.
 `current_pass` and `convergence_status` sit at the top of the `harden` object for quick inspection.
 **Two-phase write:** each pass entry is written as `status:"running"` (with `judge_verdict:null`)
@@ -467,15 +469,15 @@ while pass < max_passes:
         record each as UNRESOLVED with its recommended answer        # unattended / low threshold
     apply result.Edits in place; full-rewrite state (decisions delta, status:"complete")
     judge ← dispatch Convergence judge (fresh context, scope full or scoped)   # independent diff
-    verdict ← run scripts/metrics.py on the judge response                     # logs history, CSV, PNG
+    verdict ← run scripts/metrics.py --upload on the judge response            # history, CSV, progress chart + pxl.cl link
     if verdict needs a full-coverage judge:                                    # scoped judge, instability 0
         judge ← dispatch Convergence judge (fresh context, scope full); verdict ← rerun metrics.py
     if verdict == CONVERGED:
         audit ← dispatch Convergence judge (fresh context, scope full)       # escape audit
         verdict ← rerun metrics.py on audit with --escapes <audit open gaps>
-    write state: harden.passes[pass].{judge_verdict, verdict, metrics, fingerprint ← regions_changed}
+    write state: harden.passes[pass].{chart_url, verdict, judge_verdict, metrics, fingerprint ← regions_changed}
     if verdict != CONTINUE: status ← verdict (converged | oscillation | plateau | max_passes_reached); break
-emit report (+ the convergence CSV and PNG metrics.py wrote)
+emit report, led by the last pass's chart link and verdict (+ the convergence CSV)
 ```
 
 The script's verdict is the only stop condition. `CONVERGED` needs `instability_score == 0` from a
@@ -625,10 +627,10 @@ report; trends are reported. `--targets` overrides target bounds by the names th
 After each judge, run:
 
 ```
-python3 ~/.claude/skills/auto-plan/scripts/metrics.py --judge reports/judges/pass-N.md \
+~/.cache/humanize-venv/bin/python ~/.claude/skills/auto-plan/scripts/metrics.py --judge reports/judges/pass-N.md \
   --artifact <spec> [--artifact <adr> ...] [--artifact <plan>] --pass N \
   --history reports/YYYY-MM-DD-<topic>-history.jsonl \
-  --csv reports/YYYY-MM-DD-<topic>-convergence.csv --png reports/YYYY-MM-DD-<topic>-convergence.png \
+  --csv reports/YYYY-MM-DD-<topic>-convergence.csv --upload \
   --pending <unanswered bubble-up questions> --max-passes <max_passes> [--targets "<--targets>"] \
   [--tokens N --seconds N] [--escapes N]
 ```
@@ -636,11 +638,16 @@ python3 ~/.claude/skills/auto-plan/scripts/metrics.py --judge reports/judges/pas
 It counts `UNRESOLVED:` markers and words in the artifacts, appends the pass to `history.jsonl`
 (a pass number lower than the row before starts a new run; a pass logged again replaces its row), appends the CSV row
 (`pass,material_changes,minor_changes,open_gaps,pending_questions,unresolved_markers,instability_score`),
-redraws the PNG (instability and its components by pass; needs matplotlib, else it prints an
-ASCII sparkline to embed in the report), prints one table, the `short:` lines, and the verdict
-last. Exit status 0 means stop, 1 means continue.
+redraws the progress chart next to the history (`<history stem>-progress.png`, e.g.
+`reports/YYYY-MM-DD-<topic>-history-progress.png`: one panel per metric by pass, target dashed,
+misses hollow red, scoped judges as squares, escape audits as a dotted line), uploads it with
+`meta pixelcloud.image upload`, prints the `pxl.cl` link and stores it on the pass's history line as
+`chart_url` next to `verdict`, then prints one table, the `short:` lines, and the verdict last. Exit
+status 0 means stop, 1 means continue. A failed upload prints a warning and changes nothing else;
+the chart needs matplotlib (the humanize venv has it; plain `python3` skips the chart). `--png`
+still draws the older single-axes convergence chart when asked.
 
-**Output per pass:** `[auto-plan] Phase 5/pass N: instability=K (material M, gaps G [B blocking], pending P, unresolved U), coverage C% (scope) — <verdict>`
+**Output per pass:** `[auto-plan] Phase 5/pass N: <pxl.cl link> <verdict> — instability=K (material M, gaps G [B blocking], pending P, unresolved U), coverage C% (scope)`
 
 ## --redo Support
 
@@ -704,7 +711,9 @@ At the end of execution, produce and commit `docs/auto-plan/reports/YYYY-MM-DD-<
 
 ## Hardening Passes
 
-_Only when `--harden` was used. `Convergence: <status> after N passes`, followed by:_
+_Only when `--harden` was used. Lead with the last pass's progress chart link and verdict
+(`Progress chart: https://pxl.cl/... — CONVERGED after N passes`), so the reader sees every
+metric's path without opening a file; then:_
 
 | Pass | Material? | Gaps Filled | Questions Bubbled Up | Verdict Rationale | Snapshot |
 |------|-----------|-------------|----------------------|-------------------|----------|
@@ -713,10 +722,9 @@ _Only when `--harden` was used. `Convergence: <status> after N passes`, followed
 
 Then the last pass's `metrics.py` table (with its `short:` lines and the escape count), and:
 
-![convergence](YYYY-MM-DD-<topic>-convergence.png)
+![progress](YYYY-MM-DD-<topic>-history-progress.png)
 
-_(If no PNG renderer was found, embed an ASCII sparkline of the instability score instead and note
-the PNG was skipped. The convergence CSV is always written.)_
+_(If matplotlib was missing, say the chart was skipped. The convergence CSV is always written.)_
 
 ## Branch Tree
 
@@ -783,8 +791,8 @@ docs/auto-plan/
     YYYY-MM-DD-<topic>-tree.png         (best-effort)
     YYYY-MM-DD-<topic>-state.json       (always kept)
     YYYY-MM-DD-<topic>-convergence.csv  (--harden only; always written)
-    YYYY-MM-DD-<topic>-convergence.png  (--harden only; best-effort)
     YYYY-MM-DD-<topic>-history.jsonl    (--harden only; one metrics row per pass)
+    YYYY-MM-DD-<topic>-history-progress.png  (--harden only; redrawn every pass, needs matplotlib)
     judges/pass-N.md                    (--harden only; latest judge response per pass)
     snapshots/pass-N/                   (--harden only; last 2 retained)
 docs/adr/NNNN-<slug>.md

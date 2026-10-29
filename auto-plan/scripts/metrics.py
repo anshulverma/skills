@@ -5,7 +5,7 @@ Usage:
   metrics.py --judge JUDGE.md --artifact SPEC.md [--artifact PLAN.md ...] --pass N --history HISTORY.jsonl
              [--csv CONVERGENCE.csv] [--png CONVERGENCE.png] [--pending N] [--max-passes 3]
              [--targets "grounding precision >= 0.9 | length vs pass 1 <= 1.5"]
-             [--tokens N] [--seconds N] [--escapes N]
+             [--tokens N] [--seconds N] [--escapes N] [--upload]
 
 --judge is the convergence judge's response (or just its Metrics JSON); the first ```json block
 is read. --artifact is every artifact under hardening (spec, ADRs, plan): their words give the
@@ -17,6 +17,12 @@ questions still waiting for an answer.
 replaces its earlier line. --csv appends the
 convergence CSV row and --png redraws the convergence chart (needs matplotlib; without it an
 ASCII sparkline prints instead).
+
+Every run redraws the progress chart next to the history, <history stem>-progress.png: one panel per
+metric by pass, target dashed, misses hollow red, scoped judges as squares, escape audits as a dotted
+line (needs matplotlib: run with ~/.cache/humanize-venv/bin/python). --upload then uploads it to
+Pixelcloud, prints the pxl.cl link and stores it on the pass's history line as chart_url; a failed
+upload prints a warning and changes nothing else. The pass's line also stores its verdict.
 
 Verdict, on the last line printed:
   CONVERGED    instability 0, from a full-coverage judge, every gate passes -> stop
@@ -32,6 +38,7 @@ import csv
 import json
 import os
 import re
+import subprocess
 import sys
 
 TARGETS = {"grounding precision": (">=", 0.95), "self-report accuracy": (">=", 1.0), "length vs pass 1": ("<=", 1.3)}
@@ -185,6 +192,92 @@ def chart(rows: list[dict], out: str) -> None:
     fig.savefig(out)
 
 
+def progress_chart(rows: list[dict], targets: dict, out: str, title: str) -> None:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    seen, acc = [], []
+    for r in rows:
+        if r["self_report_matches"] is not None:
+            seen.append(bool(r["self_report_matches"]))
+        acc.append(share(sum(seen), len(seen)))
+    col = lambda k: [r[k] for r in rows]
+    # (title, goal, target, [(label, values)]); misses are judged on the first series only.
+    panels = [("instability score", "<=", 0, [("", col("instability_score"))]),
+              ("open gaps by severity", "<=", 0, [("blocking", col("gaps_blocking")),
+                                                   ("inconsistency", col("gaps_inconsistency")),
+                                                   ("cosmetic", col("gaps_cosmetic"))]),
+              ("judge coverage [gate]", ">=", 1.0, [("", col("coverage"))]),
+              ("literal executability [gate]", ">=", 1.0, [("", col("executability"))]),
+              ("spec coverage [gate]", ">=", 1.0, [("", col("spec_coverage"))]),
+              ("grounding precision", *targets["grounding precision"], [("", col("grounding_precision"))]),
+              ("fix regression rate", "falls", 0, [("", col("regression_rate"))]),
+              ("self-report accuracy", *targets["self-report accuracy"], [("", acc)]),
+              ("length vs pass 1", *targets["length vs pass 1"], [("", col("length_ratio"))])]
+    surface, ink, ink2, bad, audit = "#fcfcfb", "#0b0b0b", "#52514e", "#e34948", "#7b3fbf"
+    colors = ["#2a78d6", "#8a6d1f", "#9a9893"]
+    xs = col("pass")
+    fig, axes = plt.subplots(3, 3, figsize=(10.8, 7.5), dpi=170)
+    fig.patch.set_facecolor(surface)
+    for ax, (name, goal, target, series) in zip(axes.flat, panels):
+        ax.set_facecolor(surface)
+        for x in (r["pass"] for r in rows if r.get("escapes") is not None):
+            ax.axvline(x, color=audit, lw=1, ls=":")
+        for i, (label, ys) in enumerate(series):
+            pts = [(x, y, r) for x, y, r in zip(xs, ys, rows) if y is not None]
+            ax.plot([p[0] for p in pts], [p[1] for p in pts], color=colors[i], lw=2 if i == 0 else 1.2,
+                    label=label or None, zorder=3)
+            prev = None
+            for x, y, r in pts:
+                ok = y <= target if goal == "<=" else y >= target if goal == ">=" else y == 0 or (prev is not None and y < prev)
+                miss = i == 0 and not ok
+                ax.plot([x], [y], "o" if r["full_coverage"] else "s", ms=7 if miss else 5, mfc=surface if miss else colors[i],
+                        mec=bad if miss else colors[i], mew=1.8 if miss else 1, zorder=4)
+                prev = y
+            if i == 0 and pts:
+                ax.annotate(f"{pts[-1][1]:.0%}" if goal == ">=" and target <= 1 else f"{pts[-1][1]:.3g}", pts[-1][:2],
+                            xytext=(4, 4), textcoords="offset points", color=ink, fontsize=8)
+            elif i == 0:
+                ax.text(0.5, 0.5, "not measured", transform=ax.transAxes, ha="center", color=ink2, fontsize=8)
+        ax.axhline(target, color=ink2, lw=1, ls=(0, (4, 3)))
+        if goal == ">=" and target <= 1:
+            lo = min([y for y in series[0][1] if y is not None] + [target])
+            # A metric sitting at 100% needs a decimal, or every tick reads the same.
+            fmt = "{:.1%}" if 1 - lo < 0.05 else "{:.0%}"
+            ax.yaxis.set_major_formatter(lambda y, _, fmt=fmt: fmt.format(y))
+            ax.set_ylim(lo - 0.02, 1.01)
+        shown = "falls, 0 best" if goal == "falls" else f"{goal} {target:.0%}" if goal == ">=" and target <= 1 else f"{goal} {target:g}"
+        ax.set_title(f"{name}\n(target {shown})", fontsize=8.5, color=ink, loc="left")
+        if len(series) > 1:
+            ax.legend(fontsize=6.5, frameon=False)
+        ax.set_xticks(xs)
+        ax.tick_params(labelsize=7, colors=ink2, length=0)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+        for side in ("left", "bottom"):
+            ax.spines[side].set_color("#c9c8c3")
+    fig.suptitle(title, x=0.01, ha="left", fontsize=11, color=ink)
+    fig.text(0.01, 0.005, "x: pass. Circle: full-coverage judge. Square: scoped judge. Hollow red: misses its target. "
+             "Dashed line: the target. Dotted purple line: escape audit.", fontsize=7.5, color=ink2)
+    fig.tight_layout(rect=(0, 0.02, 1, 1))
+    fig.savefig(out, facecolor=surface)
+    plt.close(fig)
+
+
+def upload(png: str) -> str:
+    """The pxl.cl link for png, or raise RuntimeError."""
+    try:
+        p = subprocess.run(["meta", "pixelcloud.image", "upload", f"--file=file://{os.path.abspath(png)}"],
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=180)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise RuntimeError(str(e)) from None
+    m = re.search(r"https?://pxl\.cl/[\w-]+", p.stdout + p.stderr)
+    if p.returncode or not m:
+        raise RuntimeError(f"exit {p.returncode}: " + ((p.stderr or p.stdout).strip().splitlines() or ["no pxl.cl link"])[0])
+    return m.group(0)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(usage=__doc__)
     ap.add_argument("--judge", required=True)
@@ -199,6 +292,7 @@ def main() -> None:
     ap.add_argument("--tokens", type=int)
     ap.add_argument("--seconds", type=int)
     ap.add_argument("--escapes", type=int)
+    ap.add_argument("--upload", action="store_true")
     o = ap.parse_args()
 
     targets = dict(TARGETS)
@@ -214,9 +308,8 @@ def main() -> None:
     run = [] if old and o.n < old[-1]["pass"] else [r for r in old if r["pass"] < o.n]
     row = make_row(read_judge(o.judge), o.n, words, unresolved, o.pending, run)
     row.update(tokens=o.tokens, seconds=o.seconds, escapes=o.escapes)
-    with open(o.history, "a", encoding="utf-8") as f:
-        f.write(json.dumps(row) + "\n")
     rows = run + [row]
+    v = row["verdict"] = verdict(rows, o.max_passes)
     if o.csv:
         write_csv(o.csv, row)
 
@@ -234,7 +327,22 @@ def main() -> None:
             top = max(r["instability_score"] for r in rows) or 1
             print("chart: skipped, matplotlib is missing; instability sparkline: "
                   + "".join(bars[min(7, r["instability_score"] * 7 // top)] for r in rows))
-    v = verdict(rows, o.max_passes)
+    png = os.path.splitext(o.history)[0] + "-progress.png"
+    try:
+        progress_chart(rows, targets, png, f"{os.path.basename(png).removesuffix('-progress.png')}: {v} at pass {o.n}")
+        print(f"progress chart: {png}")
+        if o.upload:
+            try:
+                row["chart_url"] = upload(png)
+                print(f"progress chart link: {row['chart_url']}")
+            except RuntimeError as e:
+                print(f"warning: progress chart upload failed ({e}); verdict unaffected")
+    except ImportError:
+        print("progress chart: skipped, matplotlib is missing (run with ~/.cache/humanize-venv/bin/python)")
+    except Exception as e:  # a chart failure never costs the history line
+        print(f"warning: progress chart failed ({e})")
+    with open(o.history, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row) + "\n")
     for t in out:
         if t[3] == "FAIL":
             print(f"  short: {t[0]} = {t[1]} (target {t[2]})")
