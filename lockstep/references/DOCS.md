@@ -209,6 +209,13 @@ The run has one implementation-questions doc: `kind: impl_questions`, qprefix `I
 
 - Publish the final plan as a private doc with `kind: plan` and status `reference`, stored in `docs.plan`. It is not gated.
 - Publish it at the end of PLAN_WRITE, then re-publish it after each PLAN_HARDEN pass. A re-publish uses the Refresh steps, never `replace`.
+- Every publish and re-publish builds the body with the hardening history, so the doc ends with the live hardening chart:
+  ```bash
+  HIST=$RUN/$(jq -r '.plan_harden_history // "docs/auto-plan/reports/plan-history.jsonl"' $RUN/run.json)
+  $PY $S/md2ghtml.py $D/vN.md $D/body.html --harden-history $HIST
+  ```
+  Once auto-plan's `<history stem>-progress.png` exists, this appends a closing "Hardening progress" section: the chart as a `file://` image (`apply` uploads it) and a caption with the newest verdict and pass, plus the `pxl.cl` link after the loop stops. On a re-publish, replace the old section (its heading to the end of the body) in `$D/live.html` with the new one, so it stays the last section. When the old chart has open threads, reply to them first and swap the image with `replace-image` instead (Figures).
+- SPEC_HARDEN republishes no doc; its chart stays the local PNG auto-plan reports each pass.
 - The tracker links to it (references/TRACKER.md).
 
 ## Security

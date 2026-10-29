@@ -56,6 +56,18 @@ class T(unittest.TestCase):
         a, b = judge(material_changes=1, regions_changed=["plan:Task 3"]), judge(material_changes=1, regions_changed=["spec:retry"])
         self.assertEqual(metrics.verdict(run_of(a, b, a), 20), "OSCILLATION")
 
+    def test_backfilled_rows_skip_verdict_windows(self):
+        bf = lambda n, gaps: {"pass": n, "backfilled": True, "scope": "full", "open_gaps": gaps, "words": 1000}
+        g = lambda n: judge(gaps={"blocks_execution": n, "inconsistency": 0, "cosmetic": 0}, tasks_read=10)
+        rows = [bf(1, 2), bf(2, 2)]
+        rows.append(metrics.make_row(g(2), 3, 1000, 0, 0, rows))
+        self.assertEqual(metrics.verdict(rows, 20), "CONTINUE")   # two backfilled 2s do not make a plateau
+        a = judge(material_changes=1, regions_changed=["plan:Task 3"])
+        rows = [bf(1, 1), dict(bf(2, 1), regions=["plan:Task 3"])]
+        rows.append(metrics.make_row(a, 3, 1000, 0, 0, rows))
+        self.assertEqual(metrics.verdict(rows, 20), "CONTINUE")
+        metrics.table(rows, metrics.TARGETS)   # a backfilled previous row lacks the judge fields
+
     def test_cap(self):
         busy = judge(material_changes=2, regions_changed=["x"])
         rows = run_of(busy, judge(material_changes=1, regions_changed=["y"]), judge(material_changes=3, regions_changed=["z"]))
@@ -130,13 +142,16 @@ class T(unittest.TestCase):
                 return subprocess.run([sys.executable, SCRIPT, "--judge", p("judge.md"), "--artifact", p("plan.md"),
                                        "--pass", str(n), "--history", hist, "--max-passes", "6", *extra],
                                       capture_output=True, text=True, env=env)
-            r = call(1, judge(material_changes=2, regions_changed=["a"]))
+            stub(f'touch {p("called")}; echo "Uploaded: https://pxl.cl/abC12"')
+            r = call(1, judge(material_changes=2, regions_changed=["a"]), "--upload")
             self.assertTrue(os.path.getsize(png) > 0, r.stdout + r.stderr)
+            # CONTINUE never uploads.
+            self.assertFalse(os.path.exists(p("called")))
             self.assertNotIn("chart_url", metrics.load_run(hist)[-1])
             self.assertEqual(metrics.load_run(hist)[-1]["verdict"], "CONTINUE")
-            stub('echo "Uploaded: https://pxl.cl/abC12"')
-            r = call(2, judge(scope="scoped", tasks_read=3), "--upload")
+            r = call(2, judge(material_changes=1, regions_changed=["b"]), "--upload", "--max-passes", "2")
             self.assertIn("https://pxl.cl/abC12", r.stdout)
+            self.assertEqual((r.returncode, r.stdout.strip().splitlines()[-1]), (0, "CAP"))
             self.assertEqual(metrics.load_run(hist)[-1]["chart_url"], "https://pxl.cl/abC12")
             stub('echo "permission denied" >&2; exit 3')
             r = call(3, judge(), "--upload")
@@ -144,6 +159,31 @@ class T(unittest.TestCase):
             self.assertEqual((r.returncode, r.stdout.strip().splitlines()[-1]), (0, "CONVERGED"))
             last = metrics.load_run(hist)[-1]
             self.assertEqual((last["verdict"], last.get("chart_url")), ("CONVERGED", None))
+
+    @unittest.skipUnless(HAS_MPL, "needs matplotlib (run with ~/.cache/humanize-venv/bin/python)")
+    def test_progress_chart_ticks_every_pass_with_backfill(self):
+        # Passes 1-30 with 11-14 missing; 1-10 backfilled with partial fields, the rest full rows.
+        rows = []
+        for n in [*range(1, 11), *range(15, 31)]:
+            if n <= 10:
+                rows.append({"pass": n, "backfilled": True, "scope": "full", "open_gaps": 10 - n, "words": 1000 + n,
+                             **({"tasks_read": 10, "tasks_total": 10} if n % 3 == 0 else {})})
+            else:
+                rows.append(metrics.make_row(judge(), n, 1000, 0, 0, rows))
+        self.assertEqual(metrics.verdict(rows, 40), "CONVERGED")
+        import matplotlib.pyplot as plt
+        captured = []
+        real_savefig = plt.Figure.savefig
+        plt.Figure.savefig = lambda fig, *a, **k: captured.append(fig) or real_savefig(fig, *a, **k)
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                metrics.progress_chart(rows, metrics.TARGETS, os.path.join(d, "c.png"), "t")
+                self.assertTrue(os.path.getsize(os.path.join(d, "c.png")) > 0)
+        finally:
+            plt.Figure.savefig = real_savefig
+        for ax in captured[0].axes:
+            self.assertEqual(list(ax.get_xticks()), list(range(1, 31)))
+            self.assertEqual([t.get_text() for t in ax.get_xticklabels()], [str(n) for n in range(1, 31)])
 
 
 if __name__ == "__main__":

@@ -287,12 +287,13 @@ mutation; never patched in place).
   "targets": "default",
   "current_pass": 2,
   "convergence_status": "in_progress",
+  "chart_url": null,
   "snapshots_dir": "docs/auto-plan/reports/snapshots",
   "passes": [
     {
       "pass": 1,
-      "chart_url": "https://pxl.cl/abC12",
       "verdict": "CONTINUE",
+      "chart": "docs/auto-plan/reports/2026-06-05-topic-history-progress.png",
       "started_at": "2026-06-05T10:00:00Z",
       "completed_at": "2026-06-05T10:08:00Z",
       "status": "complete",
@@ -314,10 +315,11 @@ mutation; never patched in place).
 ```
 
 `convergence_status` ∈ `in_progress | converged | plateau | max_passes_reached | oscillation | failed | interrupted`.
-Each pass entry leads with `chart_url` (the `pxl.cl` link `metrics.py --upload` printed; omitted when
-the upload failed) and `verdict` (the last line `metrics.py` printed); `metrics` is the pass's
-`history.jsonl` row (see Convergence Metrics). Older passes may carry only the first six keys.
-`current_pass` and `convergence_status` sit at the top of the `harden` object for quick inspection.
+Each pass entry leads with `verdict` (the last line `metrics.py` printed) and `chart` (the local
+progress PNG path); `metrics` is the pass's `history.jsonl` row (see Convergence Metrics). Older
+passes may carry only the first six keys. `current_pass`, `convergence_status` and `chart_url` (the
+`pxl.cl` link `metrics.py --upload` printed when the loop stopped; null while it runs or when the
+upload failed) sit at the top of the `harden` object for quick inspection.
 **Two-phase write:** each pass entry is written as `status:"running"` (with `judge_verdict:null`)
 *before* the Pass agent runs, then updated to `status:"complete"` *after* the judge verdicts — the
 `running`→`complete` transition is how an interrupted pass is detected.
@@ -469,15 +471,17 @@ while pass < max_passes:
         record each as UNRESOLVED with its recommended answer        # unattended / low threshold
     apply result.Edits in place; full-rewrite state (decisions delta, status:"complete")
     judge ← dispatch Convergence judge (fresh context, scope full or scoped)   # independent diff
-    verdict ← run scripts/metrics.py --upload on the judge response            # history, CSV, progress chart + pxl.cl link
+    verdict ← run scripts/metrics.py --upload on the judge response            # history, CSV, progress chart; pxl.cl link on a stop
     if verdict needs a full-coverage judge:                                    # scoped judge, instability 0
         judge ← dispatch Convergence judge (fresh context, scope full); verdict ← rerun metrics.py
     if verdict == CONVERGED:
         audit ← dispatch Convergence judge (fresh context, scope full)       # escape audit
         verdict ← rerun metrics.py on audit with --escapes <audit open gaps>
-    write state: harden.passes[pass].{chart_url, verdict, judge_verdict, metrics, fingerprint ← regions_changed}
-    if verdict != CONTINUE: status ← verdict (converged | oscillation | plateau | max_passes_reached); break
-emit report, led by the last pass's chart link and verdict (+ the convergence CSV)
+    write state: harden.passes[pass].{verdict, chart, judge_verdict, metrics, fingerprint ← regions_changed}
+    if verdict != CONTINUE:
+        harden.chart_url ← the printed pxl.cl link
+        status ← verdict (converged | oscillation | plateau | max_passes_reached); break
+emit report, led by harden.chart_url and the verdict (+ the convergence CSV)
 ```
 
 The script's verdict is the only stop condition. `CONVERGED` needs `instability_score == 0` from a
@@ -640,14 +644,20 @@ It counts `UNRESOLVED:` markers and words in the artifacts, appends the pass to 
 (`pass,material_changes,minor_changes,open_gaps,pending_questions,unresolved_markers,instability_score`),
 redraws the progress chart next to the history (`<history stem>-progress.png`, e.g.
 `reports/YYYY-MM-DD-<topic>-history-progress.png`: one panel per metric by pass, target dashed,
-misses hollow red, scoped judges as squares, escape audits as a dotted line), uploads it with
-`meta pixelcloud.image upload`, prints the `pxl.cl` link and stores it on the pass's history line as
-`chart_url` next to `verdict`, then prints one table, the `short:` lines, and the verdict last. Exit
-status 0 means stop, 1 means continue. A failed upload prints a warning and changes nothing else;
-the chart needs matplotlib (the humanize venv has it; plain `python3` skips the chart). `--png`
-still draws the older single-axes convergence chart when asked.
+misses hollow red, scoped judges as squares, escape audits as a dotted line; the x axis has a tick
+for every pass of the run), stores the verdict on the pass's history line, then prints one table, the
+`short:` lines, and the verdict last. Exit status 0 means stop, 1 means continue. Only a stopping
+verdict (`CONVERGED`, `PLATEAU`, `OSCILLATION`, `CAP`) uploads the chart with
+`meta pixelcloud.image upload`, prints the `pxl.cl` link and stores it on the line as `chart_url`;
+`CONTINUE` never uploads. A failed upload prints a warning and changes nothing else. The chart needs
+matplotlib (the humanize venv has it; plain `python3` skips the chart). `--png` still draws the
+older single-axes convergence chart when asked.
 
-**Output per pass:** `[auto-plan] Phase 5/pass N: <pxl.cl link> <verdict> — instability=K (material M, gaps G [B blocking], pending P, unresolved U), coverage C% (scope)`
+While the loop runs, the PNG is the live view. A driver that publishes the artifact as a doc shows
+it at the bottom of that doc each pass (lockstep: references/DOCS.md, Plan reference doc); run
+standalone, the per-pass line reports the PNG path.
+
+**Output per pass:** `[auto-plan] Phase 5/pass N: <verdict> <progress PNG path> — instability=K (material M, gaps G [B blocking], pending P, unresolved U), coverage C% (scope)`
 
 ## --redo Support
 
@@ -711,7 +721,7 @@ At the end of execution, produce and commit `docs/auto-plan/reports/YYYY-MM-DD-<
 
 ## Hardening Passes
 
-_Only when `--harden` was used. Lead with the last pass's progress chart link and verdict
+_Only when `--harden` was used. Lead with `harden.chart_url` and the verdict
 (`Progress chart: https://pxl.cl/... — CONVERGED after N passes`), so the reader sees every
 metric's path without opening a file; then:_
 

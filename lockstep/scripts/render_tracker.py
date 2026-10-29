@@ -493,22 +493,6 @@ def _figure(figdir, name, alt, n, caption):
 
 
 
-def harden_chart(run_dir, sdd):
-    """(png, newest history row) for the auto-plan hardening of the current sdd stage, or None until its chart exists."""
-    if sdd.get("stage") == "SPEC_HARDEN":
-        hist = sdd.get("harden_history")
-    else:
-        hist = sdd.get("plan_harden_history") or "docs/auto-plan/reports/plan-history.jsonl"
-    if not hist:
-        return None
-    hist = os.path.join(run_dir, hist)
-    png = os.path.splitext(hist)[0] + "-progress.png"
-    if not os.path.exists(png):
-        return None
-    rows = [ln for ln in open(hist) if ln.strip()] if os.path.exists(hist) else []
-    return png, json.loads(rows[-1]) if rows else {}
-
-
 def _diff_cell(d, states: dict, status=None) -> str:
     """A task's diff: a linked D-number (with its polled state, colour-coded when diff_status.json has it), or a note."""
     if not d:
@@ -626,16 +610,6 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
                      + " ".join(_chip(k, k) for k in DIFF_STATES)
                      + ". A task shows its least advanced live diff; abandoned only when all its diffs are.</p>")
         h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration", "Test runs", "Diff"], rows))
-    hc = sdd and harden_chart(run_dir, sdd)
-    if hc:
-        png, last = hc
-        if not (plan_path and os.path.exists(plan_path)):
-            h.append(f"<h2>Implementation plan</h2><p>sdd stage: {esc(sdd.get('stage', ''))}.</p>")
-        url = last.get("chart_url")
-        h.append(_figure(os.path.dirname(png), os.path.basename(png), "hardening progress", 4,
-                         f"{'Spec' if sdd.get('stage') == 'SPEC_HARDEN' else 'Plan'} hardening by pass, one panel per metric; "
-                         f"latest verdict {esc(last.get('verdict', 'n/a'))} at pass {esc(last.get('pass', '?'))}"
-                         + (f' (<a href="{esc(url)}">{esc(url)}</a>).' if url else ".")))
 
     diff_ev = {}
     for e in events:

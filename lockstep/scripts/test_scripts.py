@@ -357,6 +357,25 @@ def test_md2ghtml_chip():
             "<option>A (recommended)</option><option>B</option></select>") in h
 
 
+def test_md2ghtml_harden_section():
+    d = tempfile.mkdtemp()
+    src, out, hist = (os.path.join(d, n) for n in ("plan.md", "body.html", "plan-history.jsonl"))
+    open(src, "w").write("# Plan\n\nTask 1.\n")
+    open(hist, "w").write(json.dumps({"pass": 1, "verdict": "CONTINUE", "chart_url": "https://pxl.cl/old"}) + "\n")
+
+    def body():
+        assert md2ghtml.main([src, out, "--harden-history", hist]) == 0
+        return open(out).read()
+    assert "Hardening progress" not in body()            # no chart on disk yet
+    open(os.path.join(d, "plan-history-progress.png"), "wb").write(b"png")
+    h = body()
+    assert h.rstrip().endswith("Latest verdict CONTINUE at pass 1.</p>") and "pxl.cl" not in h
+    assert f'<img src="file://{d}/plan-history-progress.png" alt="hardening progress">' in h
+    assert h.index("Task 1.") < h.index("<h2>Hardening progress</h2>")
+    open(hist, "a").write(json.dumps({"pass": 2, "verdict": "CONVERGED", "chart_url": "https://pxl.cl/abC12"}) + "\n")
+    assert 'Latest verdict CONVERGED at pass 2. Final chart: <a href="https://pxl.cl/abC12">' in body()
+
+
 # ---------- chips.py ----------
 
 def test_chips_read_export_and_changes():
@@ -498,30 +517,6 @@ def test_no_plan_section_before_plan():
     p["phase"] = "SPEC"
     json.dump(p, open(os.path.join(d, "pipeline.json"), "w"))
     assert "<h2>Implementation plan</h2>" not in render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
-
-
-def test_render_embeds_hardening_chart():
-    d, t = copy_run(), state.parse_ts("2026-10-19T07:00:00Z")
-    assert "hardening progress" not in render_tracker.render(d, t)
-    rep = os.path.join(d, "docs", "auto-plan", "reports")
-    os.makedirs(rep, exist_ok=True)
-
-    def history(stem, *rows):
-        open(os.path.join(rep, stem + ".jsonl"), "w").write("".join(json.dumps(r) + "\n" for r in rows))
-        open(os.path.join(rep, stem + "-progress.png"), "wb").write(b"png")
-    history("plan-history", {"pass": 1, "verdict": "CONTINUE"}, {"pass": 2, "verdict": "CONVERGED", "chart_url": "https://pxl.cl/abC12"})
-    h = render_tracker.render(d, t)
-    assert f'src="file://{rep}/plan-history-progress.png"' in h and 'href="https://pxl.cl/abC12"' in h
-    assert "Plan hardening by pass" in h and "latest verdict CONVERGED at pass 2" in h
-    assert h.index("<h2>Implementation plan</h2>") < h.index("hardening progress") < h.index("<h2>Build to closure</h2>")
-    # SPEC_HARDEN: no plan yet, so the chart comes from run.json's harden_history under a bare plan heading.
-    sdd = json.load(open(os.path.join(d, "run.json")))
-    sdd.update(stage="SPEC_HARDEN", plan_path="", harden_history="docs/auto-plan/reports/spec-history.jsonl")
-    json.dump(sdd, open(os.path.join(d, "run.json"), "w"))
-    history("spec-history", {"pass": 3, "verdict": "CONTINUE"})
-    h = render_tracker.render(d, t)
-    assert h.count("<h2>Implementation plan</h2>") == 1 and "Spec hardening by pass" in h
-    assert "latest verdict CONTINUE at pass 3." in h and "pxl.cl" not in h
 
 
 

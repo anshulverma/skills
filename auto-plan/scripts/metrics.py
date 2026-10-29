@@ -14,15 +14,19 @@ questions still waiting for an answer.
 
 --history gets one JSON line per pass. A pass number lower than the line before starts a new run
 (sdd's plan stage restarts at 1); a pass logged again (a full-coverage re-judge, the escape audit)
-replaces its earlier line. --csv appends the
+replaces its earlier line. A line marked "backfilled": true (written by hand for passes logged
+before this script) may carry only pass, scope, open_gaps, words and tasks_read/tasks_total: the
+chart plots what it has and the verdict ignores it. --csv appends the
 convergence CSV row and --png redraws the convergence chart (needs matplotlib; without it an
 ASCII sparkline prints instead).
 
 Every run redraws the progress chart next to the history, <history stem>-progress.png: one panel per
-metric by pass, target dashed, misses hollow red, scoped judges as squares, escape audits as a dotted
-line (needs matplotlib: run with ~/.cache/humanize-venv/bin/python). --upload then uploads it to
-Pixelcloud, prints the pxl.cl link and stores it on the pass's history line as chart_url; a failed
-upload prints a warning and changes nothing else. The pass's line also stores its verdict.
+metric on one x axis with a tick for every pass of the run, target dashed, misses hollow red, scoped
+judges as squares, escape audits as a dotted line (needs matplotlib: run with
+~/.cache/humanize-venv/bin/python). With --upload, a verdict that stops the loop also uploads it to
+Pixelcloud, prints the pxl.cl link and stores it on the pass's history line as chart_url; CONTINUE
+never uploads, and a failed upload prints a warning and changes nothing else. The pass's line also
+stores its verdict.
 
 Verdict, on the last line printed:
   CONVERGED    instability 0, from a full-coverage judge, every gate passes -> stop
@@ -98,6 +102,7 @@ def make_row(j: dict, n: int, words: int, unresolved: int, pending: int, run: li
 
 
 def verdict(rows: list[dict], max_passes: int) -> str:
+    rows = [r for r in rows if not r.get("backfilled")]
     last = rows[-1]
     if last["instability_score"] == 0 and last["full_coverage"] and not last["gates_failing"]:
         return "CONVERGED"
@@ -142,10 +147,10 @@ def table(rows: list[dict], targets: dict) -> list[tuple[str, str, str, str]]:
         add(name, "n/a" if x is None else f"{r[num]}/{r[den]} = {x:.0%}", "100%", None if x is None else x == 1.0)
     add("grounding precision", pct(r["grounding_precision"]) + (f" ({r['anchors_wrong']} wrong)" if r["anchors_wrong"] else ""),
         tgt("grounding precision"), check("grounding precision", r["grounding_precision"]))
-    rate, before = r["regression_rate"], prev and prev["regression_rate"]
+    rate, before = r["regression_rate"], prev and prev.get("regression_rate")
     add("fix regression rate", "n/a" if rate is None else f"{r['gaps_in_last_changed_text']}/{max(prev['open_gaps'], 1)} = {rate:.2f}"
         + ("" if before is None else f" (was {before:.2f})"), "falls", None if rate is None else rate == 0 or (before is not None and rate < before))
-    judged = [x["self_report_matches"] for x in rows if x["self_report_matches"] is not None]
+    judged = [x["self_report_matches"] for x in rows if x.get("self_report_matches") is not None]
     acc = share(sum(map(bool, judged)), len(judged))
     add("self-report accuracy", "n/a" if acc is None else f"{sum(map(bool, judged))}/{len(judged)} passes = {acc:.0%}",
         tgt("self-report accuracy"), check("self-report accuracy", acc))
@@ -199,13 +204,16 @@ def progress_chart(rows: list[dict], targets: dict, out: str, title: str) -> Non
 
     seen, acc = [], []
     for r in rows:
-        if r["self_report_matches"] is not None:
+        if r.get("self_report_matches") is not None:
             seen.append(bool(r["self_report_matches"]))
         acc.append(share(sum(seen), len(seen)))
-    col = lambda k: [r[k] for r in rows]
+    # Backfilled rows lack the derived values; rebuild the ones their fields allow.
+    derived = {"coverage": lambda r: share(r.get("tasks_read") or 0, r.get("tasks_total")),
+               "length_ratio": lambda r: r.get("words") and r["words"] / max(rows[0].get("words") or r["words"], 1)}
+    col = lambda k: [r[k] if k in r else derived[k](r) if k in derived else None for r in rows]
     # (title, goal, target, [(label, values)]); misses are judged on the first series only.
     panels = [("instability score", "<=", 0, [("", col("instability_score"))]),
-              ("open gaps by severity", "<=", 0, [("blocking", col("gaps_blocking")),
+              ("open gaps by severity", "<=", 0, [("total", col("open_gaps")), ("blocking", col("gaps_blocking")),
                                                    ("inconsistency", col("gaps_inconsistency")),
                                                    ("cosmetic", col("gaps_cosmetic"))]),
               ("judge coverage [gate]", ">=", 1.0, [("", col("coverage"))]),
@@ -216,8 +224,9 @@ def progress_chart(rows: list[dict], targets: dict, out: str, title: str) -> Non
               ("self-report accuracy", *targets["self-report accuracy"], [("", acc)]),
               ("length vs pass 1", *targets["length vs pass 1"], [("", col("length_ratio"))])]
     surface, ink, ink2, bad, audit = "#fcfcfb", "#0b0b0b", "#52514e", "#e34948", "#7b3fbf"
-    colors = ["#2a78d6", "#8a6d1f", "#9a9893"]
+    colors = ["#2a78d6", "#9b2c2c", "#8a6d1f", "#9a9893"]
     xs = col("pass")
+    ticks = list(range(xs[0], xs[-1] + 1))
     fig, axes = plt.subplots(3, 3, figsize=(10.8, 7.5), dpi=170)
     fig.patch.set_facecolor(surface)
     for ax, (name, goal, target, series) in zip(axes.flat, panels):
@@ -232,7 +241,7 @@ def progress_chart(rows: list[dict], targets: dict, out: str, title: str) -> Non
             for x, y, r in pts:
                 ok = y <= target if goal == "<=" else y >= target if goal == ">=" else y == 0 or (prev is not None and y < prev)
                 miss = i == 0 and not ok
-                ax.plot([x], [y], "o" if r["full_coverage"] else "s", ms=7 if miss else 5, mfc=surface if miss else colors[i],
+                ax.plot([x], [y], "o" if r.get("full_coverage", r.get("scope") == "full") else "s", ms=7 if miss else 5, mfc=surface if miss else colors[i],
                         mec=bad if miss else colors[i], mew=1.8 if miss else 1, zorder=4)
                 prev = y
             if i == 0 and pts:
@@ -251,8 +260,11 @@ def progress_chart(rows: list[dict], targets: dict, out: str, title: str) -> Non
         ax.set_title(f"{name}\n(target {shown})", fontsize=8.5, color=ink, loc="left")
         if len(series) > 1:
             ax.legend(fontsize=6.5, frameon=False)
-        ax.set_xticks(xs)
+        ax.set_xticks(ticks)
+        ax.set_xlim(ticks[0] - 0.5, ticks[-1] + 0.5)
         ax.tick_params(labelsize=7, colors=ink2, length=0)
+        if len(ticks) > 15:
+            ax.tick_params(axis="x", labelsize=5.5, labelrotation=90)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
         for side in ("left", "bottom"):
@@ -318,20 +330,21 @@ def main() -> None:
     print(f"{'metric':{w[0]}}  {'value':{w[1]}}  {'target':{w[2]}}  status")
     for t in out:
         print(f"{t[0]:{w[0]}}  {t[1]:{w[1]}}  {t[2]:{w[2]}}  {t[3]}")
+    real = [r for r in rows if not r.get("backfilled")]
     if o.png:
         try:
-            chart(rows, o.png)
+            chart(real, o.png)
             print(f"chart: {o.png}")
         except ImportError:
             bars = "▁▂▃▄▅▆▇█"
-            top = max(r["instability_score"] for r in rows) or 1
+            top = max(r["instability_score"] for r in real) or 1
             print("chart: skipped, matplotlib is missing; instability sparkline: "
-                  + "".join(bars[min(7, r["instability_score"] * 7 // top)] for r in rows))
+                  + "".join(bars[min(7, r["instability_score"] * 7 // top)] for r in real))
     png = os.path.splitext(o.history)[0] + "-progress.png"
     try:
         progress_chart(rows, targets, png, f"{os.path.basename(png).removesuffix('-progress.png')}: {v} at pass {o.n}")
         print(f"progress chart: {png}")
-        if o.upload:
+        if o.upload and v != "CONTINUE":
             try:
                 row["chart_url"] = upload(png)
                 print(f"progress chart link: {row['chart_url']}")

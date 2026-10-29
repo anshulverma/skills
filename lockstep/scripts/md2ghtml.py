@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """Convert a humanized markdown doc to Google Docs ghtml.
 
-Usage: md2ghtml.py SRC.md OUT.html   (writes the body, prints the title)
+Usage: md2ghtml.py SRC.md OUT.html [--harden-history HISTORY.jsonl]   (writes the body, prints the title)
+
+--harden-history appends a closing "Hardening progress" section with auto-plan's progress chart
+(<history stem>-progress.png) and the newest history line's verdict and pass, plus its pxl.cl link
+once the loop has stopped. Without the chart on disk nothing is appended.
 """
 import html
+import json
 import os
 import re
 import sys
@@ -75,13 +80,27 @@ def convert(md: str, src_dir: str) -> tuple[str, str]:
     return title, h + "\n"
 
 
+def harden_section(history: str) -> str:
+    """Markdown for the closing "Hardening progress" section, or "" until the chart beside history exists."""
+    png = os.path.splitext(history)[0] + "-progress.png"
+    if not os.path.exists(png):
+        return ""
+    rows = [json.loads(ln) for ln in open(history, encoding="utf-8") if ln.strip()] if os.path.exists(history) else []
+    last = rows[-1] if rows else {}
+    url = last.get("verdict", "CONTINUE") != "CONTINUE" and last.get("chart_url")
+    return (f"\n\n## Hardening progress\n\n![hardening progress]({Path(png).resolve().as_uri()})\n\n"
+            f"Latest verdict {last.get('verdict', 'n/a')} at pass {last.get('pass', '?')}"
+            + (f". Final chart: [{url}]({url})\n" if url else ".\n"))
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
+    if len(argv) not in (2, 4) or len(argv) == 4 and argv[2] != "--harden-history":
         print(__doc__, file=sys.stderr)
         return 2
-    src, out = argv
+    src, out = argv[:2]
     with open(src, encoding="utf-8") as f:
-        title, body = convert(f.read(), os.path.dirname(os.path.abspath(src)))
+        md = f.read() + (harden_section(argv[3]) if len(argv) == 4 else "")
+        title, body = convert(md, os.path.dirname(os.path.abspath(src)))
     with open(out, "w", encoding="utf-8") as f:
         f.write(body)
     print(title)
