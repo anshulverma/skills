@@ -80,8 +80,9 @@ def _tab_link(run: dict, key: str, text: str, tab: str | None = None) -> str:
 
 
 def _extent(j: dict, now: datetime) -> tuple[datetime, datetime]:
+    """Start to end; a live job runs to now, a terminal one without ended_utc (died before RUNNING) is zero-length."""
     a = parse_ts(j.get("started_utc") or j["launched_utc"])
-    b = parse_ts(j["ended_utc"]) if j.get("ended_utc") else now
+    b = parse_ts(j["ended_utc"]) if j.get("ended_utc") else a if shown(j) in TERMINAL else now
     return a, max(a, b)
 
 
@@ -105,7 +106,8 @@ def row(j: dict, now: datetime) -> list[str]:
 
 
 def concluded_units(st: dict, held: list[str], now: datetime) -> set[str]:
-    """Units whose rows leave the Experiments tab: every job settled, the study concluded, no row held."""
+    """Units whose rows leave the Experiments tab: every job settled, the study concluded, no row held.
+    A quote holds a unit only when it sits inside one cell of that unit's rows; quotes are tab-wide."""
     quotes = [q for q in (_norm(q) for q in held) if q]
     units: dict[str, list[dict]] = {}
     for j in st["jobs"]:
@@ -117,8 +119,8 @@ def concluded_units(st: dict, held: list[str], now: datetime) -> set[str]:
             continue
         if not all(settled(j) for j in jobs):
             continue
-        texts = [_norm(" ".join(row(j, now))) for j in jobs]
-        if any(q in t for q in quotes for t in texts):
+        cells = [_norm(c) for j in jobs for c in row(j, now)]
+        if any(q in c for q in quotes for c in cells):
             continue
         out.add(u)
     return out
@@ -312,12 +314,15 @@ def render(run_dir: str, now: datetime, held: dict | None = None) -> dict[str, s
                  else "<p>No live jobs.</p><p></p>")
         out["experiments"] = "\n".join(h) + "\n"
 
-    through = max((a.get("through_n") or 0 for a in st.get("archive") or []), default=0)
+    def archived(j: dict) -> bool:   # an entry listing "units" cuts only those units; older entries cut every n <= through_n
+        return any(j["n"] <= (a.get("through_n") or 0) and ("units" not in a or unit_of(j) in a["units"])
+                   for a in st.get("archive") or [])
+
     if logged or st.get("archive") or windows:
         h = [title("experiment_log", "Experiment log")]
         if st.get("archive"):
             h.append("<p>Older rows: paste " + ", ".join(esc(a["paste"]) for a in st["archive"]) + "</p>")
-        rows = [row(j, now) for j in sorted(logged, key=lambda j: -j["n"]) if j["n"] > through]
+        rows = [row(j, now) for j in sorted(logged, key=lambda j: -j["n"]) if not archived(j)]
         h.append(_table(HEAD[:1] + [f"Date ({tzl})"] + HEAD[2:], rows) if rows else "<p></p>")
         blocks = []
         for i, (a, b) in enumerate(windows, 1):
@@ -335,8 +340,10 @@ def render(run_dir: str, now: datetime, held: dict | None = None) -> dict[str, s
         by = {k: [j for j in jobs if j.get("study") == k] for k, _ in order}
         index = []
         for k, s in order:
-            tab = (docs.get(f"study-{k}") or {}).get("tab") or s.get("learnings_tab")
-            link = _tab_link(run, f"study-{k}", "Learnings", tab) if tab else "-"
+            lt = s.get("learnings_tab") or ""   # a docs key (study-<id>), or a raw tab id "t.<...>"
+            key = lt if lt in docs else f"study-{k}"
+            tab = (docs.get(key) or {}).get("tab") or (lt if lt.startswith("t.") else None)
+            link = _tab_link(run, key, "Learnings", tab) if tab else "-"
             index.append((esc(k), esc(s.get("title")), esc(s.get("question")), esc(s.get("status")),
                           esc(s.get("short_answer")), link, f"{len(by[k])}, {_gpu_h(by[k]):.1f} GPU-h"))
         h = [title("studies", "Studies"),

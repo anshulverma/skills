@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Checks for experiments.py. Run: ~/.cache/humanize-venv/bin/python test_experiments.py (or pytest)"""
 
+import calendar
 import json
 import os
 import subprocess
@@ -236,6 +237,97 @@ def test_top_set_and_summary():
     s = json.loads(ok(d, "summary"))
     assert s == {"jobs": 2, "by_state": {"queued": 1, "done": 1}, "gpu_h": 3.5,
                  "etas": [{"n": 1, "name": "a", "eta_utc": "2026-10-30T01:00:00Z"}], "studies": {}}
+
+
+def test_poll_terminal_without_run_gets_end_time():
+    d = new_run()
+    now = time.time()
+    never = {"jobStateTransitionTimestampSecs": {"PENDING": now - 600, "DEAD": now - 300}}  # PENDING then DEAD
+    env = _fake_mast(d, {"never": _job("DEAD", [never]),
+                         "gone": {"status": {"status": "error", "error": {"message": "JOB_NOT_FOUND: gone"}}}})
+    record(d, "never")
+    record(d, "gone")
+    ok(d, "job", "poll", env=env)
+    rows = {j["name"]: j for j in exp(d)["jobs"]}
+    assert rows["never"]["state"] == "failed" and rows["gone"]["state"] == "void"
+    for r in rows.values():
+        assert r["started_utc"] == "" and abs(calendar.timegm(time.strptime(r["ended_utc"], "%Y-%m-%dT%H:%M:%SZ")) - time.time()) < 60, r
+
+
+def test_poll_keeps_gpus_set_after_snapshot():
+    import experiments
+    from datetime import datetime, timezone
+    d = new_run()
+    record(d, "a")
+
+    class Mast:
+        def status(self, name):
+            experiments.job_set(d, name, ["gpus=4"])  # hand edit lands while MAST is being polled
+            return {"state": "RUNNING", "attempts": 1, "start_utc": "2026-10-29T00:00:00Z", "end_utc": None,
+                    "gpus": 16, "wall_s": 3600.0}
+
+    experiments.job_poll(d, mast=Mast(), now=datetime.now(timezone.utc))
+    assert exp(d)["jobs"][0]["gpus"] == 4
+
+
+def test_jobs_attach_only_to_open_registered_study():
+    d = new_run()
+    ok(d, "study", "new", "A", "--title", "t", "--question", "q")
+    record(d, "j1", "--study", "A")
+    ok(d, "job", "set", "j1", "state=done", "readout=r", "verdict=v")
+    rp = os.path.join(d, "studies", "A", "report.md")
+    open(rp, "w").write(open(rp).read().replace("**Verdict: pending.**", "**Verdict: negative.**"))
+    ok(d, "study", "conclude", "A", "--verdict", "negative", "--short", "s", "--learning", "a", "--learning", "b")
+    record(d, "j2")
+    for args in (("job", "record", "--name", "j3", "--kind", "k", "--hypothesis", "h", "--study", "A"),
+                 ("job", "set", "j2", "study=A"), ("job", "set", "j2", "study=nope")):
+        r = cli(d, *args)
+        assert r.returncode == 2, (args, r.stderr)
+    assert [j["name"] for j in exp(d)["jobs"]] == ["j1", "j2"] and exp(d)["jobs"][1]["study"] == ""
+    ok(d, "study", "reopen", "A")
+    ok(d, "job", "set", "j2", "study=A")
+
+
+def test_reopened_study_ready_only_after_a_new_job():
+    d = new_run()
+    ok(d, "study", "new", "A", "--title", "t", "--question", "q")
+    record(d, "j1", "--study", "A")
+    ok(d, "job", "set", "j1", "state=done", "readout=r", "verdict=v")
+    rp = os.path.join(d, "studies", "A", "report.md")
+    open(rp, "w").write(open(rp).read().replace("**Verdict: pending.**", "**Verdict: negative.**"))
+    ok(d, "study", "conclude", "A", "--verdict", "negative", "--short", "s", "--learning", "a", "--learning", "b")
+    st = exp(d)
+    st["jobs"][0]["launched_utc"] = "2026-01-01T00:00:00Z"  # launched well before the reopen
+    state.atomic_write_json(os.path.join(d, "experiments", "state.json"), st)
+    ok(d, "study", "reopen", "A")
+    assert exp(d)["studies"]["A"]["reopened_utc"]
+    assert json.loads(ok(d, "study", "check"))["ready"] == []  # every job settled, but none since the reopen
+    record(d, "j2", "--study", "A")
+    assert json.loads(ok(d, "study", "check"))["ready"] == []
+    ok(d, "job", "set", "j2", "state=done", "readout=r", "verdict=v")
+    assert json.loads(ok(d, "study", "check"))["ready"] == ["A"]
+
+
+def test_void_job_needs_no_verdict():
+    d = new_run()
+    ok(d, "study", "new", "A", "--title", "t", "--question", "q")
+    record(d, "v", "--study", "A")
+    ok(d, "job", "set", "v", "state=void", "void_reason=never submitted")
+    assert json.loads(ok(d, "job", "missing")) == []
+    assert json.loads(ok(d, "study", "check"))["ready"] == ["A"]
+
+
+def test_sweep_stopped_keeps_first_reason():
+    d = new_run()
+    record(d, "a")
+    ok(d, "set", "sweep_stopped=engine: budget")
+    assert cli(d, "set", "sweep_stopped=owner: close").returncode == 2
+    ok(d, "set", "sweep_stopped=engine: budget")  # same value is a no-op
+    assert exp(d)["sweep_stopped"] == "engine: budget"
+    ok(d, "set", "sweep_stopped=")
+    assert exp(d)["sweep_stopped"] is None
+    ok(d, "set", "sweep_stopped=owner: close")
+    assert exp(d)["sweep_stopped"] == "owner: close"
 
 
 if __name__ == "__main__":  # no pytest in the humanize venv

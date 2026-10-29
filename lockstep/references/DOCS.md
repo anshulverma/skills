@@ -45,10 +45,10 @@ When `pipeline.json.layout == "tabs"` (every new run; legacy runs have no `layou
 | `experiments` | Experiments | none | first job recorded | `experiments` | | generated |
 | `experiment_log` | Experiment log | `experiments` | first concluded unit | `experiment_log` | | generated |
 | `studies` | Studies | none | first study registered | `studies` | | generated |
-| `study-<id>` | Study: <short title> | `studies` | study concluded | `study` | `L` | authored |
-| `final_takeaways` | Final takeaways | `studies` | owner asks, or every study concluded in LAND | `takeaways` | `F` | authored |
+| `study-<id>` | Study: <short title> | `studies` | study concluded | `study` | none | authored |
+| `final_takeaways` | Final takeaways | `studies` | owner asks, or every study concluded in LAND | `takeaways` | none | authored |
 
-Each tab body starts with a TITLE paragraph equal to `docs.<key>.title`; that title is where the gate's accept anchors within the tab. `docs.<key>.tab_title` is the name in the tab bar. The experiment and study tabs are references/EXPERIMENTS.md's.
+The study and takeaways tabs number no questions, so they carry no qprefix and are swept in the `open` scope (references/GATE.md). Each tab body starts with a TITLE paragraph equal to `docs.<key>.title`; that title is where the gate's accept anchors within the tab. `docs.<key>.tab_title` is the name in the tab bar. The experiment and study tabs are references/EXPERIMENTS.md's.
 
 A separate doc is made only for a doc the owner asks to share beyond themselves (created only on an owner comment), the global Review velocity doc, and `external` docs the owner keeps.
 
@@ -67,24 +67,26 @@ python3 $S/tabs.py size $RUN
 
 | Command | Does |
 |---|---|
-| `ensure` | Prints the tab id. Reuses `docs.<key>.tab` when it is live, else adopts a tab with the same tab bar name under the same parent, else runs `tab add`. Saves `docs.<key>` (`id` = `tracker_doc`, `tab`, `parent`, `title`, `tab_title`, `kind`, `qprefix`, `status`: `drafting` for gated kinds, else `reference`) and emits `tab_created` |
-| `private` | The privacy check below for the whole doc: exit 0 private, 2 not |
+| `ensure` | Prints the tab id. Reuses `docs.<key>.tab` when it is live and not archived, else adopts a tab with the same tab bar name under the same parent that no other docs key records (archived keys included), else runs `tab add`. An archived key always gets a fresh tab, and `archived` is cleared. Refuses (exit 2) a gated kind (`proposal`, `spec`, `task`) without `--qprefix` unless the key already has one; never stores a qprefix for `study` or `takeaways`. Saves `docs.<key>` (`id` = `tracker_doc`, `tab`, `parent`, `title`, `tab_title`, `kind`, `qprefix`, `status`: `drafting` for gated kinds, else `reference`) and emits `tab_created` |
+| `private` | The privacy check below for the whole doc: exit 0 private, 2 not private, 1 the check could not run (a `meta` error) |
 | `get` | Privacy check, then fetches the tab to `/tmp/lockstep-<slug>/<key>/` and copies `live.html` and `live.html.base` to `docs/<key>/`. Prints `{path, bytes, open_quotes, open_image_threads}`: the quotes of open anchored comments on this tab, and `{object id: [thread ids]}` for comments on its images |
 | `apply --body` | Privacy check and a fresh `get`, then applies BODY in two passes: table cells first, then structure. Each pass dry-runs first and is skipped, never forced, when it would orphan a comment or conflict. A block or row that carries an open comment and would vanish is kept live (`apply_held`). Retries transient doc-service errors 3 times. `--ours` is accepted only for `tracker` and `events` |
 | `apply --authored` | Applies the edited `docs/<key>/live.html` against the `.base` of the last `get`: one dry-run, one apply, no re-fetch, never `--ours` |
-| `size` | Sums the `docs/*/live.html` files from the last `get`s and prints `{tabs, total}` |
+| `size` | Sums the `docs/<key>/live.html` files of every tab from the last `get`s, the tracker and Event log included (each `apply` refreshes them), and prints `{tabs, total}` |
 
 Both `apply` forms also place figures (Figures, below) and record them in `docs/<key>/figs.json`.
 
+This is the one apply exit table; references/TRACKER.md and references/EXPERIMENTS.md point here.
+
 | Exit | `apply` | Then |
 |---|---|---|
-| 0 | Applied, possibly with held blocks | Go on |
-| 3 | Nothing applied: every pass would orphan a comment or conflict | Generated: log it and carry on; the held content goes out once the thread closes. Authored: re-fetch with `get`, redo the edit, retry once |
+| 0 | Applied, already current (every pass `nochange`), or applied with some blocks held live (`apply_held`) | Go on |
+| 3 | Nothing applied and at least one pass held: it would orphan a comment, conflict, or (generated) an open comment's block has no counterpart in the new body | Generated: log it and carry on; the held content goes out once the thread closes (the tracker adds one reply rule, references/TRACKER.md). Authored: re-fetch with `get`, redo the edit, retry once |
 | 5 | A figure needs a fresh frame but its image has open threads; prints `{"frame_reset_needs_replies": {object id: [thread ids]}}` | Reply in each listed thread that the figure is being redrawn, then rerun with `--allow-reset <object id>` |
 | 2 | Refused: `layout` not `tabs`, doc not private, missing key or tab, `--ours` on another key, no `.base` for `--authored` | Not private: privacy block below. Otherwise fix the call |
 | 1 | A `meta` call failed (stderr carries its error) | Log a `tick` event and carry on |
 
-`size` exits 4 when one tab is over 300 KB or all fetched tabs together are over 450 KB (the doc service ran out of memory near 660 KB). Then shrink the largest tab: archive concluded experiment rows (references/EXPERIMENTS.md, Step 8b) or move old content of an authored tab to a paste and leave a one-line pointer.
+`size` exits 4 when one tab is over 300 KB or all fetched tabs together are over 450 KB (the doc service ran out of memory near 660 KB). It runs in step 8b and after each tracker apply (references/TRACKER.md). Then shrink the largest tab: archive concluded experiment rows (references/EXPERIMENTS.md, Step 8b) or move old content of an authored tab to a paste and leave a one-line pointer. The Event log tab lists only the last 14 days (older events stay in `events.jsonl`), so it stays bounded; if the tracker or Event log is still the largest, log a `tick` event naming it.
 
 ## Question format
 
@@ -157,7 +159,7 @@ On failure:
    ```
 4. Stop all verdicts and Actions on that doc.
 
-Tabs layout: run `python3 $S/tabs.py private $RUN` once per tick; it covers every tab. On failure the reason is `doc_not_private:tracker`, and it blocks every key whose `docs.<key>` has a `tab`. Only a passing `tabs.py private` drops it.
+Tabs layout: run `python3 $S/tabs.py private $RUN` once per tick; it covers every tab. On failure (exit 2) the reason is `doc_not_private:tracker`, and it blocks every key whose `docs.<key>` has a `tab`. Only a passing `tabs.py private` drops it. Exit 1 means the check could not run: write nothing to the doc this tick, log a `tick` event, leave `blocked_reasons` as it is, and check again next tick.
 
 A non-owner comment triggers the same block (references/GATE.md). Each tick re-checks the doc. When the check passes, that tick runs `reason drop blocked doc_not_private:<doc>`. Nothing else clears it, and `Action: unblock` never touches it. Never run `share grant`.
 
@@ -192,7 +194,7 @@ The debounce rule is in references/GATE.md: reply at once, refresh after about 1
 - Read the PNG and look at it before publishing. Labels never overlap bars or each other.
 - A run with many figures keeps a `VISUALS.md` spec in the run dir and edits it before the code. Choose chart forms with the dataviz skill and humanize's visuals.md.
 - `figures.py` (humanize venv) holds the shared helpers, in render_tracker's palette: `style(bg)`, `size(pageless)`, `save(fig, path, dpi=150)`, `dot(src, png)` (Graphviz source to PNG) and `delta_band(arms, baseline_mean, baseline_sd, out, threshold=None, pageless=True)`, each arm's delta against the baseline noise band.
-- Tabs layout: put a figure in a body as `<img src="file:///<absolute png path>">`, with a file name unique within the tab. `tabs.py apply` places it: an unchanged PNG keeps its live image and comments; a changed PNG within 10% of the frame's aspect is padded and swapped in place (`replace-image --tab-id --preserve-frame`); a changed aspect re-inserts it with a fresh frame (`figure_frame_reset`), which needs replies first when the image has open threads (exit 5 above).
+- Tabs layout: put a figure in a body as `<img src="file:///<absolute png path>">`. `figs.json` keys each figure by its path relative to the run dir (absolute outside it), so two figures may share a file name. `tabs.py apply` places it: an unchanged PNG keeps its live image and comments; a changed PNG within 10% of the frame's aspect is padded and swapped in place (`replace-image --tab-id --preserve-frame`); a changed aspect re-inserts it with a fresh frame (`figure_frame_reset`), which needs replies first when the image has open threads (exit 5 above).
 - Legacy docs: to redraw a figure, reply to that figure's open threads first. Then run:
   ```bash
   meta google.docs replace-image --id=<id> --image-id=<object id> --new-image=file://<png> --preserve-frame

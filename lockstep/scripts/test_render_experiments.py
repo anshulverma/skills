@@ -170,6 +170,52 @@ def test_figures_size_and_dot(tmp_path):
     assert open(png, "rb").read(4) == b"\x89PNG" and os.path.exists(tmp_path / "g.dot")
 
 
+def _edit_state(run, fn):
+    p = os.path.join(run, "experiments", "state.json")
+    st = json.load(open(p))
+    fn(st)
+    json.dump(st, open(p, "w"))
+
+
+def test_terminal_without_end_is_zero_length():
+    a = H(5)
+    for st in rx.TERMINAL:
+        j = {"n": 1, "name": "x", "state": st, "launched_utc": a, "started_utc": None, "ended_utc": None}
+        assert rx._extent(j, NOW) == (rx.parse_ts(a), rx.parse_ts(a)), st      # died before RUNNING: not to now
+        assert rx._extent(dict(j, started_utc=H(4)), NOW) == (rx.parse_ts(H(4)),) * 2
+    live = {"n": 2, "name": "y", "state": "running", "launched_utc": a, "started_utc": a}
+    assert rx._extent(live, NOW)[1] == NOW
+
+
+def test_archive_cut_is_per_unit(tmp_path):
+    run = make_run(tmp_path / "run")
+    # job 2 (study s1) is below the cut, but the entry archived only job 3's unit: s1 concluded later
+    _edit_state(run, lambda st: st.update(archive=[{"paste": "P99", "through_n": 3, "units": ["job:3"]}]))
+    assert first_cells(rx.render(run, NOW, {})["experiment_log"]) == [5, 2, 1]
+    _edit_state(run, lambda st: st.update(archive=[{"paste": "P99", "through_n": 3}]))   # no units: prefix cut
+    assert first_cells(rx.render(run, NOW, {})["experiment_log"]) == [5]
+
+
+def test_learnings_tab_resolves_docs_key(tmp_path):
+    run = make_run(tmp_path / "run")
+    p = os.path.join(run, "pipeline.json")
+    pipe = json.load(open(p))
+    pipe["docs"]["study-s2x"] = {"id": "DOC2", "tab": "t.s2x"}
+    json.dump(pipe, open(p, "w"))
+    _edit_state(run, lambda st: (st["studies"]["s2"].update(learnings_tab="study-s2x"),
+                                 st["studies"]["r3"].update(learnings_tab="t.raw")))
+    html = rx.render(run, NOW, {})["studies"]
+    assert 'href="https://docs.google.com/document/d/DOC2/edit?tab=t.s2x">Learnings</a>' in html
+    assert "?tab=study-s2x" not in html and "edit?tab=t.raw" in html
+
+
+def test_quote_holds_only_within_one_cell(tmp_path):
+    run = make_run(tmp_path / "run")
+    # "readout 5 better" spans job 5's Readout and Verdict cells: a tab-wide quote that sits in no cell
+    assert first_cells(rx.render(run, NOW, {"experiments": ["readout 5 better"]})["experiments"]) == [4, 6]
+    assert first_cells(rx.render(run, NOW, {"experiments": ["adout 5"]})["experiments"]) == [4, 5, 6]
+
+
 def main():
     """No pytest in the humanize venv: run every test_* here, handing tmp_path-taking tests a fresh temp dir."""
     import inspect

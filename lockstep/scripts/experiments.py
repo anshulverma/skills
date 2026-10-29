@@ -116,8 +116,10 @@ def poll_updates(jobs: list[dict], mast, now: datetime) -> dict[str, dict]:
         if s["state"] not in MAST_TO_ROW:
             raise RuntimeError(f"{row['name']}: unknown MAST state {s['state']!r}")
         new = MAST_TO_ROW[s["state"]]
+        seen = _iso(now.timestamp())  # end time for a job that went terminal without a MAST end (never ran)
         if new == "void":
-            out[row["name"]] = {"state": "void", "void_reason": "JOB_NOT_FOUND in MAST"}
+            out[row["name"]] = {"state": "void", "void_reason": "JOB_NOT_FOUND in MAST",
+                                "ended_utc": row.get("ended_utc") or seen}
             continue
         # ponytail: wall-clock proxy for "before step 0"; read the first step log line if 20 min misleads
         if new == "running" and s["start_utc"] and (now - _parse_utc(s["start_utc"])).total_seconds() < STARTUP_S:
@@ -127,8 +129,8 @@ def poll_updates(jobs: list[dict], mast, now: datetime) -> dict[str, dict]:
             u["gpus"] = s["gpus"]
         if s["start_utc"]:
             u["started_utc"] = s["start_utc"]
-        if s["end_utc"] and new in TERMINAL:
-            u["ended_utc"] = s["end_utc"]
+        if new in TERMINAL:
+            u["ended_utc"] = s["end_utc"] or row.get("ended_utc") or seen
         out[row["name"]] = u
     return out
 
@@ -206,10 +208,11 @@ def _settle(row: dict, old_state: str, old_verdict: str, events: list) -> None:
 
 
 def _needs(row: dict) -> list[str]:
-    """Every finished job needs a readout; every terminal job needs a verdict."""
+    """Every finished job needs a readout; every terminal job but a void one (it never ran) needs a verdict."""
     if row["state"] not in TERMINAL:
         return []
-    return (["readout"] if row["state"] == "done" and not row["readout"] else []) + ([] if row["verdict"] else ["verdict"])
+    verdict = [] if row["verdict"] or row["state"] == "void" else ["verdict"]
+    return (["readout"] if row["state"] == "done" and not row["readout"] else []) + verdict
 
 
 def _study_jobs(st: dict, sid: str) -> list[dict]:
@@ -217,7 +220,13 @@ def _study_jobs(st: dict, sid: str) -> list[dict]:
 
 
 def _unsettled(jobs: list[dict]) -> list[str]:
-    return [j["name"] for j in jobs if j["state"] not in TERMINAL or not j["verdict"]]
+    return [j["name"] for j in jobs if j["state"] not in TERMINAL or not (j["verdict"] or j["state"] == "void")]
+
+
+def _open_study(st: dict, sid: str) -> None:
+    """Jobs attach only to a registered study that is running or reopened."""
+    if _study(st, sid)["status"] == "concluded":
+        raise Refused(f"study {sid} is concluded; reopen it before attaching jobs")
 
 
 def _local(run: str) -> str:
@@ -277,7 +286,7 @@ Each with a default.
 def job_record(run: str, a) -> None:
     with _locked(run, create=True) as (st, events):
         if a.study:
-            _study(st, a.study)
+            _open_study(st, a.study)
         given = {"kind": a.kind, "hypothesis": a.hypothesis, "study": a.study, "url": a.url, "eta_utc": a.eta}
         given = {k: v for k, v in given.items() if v is not None}
         row = next((j for j in st["jobs"] if j["name"] == a.name), None)
@@ -298,6 +307,8 @@ def job_set(run: str, name: str, items: list[str]) -> None:
     kv = _kv(items, JOB_KEYS)
     with _locked(run) as (st, events):
         row = _job(st, name)
+        if kv.get("study"):
+            _open_study(st, kv["study"])
         old_state, old_verdict = row["state"], row["verdict"]
         row.update(kv)
         _settle(row, old_state, old_verdict, events)
@@ -313,6 +324,8 @@ def job_poll(run: str, mast=None, now: datetime | None = None) -> None:
             u = updates.get(row["name"])
             if u is None or row["state"] in TERMINAL:  # set terminal by hand while MAST was polled
                 continue
+            if row.get("gpus") is not None:  # set by hand after the snapshot poll_updates read
+                u.pop("gpus", None)
             old_state = row["state"]
             row.update(u)
             _settle(row, old_state, row["verdict"], events)
@@ -364,7 +377,7 @@ def study_reopen(run: str, sid: str) -> None:
         s = _study(st, sid)
         if s["status"] != "concluded":
             raise Refused(f"study {sid} is {s['status']}, not concluded")
-        s.update(status="reopened", concluded_utc="")
+        s.update(status="reopened", concluded_utc="", reopened_utc=iso(now_utc()))
         events.append(("study_reopen", f"study {sid} reopened", {"study": sid}))
 
 
@@ -383,8 +396,10 @@ def study_check(run: str) -> None:
         return
     studies = st["studies"]
     # A reading-only study (no jobs) is never auto-ready: the agent concludes it when the reading is done.
+    # A reopened study is ready only once a job launched since the reopen (>=: timestamps have 1 s resolution).
     ready = [i for i, s in studies.items() if s["status"] != "concluded" and _study_jobs(st, i)
-             and not _unsettled(_study_jobs(st, i))]
+             and not _unsettled(_study_jobs(st, i))
+             and any(j["launched_utc"] >= s.get("reopened_utc", "") for j in _study_jobs(st, i))]
     print(json.dumps({"ready": ready,
                       "no_learnings_tab": [i for i, s in studies.items()
                                            if s["status"] == "concluded" and not s["learnings_tab"]],
@@ -400,6 +415,9 @@ def top_set(run: str, items: list[str]) -> None:
     if "archive" in kv and not (isinstance(kv["archive"], dict) and {"paste", "through_n"} <= kv["archive"].keys()):
         raise Refused('archive needs JSON {"paste": ..., "through_n": N}')
     with _locked(run) as (st, _):
+        old, new = st["sweep_stopped"], kv.get("sweep_stopped")
+        if old and new and new != old:  # keep the first (engine's) reason; "" clears it
+            raise Refused(f"sweep_stopped is already {old!r}; clear it with sweep_stopped= first")
         if "archive" in kv:
             st["archive"].append(kv.pop("archive"))
         if kv.get("sweep_stopped") == "":

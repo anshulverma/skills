@@ -93,7 +93,9 @@ def mask_credentials(text: str) -> tuple[str, list[str]]:
 OWNER_GAP = 10 * 60   # owner comments closer than this belong to one reading session (decision Q8)
 LEAD_IN = 5 * 60      # reading before the first comment of a session
 SKILL_GAP = 45 * 60   # after a work event, a quiet gap longer than this means nothing was running
-IDLE_KINDS = ("tick", "gate_open")   # after these the agent waits for the owner unless a unit is running
+# After these the agent waits for the owner unless a unit is running. apply_held repeats on every render while a
+# comment holds a block; job_done carries no marker of `job poll` (a tick's quiet MAST poll) vs `job set`.
+IDLE_KINDS = ("tick", "gate_open", "apply_held", "job_done")
 OWNER_ACTIVITY = OWNER_KINDS + ("reopen", "owner_active")
 
 
@@ -370,6 +372,7 @@ def time_split(events: list[dict], now: datetime) -> tuple[float, float, float]:
 
 
 TIMELINE_WINDOW = timedelta(hours=48)
+EVENT_LOG_WINDOW = timedelta(days=14)   # tabs layout: the Event log tab lists this much; events.jsonl keeps it all
 
 
 def timeline_windows(events, now):
@@ -717,17 +720,20 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
     h.append("<h2>Parked tasks</h2>" + (_table(["Task", "Doc", "Since"], parked) if parked else "<p>None.</p><p></p>"))
 
     h.append("<h2>Original request (verbatim)</h2><p><i>" + esc(request) + "</i></p><p></p>")
-    log, prev = [], None
+    log, prev, older = [], None, 0
     for e in events:
         t = parse_ts(e["ts"])
-        log.append((hhmm(e["ts"]), esc((e.get("phase") or "").title()), esc(e["event"]),
-                    fmt_dur((t - prev).total_seconds()) if prev else ""))
+        if tabs and t < now - EVENT_LOG_WINDOW:
+            older += 1
+        else:
+            log.append((hhmm(e["ts"]), esc((e.get("phase") or "").title()), esc(e["event"]),
+                        fmt_dur((t - prev).total_seconds()) if prev else ""))
         prev = t
     blocks = ("<h2>Timeline</h2>" if windows else "") + "".join(f"<h3>{local(a):%b %d %H:%M} to {local(b):%b %d %H:%M} {tzl}</h3>"
                      + _figure(figdir, f"timeline-{local(a):%Y%m%d%H%M}.png", "timeline", f"E{i}",
                                "Active time in this 48-hour block, drawn as on the main tab.")
                      for i, (a, b) in enumerate(windows, 1))
-    section = blocks + "<h2>Event log</h2>" + _table([f"Time ({tzl})", "Phase", "Event", "Since previous"], log)
+    section = blocks + "<h2>Event log</h2>" + (f"<p>{older} earlier events are in events.jsonl.</p>" if older else "") + _table([f"Time ({tzl})", "Phase", "Event", "Since previous"], log)
     if events_out is None:
         h.append(section)
     else:
@@ -742,12 +748,14 @@ def main(argv: list[str]) -> int:
     events = [] if len(argv) == 3 else None
     try:
         body = render(argv[0], now_utc(), events)
+        for out in argv[1:]:
+            os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+        open(argv[1], "w").write(body)
+        if events is not None:
+            open(argv[2], "w").write("".join(events))
     except (ValueError, OSError, subprocess.CalledProcessError) as e:
         print(e, file=sys.stderr)
         return 1
-    open(argv[1], "w").write(body)
-    if events is not None:
-        open(argv[2], "w").write("".join(events))
     return 0
 
 

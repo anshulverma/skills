@@ -36,7 +36,8 @@ continues. Conversation memory is never pipeline state.
 | `DONE` | `state.save` with `terminal: "done"` first, then the final tracker render, summary, `TaskStop` awaits, `CronDelete` | |
 
 Never publish the spec before the proposal is accepted. Never write `run.json` before the spec is
-accepted. While a gate is open, do reversible local prep only.
+accepted. While a gate is open, do reversible local prep only: a measurement question may be registered as
+a study (`study new`), but no job launches before BUILD, and studies conclude in BUILD or LAND (step 8b).
 
 ## Owner input never goes through the terminal
 
@@ -109,7 +110,7 @@ Scripts in `scripts/`: `state.py`, `sweep.py`, `chips.py`, `md2ghtml.py`, `rende
 | Start PLAN or BUILD before the spec gate is `accepted` | Keep sweeping; reversible prep only |
 | Resolve or delete a comment | Never delete. Resolve only a thread that answered a numbered question, after its reply and Answered mark (references/DOCS.md, Answered marks) |
 | Run `apply --conflict-resolution=ours`, `replace` or `--orphan-comments-ok` on a gated doc, or `tabs.py apply --ours` on any tab but tracker and events | Re-fetch, keep anchored spans byte-identical, retry once (references/DOCS.md) |
-| `tab delete` or delete a doc | Never (2FA). Rename a wrong tab "Archived: ..." and move it last (references/ACTIONS.md) |
+| `tab delete` or delete a doc | Never (2FA). Rename a wrong tab "Archived: ...", move it last, set `docs.<key>.archived`; keep its tab id (references/ACTIONS.md) |
 | Report a study done, or conclude it, while one of its jobs runs or lacks a verdict | `study check`; conclude only when `study conclude` accepts (references/EXPERIMENTS.md) |
 | Run an `Action:` verb not in the table, including push, share or land | Reply "unsupported, not run" (references/ACTIONS.md) |
 | Adopt a requirement that conflicts with a standing constraint or the never-allowed list | Reply "not adopted: conflicts with <rule>" |

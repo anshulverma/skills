@@ -8,10 +8,9 @@ Usage:
   tabs.py apply RUN KEY --body BODY.html [--ours] [--allow-reset OBJ ...]   (generated tabs)
   tabs.py apply RUN KEY --authored [--allow-reset OBJ ...]                  (authored tabs: applies docs/KEY/live.html)
   tabs.py size RUN                        (exit 4 when a tab is over 300 KB or all tabs over 450 KB)
-apply exits 0 applied (possibly partly held), 3 nothing applied (held), 5 a frame reset needs replies, 2 refused.
+apply exits 0 applied or already current, 3 nothing applied and a pass held, 5 a frame reset needs replies, 2 refused.
 """
 import argparse
-import difflib
 import hashlib
 import html
 import json
@@ -27,6 +26,7 @@ import state
 
 OURS_KEYS = ("tracker", "events")
 GATED_KINDS = ("proposal", "spec", "task")
+NO_QUESTION_KINDS = ("study", "takeaways")  # no numbered questions: never a qprefix
 TAB_MAX, DOC_MAX = 300_000, 450_000
 ASPECT_TOL = 0.10
 RETRY_SLEEP = float(os.environ.get("LOCKSTEP_RETRY_SLEEP", "5"))
@@ -164,6 +164,15 @@ def _dims(tag: str) -> tuple[float, float]:
     return float(a["width"]), float(a["height"])
 
 
+def fig_key(run: str | None, png: str) -> str:
+    """figs.json key: the image path relative to the run dir, or the absolute path outside it."""
+    a = os.path.abspath(png)
+    if not run:
+        return a
+    rel = os.path.relpath(a, os.path.abspath(run))
+    return a if rel.split(os.sep)[0] == os.pardir else rel
+
+
 def _first(row: str) -> str:
     c = CELL.search(row)
     return _text(c.group(1)) if c else ""
@@ -171,16 +180,18 @@ def _first(row: str) -> str:
 
 # ---------- library ----------
 
-def build_from(body: str, live: str, figs: dict, tab: str, allow_reset=(), hold: bool = True) -> dict:
+def build_from(body: str, live: str, figs: dict, tab: str, allow_reset=(), hold: bool = True,
+               run: str | None = None) -> dict:
     """BODY with (a) live image tags kept and swaps queued, (b) live blocks held where an open quote would vanish.
-    Returns {html, swaps: [{name, png, object_id, w, h, preserve}], new_images: [png], blocked: {oid: [ids]}, held}."""
+    Returns {html, swaps: [{name, fig, png, object_id, w, h, preserve}], new_images: [png], blocked: {oid: [ids]},
+    held, unplaced}: unplaced quotes have no counterpart block in BODY, so the structure pass must hold."""
     tags = {m.group(1): m.group(0) for m in LIVE_IMG.finditer(live)}
     img_threads = image_threads(live, tab)
     swaps, new, blocked = [], [], {}
 
     def keep(m):
         png = m.group(1)
-        f = figs.get(os.path.basename(png)) or {}
+        f = figs.get(fig_key(run, png)) or {}
         oid = f.get("object_id")
         if oid not in tags:
             new.append(png)
@@ -192,32 +203,45 @@ def build_from(body: str, live: str, figs: dict, tab: str, allow_reset=(), hold:
             if not preserve and img_threads.get(oid) and oid not in allow_reset:
                 blocked[oid] = img_threads[oid]
             else:
-                swaps.append({"name": os.path.basename(png), "png": png, "object_id": oid, "w": w, "h": h,
-                              "preserve": preserve})
+                swaps.append({"name": os.path.basename(png), "fig": fig_key(run, png), "png": png, "object_id": oid,
+                              "w": w, "h": h, "preserve": preserve})
         return tags[oid]
 
     out = FILE_IMG.sub(keep, body)
-    held = []
+    held, unplaced = [], []
     if hold:
-        out, held = _hold(out, live, [t for t in threads(live, tab) if t["quote"].strip()])
-    return {"html": out, "swaps": swaps, "new_images": new, "blocked": blocked, "held": held}
+        out, held, unplaced = _hold(out, live, [t for t in threads(live, tab) if t["quote"].strip()])
+    return {"html": out, "swaps": swaps, "new_images": new, "blocked": blocked, "held": held, "unplaced": unplaced}
 
 
-def _anchor(live: str, pos: int) -> str | None:
+def _anchor(live: str, pos: int) -> re.Match | None:
     """The table or block a comment's aside follows: asides stack after the anchored paragraph, or after the
     whole table for a comment inside a cell (scratch doc and run doc readback)."""
     while live[:pos].rstrip().endswith("</aside>"):
         pos = live.rfind("<aside hidden>", 0, pos)
     end = len(live[:pos].rstrip())
-    hits = [m.group(0) for rx in (TABLE, BLOCK) for m in rx.finditer(live) if m.end() == end]
+    hits = [m for rx in (TABLE, BLOCK) for m in rx.finditer(live) if m.end() == end]
     return hits[0] if hits else None
 
 
-def _hold(body: str, live: str, open_threads: list[dict]) -> tuple[str, list[str]]:
-    held = []
+def _blocks(s: str) -> list[tuple[tuple[str, int], re.Match]]:
+    """Blocks outside tables and asides, each keyed by (text of the nearest preceding heading, index under it)."""
+    skip = [m.span() for rx in (TABLE, ASIDE) for m in rx.finditer(s)]
+    out, head, i = [], "", 0
+    for m in BLOCK.finditer(s):
+        if any(a <= m.start() < b for a, b in skip):
+            continue
+        out.append(((head, i), m))
+        head, i = (_text(m.group(0)), 0) if m.group(1)[0] == "h" else (head, i + 1)
+    return out
+
+
+def _hold(body: str, live: str, open_threads: list[dict]) -> tuple[str, list[str], list[str]]:
+    held, unplaced = [], []
     for t in open_threads:
         q = " ".join(t["quote"].split())
-        el = _anchor(live, t["start"])
+        m = _anchor(live, t["start"])
+        el = m.group(0) if m else None
         tables = [el] if el and el.startswith("<table") else TABLE.findall(live)
         hit = next(((tb, r) for tb in tables for r in ROW.findall(tb) if q in _text(r)), None)
         if hit:
@@ -236,19 +260,21 @@ def _hold(body: str, live: str, open_threads: list[dict]) -> tuple[str, list[str
                     continue  # nowhere to put it; the dry-run refuses the orphaning pass
                 body = body.replace(prev, prev + "\n" + row, 1)
         else:
-            block = el if el and not el.startswith("<table") and q in _text(el) else \
-                next((m.group(0) for m in BLOCK.finditer(live) if q in _text(m.group(0))), None)
-            if not block:
+            lives = _blocks(live)
+            src = next((km for km in lives if m and km[1].start() == m.start() and q in _text(el)), None) or \
+                next((km for km in lives if q in _text(km[1].group(0))), None)
+            if not src:
                 continue
-            tag = re.match(r"<(\w+)", block).group(1)
-            score = lambda b: difflib.SequenceMatcher(None, _text(b), _text(block)).ratio()  # noqa: E731
-            # ponytail: the counterpart is the closest same-tag block by text; key paragraphs if two ever read alike
-            best = max((m.group(0) for m in BLOCK.finditer(body) if m.group(1) == tag), key=score, default=None)
-            if best is None or q in _text(best) or score(best) < 0.5:
+            # the counterpart is the BODY block at the same place: same heading, same index under it
+            mine = next((bm for k, bm in _blocks(body) if k == src[0]), None)
+            if mine is None:
+                unplaced.append(t["quote"])  # no counterpart: the structure pass would raze it, so it holds
                 continue
-            body = body.replace(best, block, 1)
+            if q in _text(mine.group(0)):
+                continue
+            body = body[:mine.start()] + src[1].group(0) + body[mine.end():]
         held.append(t["quote"])
-    return body, held
+    return body, held, unplaced
 
 
 def pass1(live: str, new: str) -> str:
@@ -288,11 +314,20 @@ def ensure(run: str, key: str, title: str, tab_title: str, kind: str, parent: st
     doc = p["tracker_doc"]
     docs = p.setdefault("docs", {})
     d = docs.get(key) or {}
+    if kind in NO_QUESTION_KINDS:
+        qprefix = None
+    elif kind in GATED_KINDS and not (qprefix or d.get("qprefix")):
+        raise Refused(f"--kind {kind} is gated and needs --qprefix")
     tabs = _json_in(_ok("google.docs.tab", "list", f"--id={doc}", "--depth=0", "--columns=all", "--output=json"))
-    if d.get("tab") and any(t.get("tabId") == d["tab"] for t in tabs):
+    if d.get("tab") and not d.get("archived") and any(t.get("tabId") == d["tab"] for t in tabs):
         return d["tab"]
     ptab = _tab(p, parent) if parent else ""
-    tab = next((t["tabId"] for t in tabs if t.get("title") == tab_title and (t.get("parent_tabId") or "") == ptab), None)
+    # never adopt a tab another key records (archived ones included); an archived key always gets a fresh tab
+    owned = {v.get("tab") for k, v in docs.items() if k != key and isinstance(v, dict)}
+    owned |= {p.get(f) for f, k in (("tracker_tab", "tracker"), ("tracker_events_tab", "events")) if k != key}
+    tab = None if d.get("archived") else next(
+        (t["tabId"] for t in tabs if t.get("title") == tab_title and (t.get("parent_tabId") or "") == ptab
+         and t.get("tabId") not in owned), None)
     if not tab:  # adopting first means a crash between add and save never leaves a duplicate tab (2FA to delete)
         args = ["google.docs.tab", "add", f"--id={doc}", f"--title={tab_title}", "--output=json"]
         got = _json_in(_ok(*args, *([f"--parent-tab-id={ptab}"] if ptab else [])))
@@ -300,6 +335,7 @@ def ensure(run: str, key: str, title: str, tab_title: str, kind: str, parent: st
         tab = next((got.get(k) for k in ("tabId", "tab_id", "id") if isinstance(got, dict) and got.get(k)), None)
         if not tab:
             raise RuntimeError(f"tab add returned no tab id: {got!r}")
+    d = {k: v for k, v in d.items() if k != "archived" and not (k == "qprefix" and kind in NO_QUESTION_KINDS)}
     docs[key] = {**d, "id": doc, "tab": tab, "parent": parent, "title": title, "tab_title": tab_title, "kind": kind,
                  **({"qprefix": qprefix} if qprefix else {}),
                  "status": d.get("status") or ("drafting" if kind in GATED_KINDS else "reference")}
@@ -376,15 +412,15 @@ def _swap(p: dict, key: str, s: dict, stage: str) -> str:
     return _json_in(out).get("imageObjectId") or s["object_id"]
 
 
-def _finish(run: str, p: dict, key: str, r: dict, before: str, applied: bool, stage: str) -> None:
+def _finish(run: str, p: dict, key: str, r: dict, before: str, applied: bool, stage: str, figs: dict) -> None:
     """Run the queued swaps, then record object ids, frames and hashes in figs.json."""
     figs_path = os.path.join(_workdir(run, key), "figs.json")
-    figs = state.read_json(figs_path) if os.path.exists(figs_path) else {}
     for s in r["swaps"]:
         oid = _swap(p, key, s, stage)
-        figs[s["name"]] = {**figs.get(s["name"], {}), "object_id": oid, "sha256": _sha(s["png"])}
+        figs[s["fig"]] = {**figs.get(s["fig"], {}), "object_id": oid, "sha256": _sha(s["png"])}
+        state.atomic_write_json(figs_path, figs)  # a later swap failing must not lose this object id
         if not s["preserve"]:
-            state.append_event(run, "figure_frame_reset", f"figure {s['name']} re-inserted with a fresh frame",
+            state.append_event(run, "figure_frame_reset", f"figure {s['fig']} re-inserted with a fresh frame",
                                doc=key, old=s["object_id"], new=oid)
     if not (r["swaps"] or (applied and r["new_images"])):
         return
@@ -394,7 +430,7 @@ def _finish(run: str, p: dict, key: str, r: dict, before: str, applied: bool, st
     if applied and r["new_images"]:
         if len(added) == len(r["new_images"]):
             for png, oid in zip(r["new_images"], added):
-                figs[os.path.basename(png)] = {"object_id": oid, "sha256": _sha(png)}
+                figs[fig_key(run, png)] = {"object_id": oid, "sha256": _sha(png)}
         else:
             print(f"{key}: {len(r['new_images'])} images sent, {len(added)} new on the tab; figs.json not updated "
                   "for them", file=sys.stderr)
@@ -405,9 +441,20 @@ def _finish(run: str, p: dict, key: str, r: dict, before: str, applied: bool, st
     state.atomic_write_json(figs_path, figs)
 
 
-def _figs(run: str, key: str) -> dict:
+def _figs(run: str, key: str, body: str) -> dict:
+    """figs.json, with each old basename key moved to the one BODY image of that name; dropped when two BODY images
+    share the name (they re-upload). Kept as is when no BODY image has it."""
     path = os.path.join(run, "docs", key, "figs.json")
-    return state.read_json(path) if os.path.exists(path) else {}
+    figs = state.read_json(path) if os.path.exists(path) else {}
+    pngs = {fig_key(run, m) for m in FILE_IMG.findall(body)}
+    out = {k: v for k, v in figs.items() if os.sep in k or k in pngs}
+    for name, v in figs.items():
+        hits = [k for k in pngs if os.path.basename(k) == name]
+        if name in out or len(hits) > 1:
+            continue
+        if not hits or hits[0] not in out:
+            out[hits[0] if hits else name] = v
+    return out
 
 
 def apply_generated(run: str, key: str, body_path: str, ours: bool, allow_reset=()) -> int:
@@ -417,7 +464,9 @@ def apply_generated(run: str, key: str, body_path: str, ours: bool, allow_reset=
     tab = _tab(p, key)
     _require_private(p["tracker_doc"])
     live, dest = _get(run, p, key)
-    r = build_from(open(body_path, encoding="utf-8").read(), live, _figs(run, key), tab, allow_reset)
+    body = open(body_path, encoding="utf-8").read()
+    figs = _figs(run, key, body)
+    r = build_from(body, live, figs, tab, allow_reset, run=run)
     if r["blocked"]:
         print(json.dumps({"frame_reset_needs_replies": r["blocked"]}))
         return 5
@@ -430,7 +479,8 @@ def apply_generated(run: str, key: str, body_path: str, ours: bool, allow_reset=
         content = build(live)
         if content == live:
             continue
-        res = _apply_pass(p, key, content, dest + ".base", stage, ours)
+        res = "held: no counterpart for an open comment" if name == "structure" and r["unplaced"] else \
+            _apply_pass(p, key, content, dest + ".base", stage, ours)
         results.append(res)
         if res.startswith("held"):
             state.append_event(run, "apply_held", f"{name} pass held: {res[6:]}", doc=key, apply_pass=name)
@@ -439,8 +489,8 @@ def apply_generated(run: str, key: str, body_path: str, ours: bool, allow_reset=
     applied = "applied" in results
     print(json.dumps({"key": key, "passes": results, "held": r["held"], "swaps": len(r["swaps"])}))
     # swaps change pixels only, so they run even when both text passes are held
-    _finish(run, p, key, r, before, applied, stage)
-    return 3 if results and all(x.startswith("held") for x in results) else 0
+    _finish(run, p, key, r, before, applied, stage, figs)
+    return 3 if not applied and any(x.startswith("held") for x in results) else 0
 
 
 def apply_authored(run: str, key: str, allow_reset=()) -> int:
@@ -451,8 +501,9 @@ def apply_authored(run: str, key: str, allow_reset=()) -> int:
     edited, base = os.path.join(wd, "live.html"), os.path.join(wd, "live.html.base")
     if not os.path.exists(base):
         raise Refused(f"no {base}: run tabs.py get {key} first")
-    base_text = open(base, encoding="utf-8").read()
-    r = build_from(open(edited, encoding="utf-8").read(), base_text, _figs(run, key), tab, allow_reset, hold=False)
+    base_text, body = open(base, encoding="utf-8").read(), open(edited, encoding="utf-8").read()
+    figs = _figs(run, key, body)
+    r = build_from(body, base_text, figs, tab, allow_reset, hold=False, run=run)
     if r["blocked"]:
         print(json.dumps({"frame_reset_needs_replies": r["blocked"]}))
         return 5
@@ -463,7 +514,7 @@ def apply_authored(run: str, key: str, allow_reset=()) -> int:
     if res.startswith("held"):
         state.append_event(run, "apply_held", f"authored apply held: {res[6:]}", doc=key)
         return 3
-    _finish(run, p, key, r, base_text, res == "applied", stage)
+    _finish(run, p, key, r, base_text, res == "applied", stage, figs)
     return 0
 
 

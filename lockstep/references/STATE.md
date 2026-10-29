@@ -20,10 +20,10 @@ RUN=/data/users/anshulverma/sdd-runs/<slug>
 | `spec.md` | The spec, with answers folded into `## Clarifications` |
 | `run.json`, `ledger.md` | sdd's own state. Lockstep writes them only as listed under "Writes to sdd state" |
 | `research/` | Research reports and digests |
-| `docs/<key>/` | The humanize workspace for each doc or tab: facts, versions, history, ghtml snapshots (`live.html`, `live.html.base`), `questions.json`, `handled.json`, `chips.json` (last-seen dropdown values, written by `chips.py --commit`), `answers.md`. Tabs layout adds `body.html` (a generated tab's rendered body) and `figs.json` (`{png name: {object_id, sha256, w, h}}`, written by `tabs.py`) |
+| `docs/<key>/` | The humanize workspace for each doc or tab: facts, versions, history, ghtml snapshots (`live.html`, `live.html.base`), `questions.json`, `handled.json`, `chips.json` (last-seen dropdown values, written by `chips.py --commit`), `answers.md`. Tabs layout adds `figs.json` (`{png path relative to the run dir, or absolute outside it: {object_id, sha256, w, h}}`, written by `tabs.py`), and for `tracker` and `events` only, `body.html` (the rendered body, references/TRACKER.md). The experiment tabs' bodies live in `experiments/render/<key>.html` (references/EXPERIMENTS.md) |
 | `experiments/`, `studies/<id>/` | Tabs layout: jobs and studies state, study reports and figures. Written by `experiments.py` and the loop; layout and schema in references/EXPERIMENTS.md |
 | `.lock`, `.lock.guard` | The tick lease, an exclusive lock file so only one session advances the run at a time. Protocol: references/GATE.md |
-| `tracker/` | Tracker figures (references/TRACKER.md) |
+| `tracker/` | Tracker figures and `diff_status.json` (references/TRACKER.md); legacy runs also render `tracker/body.html` here |
 | `superseded/<ts>/` | Plan, ledger and answers set aside by a changed re-accepted spec |
 
 Global review-velocity data lives in `/data/users/anshulverma/sdd-runs/_velocity/`, not in any run dir. See references/VELOCITY.md.
@@ -110,10 +110,11 @@ Every transition also rewrites `tracker_status`. Append events with `python3 $S/
 | `id` | The Google Doc id, recorded right after `create`. For a tab, the lockstep doc's id (`tracker_doc`) |
 | `tab`, `parent`, `tab_title` | Tabs layout: the tab id, the parent tab's key (or `null`) and the tab bar name, written by `tabs.py ensure`. An entry without `tab` is a standalone doc |
 | `title` | The exact title, byte-identical after publish. `sweep.py` errors if it is empty |
-| `kind` | `proposal`, `spec`, `task`, `plan`, `explainer`, `impl_questions`, or `external` (a doc the owner keeps, such as an experiment tracker: linked in the tracker's Docs table; never swept or written by lockstep unless `watch`; the run's own experiment code may write it after its own privacy check). Tabs layout adds `log`, `experiments`, `experiment_log`, `studies`, `study`, `takeaways` |
+| `kind` | `proposal`, `spec`, `task`, `plan`, `explainer`, `impl_questions`, or `external` (a doc the owner keeps, such as an experiment tracker: linked in the tracker's Docs table; never written by lockstep; swept only when `watch`, and then lockstep only replies in its threads; the run's own experiment code may write it after its own privacy check). Tabs layout adds `log`, `experiments`, `experiment_log`, `studies`, `study`, `takeaways` |
 | `of` | Explainer only: the key of the gated doc it explains |
 | `watch` | `external` only: `true` makes the sweep read its comments |
-| `qprefix` | Question prefix (table below). `sweep.py` errors if it is empty, except for tabs swept in the `open` scope |
+| `qprefix` | Question prefix (table below). `sweep.py` errors if it is empty on a gated or standalone doc; `tabs.py ensure` refuses a gated kind without one. Study and takeaways tabs never carry one; they and the generated tabs are swept in the `open` scope |
+| `archived` | Tabs layout: `true` once the tab was renamed `Archived: ...` and moved last (references/ACTIONS.md, Tab operations). `tab` and `id` stay. The sweep skips the key and routes its tab's comments to `tracker`; `tabs.py ensure` gives the key a fresh tab and clears the flag |
 | `explainer` | `auto` (default), `on` or `off`; `Action: add explainer` / `no explainer` set `on` / `off`, and `velocity.py doc`'s verdict applies only while `auto` |
 | `status` | `drafting`, `awaiting_acceptance`, `confirm_pending`, `accepted`, `superseded` or `reference` |
 | `opened_at`, `accepted_at` | UTC time the gate opened and time of the latest accept |
@@ -131,8 +132,7 @@ Every transition also rewrites `tracker_status`. Append events with `python3 $S/
 | `impl_questions` | `I` | `reference` (never gates) |
 | `plan` | `P` (no questions) | `reference` |
 | `explainer` | The parent gated doc's prefix | `reference` |
-| `study`, `takeaways` | `L`, `F` | `reference` |
-| `log`, `experiments`, `experiment_log`, `studies` | none (swept in the `open` scope, references/GATE.md) | `reference` |
+| `study`, `takeaways`, `log`, `experiments`, `experiment_log`, `studies` | none (swept in the `open` scope, references/GATE.md) | `reference` |
 
 Each sweep item's state change, and when each field is set, is in references/GATE.md. An answer matches question n when `html.unescape(quoted_text)` is a substring of stored question n or the reverse, or when the comment matches `\b` + `re.escape(qprefix)` + `\s?(\d+)\b`, case-insensitive. So `T3.` matches `T3.1` and `T3. 1` but not `T301`.
 

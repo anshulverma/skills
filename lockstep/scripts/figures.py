@@ -28,7 +28,9 @@ def style(bg: str = BG) -> None:
 
 
 def size(pageless: bool) -> tuple[float, float]:
-    """Fixed figsize per doc so the Docs frame never rescales: 13x7.5 in pageless, 6.5 in wide paged."""
+    """Base figsize per doc: 13x7.5 in pageless, 6.5x3.75 in paged. The width is fixed; the height is a floor.
+    delta_band and the experiments timeline grow taller with arms or sub-rows rather than overlap bars, so a
+    figure's aspect can drift; tabs.py then re-inserts it with a fresh frame (figure_frame_reset, apply exit 5)."""
     return (13.0, 7.5) if pageless else (6.5, 3.75)
 
 

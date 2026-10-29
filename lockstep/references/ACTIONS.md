@@ -22,7 +22,7 @@ An `Action:` comment is an owner comment whose text starts with `Action:` (case-
 |---|---|
 | A gated doc, open or accepted | yes |
 | Any tab of the lockstep doc, and a comment with no anchor (tabs layout) | yes (references/GATE.md, Tabs layout attribution) |
-| The tracker | yes (along with Confirm replies and diff ids, nothing else) |
+| The tracker | yes, along with Confirm replies and diff ids. Comments on the tracker itself get nothing else. Tabs layout: the `tracker` key also receives orphaned, doc-level and archived-tab comments, swept in the `open` scope, so those can also be a question or a requirement (references/GATE.md, Tabs layout attribution) |
 | The global "Review velocity" doc | never (runs never sweep it) |
 
 No sweep runs until `owner_name` is set. A `--tick` that finds the run dir missing, or status `done` or `aborted`, cleans up and exits without sweeping (references/LOOP.md).
@@ -47,7 +47,10 @@ Tabs layout only. These are run housekeeping, not `Action:` verbs:
 | Operation | Rule |
 |---|---|
 | `meta google.docs.tab add`, `tab rename`, `tab move` | Allowed without Confirm. Add tabs through `tabs.py ensure` (references/DOCS.md) |
-| `tab delete`, deleting a doc | Never run: both need 2FA. Move a tab under the wrong parent with `tab move --parent-tab-id`. Rename an unwanted tab `Archived: <old name>`, move it last (`tab move --index=<last>`) and drop its `docs.<key>.tab` so `tabs.py ensure` never reuses it; the owner deletes it |
+| `tab delete`, deleting a doc | Never run: both need 2FA. Move a tab under the wrong parent with `tab move --parent-tab-id` and fix `docs.<key>.parent` |
+| Archive an unwanted tab | Rename it `Archived: <old name>`, move it last (`tab move --index=<last>`), then set `docs.<key>.archived = true` with `state.load` / `state.save`. Keep `docs.<key>.tab` and `id`: never drop the tab id. The owner deletes the tab |
+
+An archived key is never swept on its own. Comments on its tab go to the `tracker` key in the `open` scope, and its `handled.json` stays in the handled union, so no handled comment replays (references/GATE.md, Tabs layout attribution). `tabs.py ensure <key>` never adopts an archived tab: it adds a fresh one and clears `archived`.
 
 ## Never allowed, even with Confirm
 
@@ -135,4 +138,4 @@ python3 ~/.claude/skills/lockstep/scripts/state.py /data/users/anshulverma/sdd-r
 
 ## Steering box
 
-Every gated doc and the tracker carries a short "How to steer this run" box. It lists the comment kinds side by side with one example each: question, answer to a numbered question (or pick in the dropdown under it), requirement, `Action:`, `Approved` (or set the Approval dropdown under the title), `Confirm`, `Changes:`, `Reopen`. Gated docs get the full box (references/DOCS.md, Publish step 1). The tracker's box lists only `Action:`, `Confirm` and diff ids, because the tracker acts on nothing else. The verbs it lists must match the table above.
+Every gated doc and the tracker carries a short "How to steer this run" box. It lists the comment kinds side by side with one example each: question, answer to a numbered question (or pick in the dropdown under it), requirement, `Action:`, `Approved` (or set the Approval dropdown under the title), `Confirm`, `Changes:`, `Reopen`. Gated docs get the full box (references/DOCS.md, Publish step 1). The tracker's box lists only `Action:`, `Confirm` and diff ids, because a comment on the tracker acts on nothing else (orphaned and doc-level comments routed to the `tracker` key are the exception in references/GATE.md). The verbs it lists must match the table above.

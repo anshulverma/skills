@@ -23,6 +23,7 @@ ACTION = re.compile(r"^\s*action\s*:", re.I)
 REQ = re.compile(r"\b(should|must|make sure|needs?|has to|want)\b", re.I)
 DIFF = re.compile(r"\bD\d{6,}\b")
 OPEN_KINDS = ("log", "experiments", "experiment_log", "studies")  # ungated generated tabs
+GATED_KINDS = ("proposal", "spec", "task")  # tabs.GATED_KINDS; not imported so a legacy sweep never loads tabs.py
 
 
 def qref(qprefix: str) -> re.Pattern:
@@ -204,21 +205,30 @@ def _handled(run_dir: str, key: str) -> set[str]:
 
 def swept_keys(docs: dict) -> list[str]:
     """Docs whose comments the sweep reads: every run doc, plus linked (external) docs marked `watch`.
-    docs.tracker (tabs layout) is left out: the tracker branch sweeps it."""
-    return [k for k, d in docs.items() if k != "tracker" and (d.get("kind") != "external" or d.get("watch"))]
+    docs.tracker (tabs layout) is left out: the tracker branch sweeps it; so are archived tabs."""
+    return [k for k, d in docs.items()
+            if k != "tracker" and not d.get("archived") and (d.get("kind") != "external" or d.get("watch"))]
 
 
-def attribute(rows: list[dict], docs: dict, tracker_tab: str) -> dict[str, tuple[str, bool]]:
+def attribute(rows: list[dict], docs: dict, tracker_tab: str,
+              handled: dict[str, set[str]] | None = None) -> dict[str, tuple[str, bool]]:
     """{row id: (key, open)}. A root goes to the key whose `tab` is its ranges[0].tab_id ("" = first tab = tracker_tab);
-    replies inherit their root. A root with no ranges (doc-level or orphaned) or on an unknown tab is ("tracker", True)."""
-    by_tab = {d["tab"]: k for k, d in docs.items() if isinstance(d, dict) and d.get("tab")}
+    replies inherit their root. A root with no ranges goes to the non-tracker key whose handled.json has it (resolving
+    a comment empties its ranges). Any other root, and every root on an archived or unknown tab, is ("tracker", True)."""
+    live = {k for k, d in docs.items() if isinstance(d, dict) and not d.get("archived")}
+    by_tab = {d["tab"]: k for k, d in docs.items() if k in live and d.get("tab")}
     by_tab[tracker_tab] = "tracker"
+    sticky = {}
+    for k, ids in (handled or {}).items():
+        if k != "tracker" and k in live:
+            for i in ids:
+                sticky.setdefault(i, k)
     by_id = {r["id"]: r for r in rows}
     out = {}
     for r in rows:
         root = by_id.get(r.get("parent_id"), r) if r.get("parent_id") else r
         rg = root.get("ranges") or []
-        key = by_tab.get(rg[0].get("tab_id") or tracker_tab) if rg else None
+        key = by_tab.get(rg[0].get("tab_id") or tracker_tab) if rg else sticky.get(root["id"])
         out[r["id"]] = (key, False) if key else ("tracker", True)
     return out
 
@@ -241,24 +251,31 @@ def _sweep_one(run_dir: str, p: dict, key: str, owner: str) -> dict:
 
 def sweep_tabs(run_dir: str, p: dict, keys: list[str], owner: str) -> dict:
     """Tabs layout: list the tracker doc once, attribute each root to a tab key, filter on the union of handled.json
-    across every key on the doc (an orphaned root never replays), and classify per key. Standalone docs sweep as before."""
+    across every key on the doc, archived ones included (an orphaned root never replays), and classify per key.
+    Standalone docs sweep as before; a key on tracker_doc never does."""
     docs, result = p.get("docs", {}), {}
-    on_host = ["tracker", *[k for k, d in docs.items() if k != "tracker" and isinstance(d, dict) and d.get("tab")]]
+    on_host = ["tracker", *[k for k, d in docs.items() if k != "tracker" and isinstance(d, dict)
+                            and (d.get("tab") or (p.get("tracker_doc") and d.get("id") == p["tracker_doc"]))]]
     for key in keys:
-        if key not in on_host:
+        if key in on_host and key != "tracker" and docs[key].get("archived"):
+            result[key] = {"status": "error", "error": f"docs.{key} is archived; its comments sweep under tracker"}
+        elif key in on_host and key != "tracker" and not docs[key].get("tab"):
+            result[key] = {"status": "error", "error": f"docs.{key} is on tracker_doc but has no tab"}
+        elif key not in on_host:
             try:
                 result[key] = _sweep_one(run_dir, p, key, owner)
             except Exception as e:
                 result[key] = {"status": "error", "error": f"{type(e).__name__}: {e}"}
-    tab_keys = [k for k in keys if k in on_host]
+    tab_keys = [k for k in keys if k in on_host and k not in result]
     if not tab_keys:
         return {k: result[k] for k in keys}
     try:
         if not p.get("tracker_doc"):
             raise ValueError("tracker_doc is not set")
         rows = list_comments(p["tracker_doc"])
-        handled = set().union(*(_handled(run_dir, k) for k in on_host))
-        attr = attribute(rows, docs, p.get("tracker_tab") or "t.0")
+        by_key = {k: _handled(run_dir, k) for k in on_host}
+        handled = set().union(*by_key.values())
+        attr = attribute(rows, docs, p.get("tracker_tab") or "t.0", by_key)
     except Exception as e:
         for key in tab_keys:
             result[key] = {"status": "error", "error": f"{type(e).__name__}: {e}"}
@@ -272,7 +289,8 @@ def sweep_tabs(run_dir: str, p: dict, keys: list[str], owner: str) -> dict:
                 d = docs[key]
                 if d["id"] != p["tracker_doc"]:
                     raise ValueError(f"docs.{key} has a tab but its id is not tracker_doc")
-                ungated = d.get("kind") in OPEN_KINDS or not d.get("qprefix")
+                # gated kinds need a qprefix (_doc_dict raises), like legacy; ungated tabs without one use the open scope
+                ungated = d.get("kind") not in GATED_KINDS and (d.get("kind") in OPEN_KINDS or not d.get("qprefix"))
                 doc, scope = _doc_dict(run_dir, key, d, need_qprefix=not ungated), "open" if ungated else _scope(d)
             items = pending([r for r in rows if attr[r["id"]] == (key, False)], doc, owner, handled, pa, scope)
             orphans = [r for r in rows if attr[r["id"]] == (key, True)]
