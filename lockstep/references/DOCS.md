@@ -43,7 +43,7 @@ When `pipeline.json.layout == "tabs"` (every new run; legacy runs have no `layou
 | `task-<n>` | Task <n> | `plan` | parked task | `task` | `T<n>.` | authored, gated |
 | `impl_questions` | Implementation questions | none | first implementation question | `impl_questions` | `I` | authored |
 | `experiments` | Experiments | none | first job recorded | `experiments` | | generated |
-| `experiment_log` | Experiment log | `experiments` | first concluded unit | `experiment_log` | | generated |
+| `experiment_log` | Experiment log | `experiments` | first completed 48-hour block or first concluded unit | `experiment_log` | | generated |
 | `studies` | Studies | none | first study registered | `studies` | | generated |
 | `study-<id>` | Study: <short title> | `studies` | study concluded | `study` | none | authored |
 | `final_takeaways` | Final takeaways | `studies` | owner asks, or every study concluded in LAND | `takeaways` | none | authored |

@@ -236,6 +236,28 @@ def _blocks(s: str) -> list[tuple[tuple[str, int], re.Match]]:
     return out
 
 
+def _section(s: str, pos: int) -> str:
+    """Text of the nearest h1/h2 before pos: the unit (a study, a tab part) a block belongs to."""
+    heads = [m for m in BLOCK.finditer(s, 0, pos) if m.group(1) in ("h1", "h2")]
+    return _text(heads[-1].group(0)) if heads else ""
+
+
+def _counterpart(body: str, live: str, src: re.Match) -> re.Match | None:
+    """The BODY block that replaces the commented live block: same tag and same h1/h2 section, then the longest
+    shared leading text (a label like "Status: "), then the nearest position. Position alone is not enough: a
+    block inserted above shifts every index."""
+    def peers(s, sec):
+        return [bm for _, bm in _blocks(s) if bm.group(1) == src.group(1) and _section(s, bm.start()) == sec]
+
+    sec = _section(live, src.start())
+    at = next((k for k, bm in enumerate(peers(live, sec)) if bm.start() == src.start()), 0)
+    txt = _text(src.group(0))
+    cands = list(enumerate(peers(body, sec)))
+    if not cands:
+        return None
+    return max(cands, key=lambda kb: (len(os.path.commonprefix([txt, _text(kb[1].group(0))])), -abs(kb[0] - at)))[1]
+
+
 def _hold(body: str, live: str, open_threads: list[dict]) -> tuple[str, list[str], list[str]]:
     held, unplaced = [], []
     for t in open_threads:
@@ -265,12 +287,14 @@ def _hold(body: str, live: str, open_threads: list[dict]) -> tuple[str, list[str
                 next((km for km in lives if q in _text(km[1].group(0))), None)
             if not src:
                 continue
-            # the counterpart is the BODY block at the same place: same heading, same index under it
-            mine = next((bm for k, bm in _blocks(body) if k == src[0]), None)
-            if mine is None:
-                unplaced.append(t["quote"])  # no counterpart: the structure pass would raze it, so it holds
+            mine = _counterpart(body, live, src[1])
+            if mine is not None and q in _text(mine.group(0)):
                 continue
-            if q in _text(mine.group(0)):
+            if mine is None:
+                sec = _section(live, src[1].start())
+                if any(q in _text(bm.group(0)) for _, bm in _blocks(body) if _section(body, bm.start()) == sec):
+                    continue  # the block was rewritten but the commented text survives in its section
+                unplaced.append(t["quote"])  # no counterpart: the structure pass would raze it, so it holds
                 continue
             body = body[:mine.start()] + src[1].group(0) + body[mine.end():]
         held.append(t["quote"])
@@ -322,10 +346,10 @@ def ensure(run: str, key: str, title: str, tab_title: str, kind: str, parent: st
     if d.get("tab") and not d.get("archived") and any(t.get("tabId") == d["tab"] for t in tabs):
         return d["tab"]
     ptab = _tab(p, parent) if parent else ""
-    # never adopt a tab another key records (archived ones included); an archived key always gets a fresh tab
-    owned = {v.get("tab") for k, v in docs.items() if k != key and isinstance(v, dict)}
+    # never adopt a tab another key records (archived ones included), nor this key's own archived tab
+    owned = {v.get("tab") for k, v in docs.items() if isinstance(v, dict) and (k != key or v.get("archived"))}
     owned |= {p.get(f) for f, k in (("tracker_tab", "tracker"), ("tracker_events_tab", "events")) if k != key}
-    tab = None if d.get("archived") else next(
+    tab = next(
         (t["tabId"] for t in tabs if t.get("title") == tab_title and (t.get("parent_tabId") or "") == ptab
          and t.get("tabId") not in owned), None)
     if not tab:  # adopting first means a crash between add and save never leaves a duplicate tab (2FA to delete)

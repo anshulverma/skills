@@ -121,6 +121,19 @@ def test_hold_uses_the_same_place_not_the_closest_text():
     assert gone["held"] == [] and gone["unplaced"] == ["4 running"]          # no counterpart: no guess
 
 
+def test_hold_survives_a_block_inserted_above():
+    # a verdict line inserted above the commented Results line shifts every index under the heading
+    live = "<h2>Study A</h2>\n<p>Status: running</p>\n<p>Results: pending</p>\n" + ASIDE_TEXT.format(q="Results: pending")
+    body = "<h2>Study A</h2>\n<p>Verdict: wins</p>\n<p>Status: concluded</p>\n<p>Results: tp=2 is 9% faster</p>"
+    r = tabs.build_from(body, live, {}, TAB)
+    assert r["held"] == ["Results: pending"] and r["unplaced"] == []
+    assert r["html"] == body.replace("Results: tp=2 is 9% faster", "Results: pending")
+    # a commented Status line whose text BODY still carries, one block lower, is left alone
+    live2 = "<h2>Study A</h2>\n<p>Status: running</p>\n" + ASIDE_TEXT.format(q="Status")
+    r2 = tabs.build_from(body, live2, {}, TAB)
+    assert r2["held"] == [] and r2["html"] == body
+
+
 def test_pass1_same_key_rows_only():
     live = ("<p>old para</p><table><tr><td>#</td><td>Job</td></tr><tr><td>1</td><td>a</td></tr>"
             "<tr><td>2</td><td>b</td></tr></table><table><tr><td>K</td></tr><tr><td>x</td></tr></table>")

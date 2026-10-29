@@ -80,7 +80,7 @@ def _tab_link(run: dict, key: str, text: str, tab: str | None = None) -> str:
 
 
 def _extent(j: dict, now: datetime) -> tuple[datetime, datetime]:
-    """Start to end; a live job runs to now, a terminal one without ended_utc (died before RUNNING) is zero-length."""
+    """Start to end; a live job runs to now, a terminal one ends at ended_utc, so a job that never ran spans its queue time."""
     a = parse_ts(j.get("started_utc") or j["launched_utc"])
     b = parse_ts(j["ended_utc"]) if j.get("ended_utc") else a if shown(j) in TERMINAL else now
     return a, max(a, b)
