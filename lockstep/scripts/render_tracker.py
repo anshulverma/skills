@@ -718,6 +718,9 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
         h.append(section)
     else:
         events_out.append(section + "\n")
+        tab = (f'<a href="https://docs.google.com/document/d/{run["tracker_doc"]}/edit?tab={run["tracker_events_tab"]}">Event log tab</a>'
+               if run.get("tracker_events_tab") and run.get("tracker_doc") else "Event log tab")
+        h.append(f"<h2>Event log</h2><p>On the {tab}.</p>")
     return "\n".join(h) + "\n"
 
 
