@@ -20,9 +20,10 @@ RUN=/data/users/anshulverma/sdd-runs/<slug>
 | `spec.md` | The spec, with answers folded into `## Clarifications` |
 | `run.json`, `ledger.md` | sdd's own state. Lockstep writes them only as listed under "Writes to sdd state" |
 | `research/` | Research reports and digests |
-| `docs/<key>/` | The humanize workspace for each doc: facts, versions, history, ghtml snapshots, `questions.json`, `handled.json`, `chips.json` (last-seen dropdown values, written by `chips.py --commit`), `answers.md` |
+| `docs/<key>/` | The humanize workspace for each doc or tab: facts, versions, history, ghtml snapshots (`live.html`, `live.html.base`), `questions.json`, `handled.json`, `chips.json` (last-seen dropdown values, written by `chips.py --commit`), `answers.md`. Tabs layout adds `figs.json` (`{png path relative to the run dir, or absolute outside it: {object_id, sha256, w, h}}`, written by `tabs.py`), and for `tracker` and `events` only, `body.html` (the rendered body, references/TRACKER.md). The experiment tabs' bodies live in `experiments/render/<key>.html` (references/EXPERIMENTS.md) |
+| `experiments/`, `studies/<id>/` | Tabs layout: jobs and studies state, study reports and figures. Written by `experiments.py` and the loop; layout and schema in references/EXPERIMENTS.md |
 | `.lock`, `.lock.guard` | The tick lease, an exclusive lock file so only one session advances the run at a time. Protocol: references/GATE.md |
-| `tracker/` | Tracker figures (references/TRACKER.md) |
+| `tracker/` | Tracker figures and `diff_status.json` (references/TRACKER.md); legacy runs also render `tracker/body.html` here |
 | `superseded/<ts>/` | Plan, ledger and answers set aside by a changed re-accepted spec |
 
 Global review-velocity data lives in `/data/users/anshulverma/sdd-runs/_velocity/`, not in any run dir. See references/VELOCITY.md.
@@ -38,10 +39,11 @@ Global review-velocity data lives in `/data/users/anshulverma/sdd-runs/_velocity
    ```
 3. Create `pipeline.json` with the snippet below, replacing `state.load(run)` with this dict. Write `tracker_status` before the first tracker render.
    ```json
-   {"slug": "<slug>", "owner_name": "", "phase": "INIT", "tick": 0, "in_flight": null,
+   {"slug": "<slug>", "layout": "tabs", "owner_name": "", "phase": "INIT", "tick": 0, "in_flight": null,
     "cron_job_id": "", "cron_armed_at": "", "awaits": {}, "pending_actions": {}, "diffs": {},
     "terminal": null, "paused": false, "blocked_reasons": [], "waiting_reasons": [],
     "repo_kind": null, "repo": "", "build_branch": "", "impl_questions_seen": 0, "tracker_doc": "", "tracker_title": "<tracker title>",
+    "tracker_tab": "t.0", "pageless": false,
     "tracker_status": {"now": "", "waiting_on": "", "since": "<date -u>", "link": "",
                        "unblocks": "", "next_wake": ""},
     "counters": {"checks": 0, "agents": 0, "humanize_passes": 0}, "docs": {}}
@@ -84,12 +86,17 @@ Every transition also rewrites `tracker_status`. Append events with `python3 $S/
 | `diffs` | `{D<n>: null \| created \| published \| reviewed \| landed \| abandoned}` (null = not yet polled; references/TRACKER.md) |
 | `terminal` | `done`, `aborted` or `null` |
 | `paused` | Boolean |
-| `blocked_reasons` | `sdd`, `doc_not_private:<doc>` |
+| `blocked_reasons` | `sdd`, `doc_not_private:<doc>` (tabs layout: `doc_not_private:tracker` blocks every tab) |
 | `waiting_reasons` | `reopen:<doc>`, `all_parked` |
 | `repo_kind` | `git` or `sapling`. Written at PLAN handoff. It decides how LAND detects landing (references/TRACKER.md) |
 | `repo`, `build_branch` | Absolute path of the target repo and the branch BUILD commits to; written at PLAN handoff, read by LAND |
 | `impl_questions_seen` | Count of `run.json.unresolved` plus `questions.md` entries already in the implementation-questions doc |
-| `tracker_doc`, `tracker_title` | The tracker's doc id and exact title |
+| `layout` | `"tabs"` for runs created with the tabs layout (references/DOCS.md, Tabs layout); absent on legacy runs, which keep separate docs |
+| `tracker_doc`, `tracker_title` | The tracker's doc id and exact title. In the tabs layout `tracker_doc` is the lockstep doc that holds every tab |
+| `tracker_tab` | Tabs layout: the tracker tab id, normally `t.0` |
+| `tracker_events_tab` | The Event log tab id; `tabs.py ensure` writes it with `docs.events.tab` |
+| `pageless` | Tabs layout: whether the lockstep doc is pageless, read at INIT (references/TRACKER.md, Create); figures size to it |
+| `task_diffs` | `{"<task n>": "D<n>" or a note such as "none (local commit <hash>)"}`; the plan table's Diff column (references/TRACKER.md) |
 | `roadmap` | Optional list of `{name, status, scope}` milestones of the larger plan; the first is this run. The tracker draws them below the phase flowchart and lists them under Larger plan (bookkeeping only) |
 | `owner_tz` | IANA timezone the tracker shows times in (default `America/Los_Angeles`); stored times stay UTC |
 | `tracker_status` | `{now, waiting_on, since, link, unblocks, next_wake}` |
@@ -100,10 +107,14 @@ Every transition also rewrites `tracker_status`. Append events with `python3 $S/
 
 | Field | Meaning |
 |---|---|
-| `id` | The Google Doc id, recorded right after `create` |
+| `id` | The Google Doc id, recorded right after `create`. For a tab, the lockstep doc's id (`tracker_doc`) |
+| `tab`, `parent`, `tab_title` | Tabs layout: the tab id, the parent tab's key (or `null`) and the tab bar name, written by `tabs.py ensure`. An entry without `tab` is a standalone doc |
 | `title` | The exact title, byte-identical after publish. `sweep.py` errors if it is empty |
-| `kind` | `proposal`, `spec`, `task`, `plan`, `explainer`, `impl_questions`, or `external` (a doc the owner keeps, such as an experiment tracker: linked in the tracker's Docs table; never swept or written by lockstep; the run's own experiment code may write it after its own privacy check) |
-| `qprefix` | Question prefix (table below). `sweep.py` errors if it is empty |
+| `kind` | `proposal`, `spec`, `task`, `plan`, `explainer`, `impl_questions`, or `external` (a doc the owner keeps, such as an experiment tracker: linked in the tracker's Docs table; never written by lockstep; swept only when `watch`, and then lockstep only replies in its threads; the run's own experiment code may write it after its own privacy check). Tabs layout adds `log`, `experiments`, `experiment_log`, `studies`, `study`, `takeaways` |
+| `of` | Explainer only: the key of the gated doc it explains |
+| `watch` | `external` only: `true` makes the sweep read its comments |
+| `qprefix` | Question prefix (table below). `sweep.py` errors if it is empty on a gated or standalone doc; `tabs.py ensure` refuses a gated kind without one. Study and takeaways tabs never carry one; they and the generated tabs are swept in the `open` scope |
+| `archived` | Tabs layout: `true` once the tab was renamed `Archived: ...` and moved last (references/ACTIONS.md, Tab operations). `tab` and `id` stay. The sweep skips the key and routes its tab's comments to `tracker`; `tabs.py ensure` gives the key a fresh tab and clears the flag |
 | `explainer` | `auto` (default), `on` or `off`; `Action: add explainer` / `no explainer` set `on` / `off`, and `velocity.py doc`'s verdict applies only while `auto` |
 | `status` | `drafting`, `awaiting_acceptance`, `confirm_pending`, `accepted`, `superseded` or `reference` |
 | `opened_at`, `accepted_at` | UTC time the gate opened and time of the latest accept |
@@ -121,6 +132,7 @@ Every transition also rewrites `tracker_status`. Append events with `python3 $S/
 | `impl_questions` | `I` | `reference` (never gates) |
 | `plan` | `P` (no questions) | `reference` |
 | `explainer` | The parent gated doc's prefix | `reference` |
+| `study`, `takeaways`, `log`, `experiments`, `experiment_log`, `studies` | none (swept in the `open` scope, references/GATE.md) | `reference` |
 
 Each sweep item's state change, and when each field is set, is in references/GATE.md. An answer matches question n when `html.unescape(quoted_text)` is a substring of stored question n or the reverse, or when the comment matches `\b` + `re.escape(qprefix)` + `\s?(\d+)\b`, case-insensitive. So `T3.` matches `T3.1` and `T3. 1` but not `T301`.
 

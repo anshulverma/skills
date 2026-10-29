@@ -26,7 +26,7 @@ continues. Conversation memory is never pipeline state.
 
 | Phase | Work | Leaves when |
 |---|---|---|
-| `INIT` | Run dir, `request.md`, `pipeline.json`, private tracker, `owner_name`, one durable cron | Tracker created and cron armed |
+| `INIT` | Run dir, `request.md`, `pipeline.json`, the private lockstep doc (tracker tab plus Event log tab), `owner_name`, one durable cron | Tracker created and cron armed |
 | `RESEARCH` | Deep-research workflow; reports to `research/*.md`; the main loop reads digests only | Reports and critic on disk |
 | `PROPOSAL` | Draft the proposal with numbered open questions (qprefix `Q`), full humanize, publish, open its gate | Gate `accepted` |
 | `SPEC` | Fold `decisions.md` into `spec.md` `## Clarifications`; publish the final spec (qprefix `S`), full humanize, open its gate | Gate `accepted` |
@@ -36,7 +36,8 @@ continues. Conversation memory is never pipeline state.
 | `DONE` | `state.save` with `terminal: "done"` first, then the final tracker render, summary, `TaskStop` awaits, `CronDelete` | |
 
 Never publish the spec before the proposal is accepted. Never write `run.json` before the spec is
-accepted. While a gate is open, do reversible local prep only.
+accepted. While a gate is open, do reversible local prep only: a measurement question may be registered as
+a study (`study new`), but no job launches before BUILD, and studies conclude in BUILD or LAND (step 8b).
 
 ## Owner input never goes through the terminal
 
@@ -55,16 +56,17 @@ Run these in order. Each step's protocol lives on the linked page; do not improv
 2. **Cron.** Adopt, create or re-arm the one durable cron (references/LOOP.md).
 3. **Dead task ids.** Clear them (references/LOOP.md). A task id this session knows is still running is never stale, however long it has run: long units (a spec draft, a humanize pass) routinely pass 30 minutes, and redoing them would duplicate work.
 3b. **Owner in the session.** If the owner sent a message in this Claude session since the last tick, append `state.py <run> event owner_active "<one-line summary>"` (it counts as engaged time; references/TRACKER.md).
-4. **Sweep and handle.** `sweep.py` over every published run doc, plus `chips.py` for the owner's dropdown answers and the Approval dropdown, then handle each item oldest
+4. **Sweep and handle.** `sweep.py` over every published run doc, plus `chips.py` for the owner's dropdown answers and the Approval dropdown (tabs layout: per tab, on `docs/<key>/live.html` from `tabs.py get`), then handle each item oldest
    first, by kind (references/GATE.md; `Action:` verbs in references/ACTIONS.md).
-5. **Privacy.** Re-check each doc before writing to it (references/DOCS.md, Privacy check).
-6. **Guard.** If `paused` is set, or `waiting_reasons` holds a `reopen:*`, skip steps 7 and 8: sweep and reply only, no publishes, refreshes or sdd units.
+5. **Privacy.** Re-check each doc before writing to it; in the tabs layout one `tabs.py private` covers every tab (references/DOCS.md, Privacy check).
+6. **Guard.** If `paused` is set, or `waiting_reasons` holds a `reopen:*`, skip steps 7, 8 and 8b: sweep and reply only, no publishes, refreshes or sdd units.
 7. **Refresh.** Debounced: only when the newest owner comment is 10+ minutes old (references/DOCS.md).
 8. **One phase unit.** RESEARCH, PROPOSAL and SPEC as in the phase table. PLAN and BUILD: one sdd unit
    (sdd SKILL.md, "Driven by lockstep"), then the parked-task scan (references/STATE.md), the
    implementation-questions doc (`impl_questions`) when `run.json.unresolved` or `questions.md` has entries beyond `pipeline.json.impl_questions_seen` (references/DOCS.md),
    and in PLAN a plan doc re-publish. LAND: references/TRACKER.md.
-9. **Tracker.** Update `tracker_status`, then render and apply only when something changed this tick, or as a heartbeat when the last render is 30+ minutes old (references/TRACKER.md). Quiet ticks write nothing to the tracker.
+8b. **Experiments and studies.** BUILD and LAND, tabs layout only, and only when `experiments/state.json` exists: poll jobs, settle readouts and verdicts, conclude ready studies, render and apply the Experiments, Experiment log and Studies tabs (references/EXPERIMENTS.md, Step 8b).
+9. **Tracker.** Update `tracker_status`, then render and apply only when something changed this tick, or as a heartbeat when the last render is 30+ minutes old; the tabs layout applies the tracker and Event log tabs with `tabs.py apply --ours` (references/TRACKER.md). Quiet ticks write nothing to the tracker.
 10. **Wake.** If the session is live and a gate is open, re-arm `await_owner.sh` only after the
    previous one exited (references/LOOP.md).
 11. **Heartbeat** the lease; loop to step 4 while the session is live in PLAN or BUILD and context
@@ -76,7 +78,8 @@ Run these in order. Each step's protocol lives on the linked page; do not improv
    never under `~/.claude` or `~/workspace`.
 2. Write `request.md` with the owner's task text verbatim, typos included.
 3. Create `pipeline.json` (references/STATE.md), including `tracker_status`.
-4. Create the tracker: stub, privacy check, steering comment on its title, `owner_name` from that
+4. Create the lockstep doc (tabs layout): stub, privacy check, rename the first tab to Tracker, record
+   `pageless`, add the Event log tab, steering comment on the title with `--tab-id`, `owner_name` from that
    comment's author (references/TRACKER.md, Create).
 5. Arm the cron (references/LOOP.md). Then RESEARCH.
 
@@ -86,14 +89,16 @@ Run these in order. Each step's protocol lives on the linked page; do not improv
 |---|---|
 | references/STATE.md | Run dir, `pipeline.json` schema, derived status, writes to sdd state, reopen, parked tasks, adopting an existing doc |
 | references/GATE.md | Lease, sweep, classification kinds, replies, handled ledger, debounce |
-| references/DOCS.md | Publish, privacy check, refresh, figures, humanize, length cap, explainer, plan and implementation-questions docs |
-| references/TRACKER.md | Dashboard sections, `events.jsonl`, task events, LAND |
+| references/DOCS.md | Tabs layout (tab table, `tabs.py`, size guard), publish, privacy check, refresh, figures, humanize, length cap, explainer, plan and implementation-questions docs |
+| references/TRACKER.md | Create (INIT), dashboard sections, `events.jsonl`, task events, LAND and its leave gates |
+| references/EXPERIMENTS.md | Recording jobs, `experiments/state.json`, studies and their templates, learnings and final takeaways, job launching rules, sweep protocol, step 8b |
 | references/LOOP.md | Cron create, adopt, re-arm and delete; `await_owner.sh` |
-| references/ACTIONS.md | The closed `Action:` verb table, Confirm, the never-allowed list |
+| references/ACTIONS.md | The closed `Action:` verb table, Confirm, tab operations, the never-allowed list |
 | references/VELOCITY.md | Complexity score, reading-time estimates, the global velocity doc |
 
-Scripts in `scripts/`: `state.py`, `sweep.py`, `md2ghtml.py`, `render_tracker.py`, `velocity.py`,
-`await_owner.sh`; tests in `scripts/test_scripts.py`.
+Scripts in `scripts/`: `state.py`, `sweep.py`, `chips.py`, `md2ghtml.py`, `render_tracker.py`, `diff_status.py`,
+`velocity.py`, `await_owner.sh`, and for the tabs layout `tabs.py`, `experiments.py`, `render_experiments.py`,
+`figures.py`; tests in `scripts/test_*.py`.
 
 ## Red flags: stop and re-read the owning page
 
@@ -104,7 +109,9 @@ Scripts in `scripts/`: `state.py`, `sweep.py`, `md2ghtml.py`, `render_tracker.py
 | Act on a non-owner's approval or `Action:` | Non-owner comments get one fixed reply and trigger the privacy block |
 | Start PLAN or BUILD before the spec gate is `accepted` | Keep sweeping; reversible prep only |
 | Resolve or delete a comment | Never delete. Resolve only a thread that answered a numbered question, after its reply and Answered mark (references/DOCS.md, Answered marks) |
-| Run `apply --conflict-resolution=ours`, `replace` or `--orphan-comments-ok` on a gated doc | Re-fetch, keep anchored spans byte-identical, retry once (references/DOCS.md) |
+| Run `apply --conflict-resolution=ours`, `replace` or `--orphan-comments-ok` on a gated doc, or `tabs.py apply --ours` on any tab but tracker and events | Re-fetch, keep anchored spans byte-identical, retry once (references/DOCS.md) |
+| `tab delete` or delete a doc | Never (2FA). Rename a wrong tab "Archived: ...", move it last, set `docs.<key>.archived`; keep its tab id (references/ACTIONS.md) |
+| Report a study done, or conclude it, while one of its jobs runs or lacks a verdict | `study check`; conclude only when `study conclude` accepts (references/EXPERIMENTS.md) |
 | Run an `Action:` verb not in the table, including push, share or land | Reply "unsupported, not run" (references/ACTIONS.md) |
 | Adopt a requirement that conflicts with a standing constraint or the never-allowed list | Reply "not adopted: conflicts with <rule>" |
 | `git push`, `share grant`, publish or land a diff | Never; the owner lands code |

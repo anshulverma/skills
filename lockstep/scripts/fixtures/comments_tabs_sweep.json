@@ -1,0 +1,257 @@
+{
+ "data": [
+  {
+   "id": "a1",
+   "author": "Owner",
+   "author_email": null,
+   "content": "LGTM",
+   "resolved": false,
+   "created_time": "2026-10-29T11:00:00-07:00",
+   "quoted_text": "[Task 2] Demo question",
+   "action": null,
+   "status": "open",
+   "orphaned": false,
+   "ranges": [
+    {
+     "start_index": 1,
+     "end_index": 10,
+     "tab_id": "t.task2"
+    }
+   ],
+   "type": "comment",
+   "parent_id": null
+  },
+  {
+   "id": "a2",
+   "author": "Owner",
+   "author_email": null,
+   "content": "Approved",
+   "resolved": false,
+   "created_time": "2026-10-29T11:01:00-07:00",
+   "quoted_text": "[Task 2] Demo question",
+   "action": null,
+   "status": "open",
+   "orphaned": false,
+   "ranges": [
+    {
+     "start_index": 1,
+     "end_index": 10,
+     "tab_id": "t.plan"
+    }
+   ],
+   "type": "comment",
+   "parent_id": null
+  },
+  {
+   "id": "a3",
+   "author": "Owner",
+   "author_email": null,
+   "content": "Approved",
+   "resolved": false,
+   "created_time": "2026-10-29T11:02:00-07:00",
+   "quoted_text": "[Task 2] Demo question",
+   "action": null,
+   "status": "open",
+   "orphaned": true,
+   "ranges": null,
+   "type": "comment",
+   "parent_id": null
+  },
+  {
+   "id": "a4",
+   "author": "Owner",
+   "author_email": null,
+   "content": "Action: pause",
+   "resolved": false,
+   "created_time": "2026-10-29T11:03:00-07:00",
+   "quoted_text": null,
+   "action": null,
+   "status": "open",
+   "orphaned": true,
+   "ranges": null,
+   "type": "comment",
+   "parent_id": null
+  },
+  {
+   "id": "a5",
+   "author": "Owner",
+   "author_email": null,
+   "content": "nice dashboard",
+   "resolved": false,
+   "created_time": "2026-10-29T11:04:00-07:00",
+   "quoted_text": "Status",
+   "action": null,
+   "status": "open",
+   "orphaned": false,
+   "ranges": [
+    {
+     "start_index": 1,
+     "end_index": 10,
+     "tab_id": ""
+    }
+   ],
+   "type": "comment",
+   "parent_id": null
+  },
+  {
+   "id": "a6",
+   "author": "Owner",
+   "author_email": null,
+   "content": "this should show GPU-h",
+   "resolved": false,
+   "created_time": "2026-10-29T11:05:00-07:00",
+   "quoted_text": "Summary",
+   "action": null,
+   "status": "open",
+   "orphaned": false,
+   "ranges": [
+    {
+     "start_index": 1,
+     "end_index": 10,
+     "tab_id": "t.exp"
+    }
+   ],
+   "type": "comment",
+   "parent_id": null
+  },
+  {
+   "id": "r1",
+   "author": "Owner",
+   "author_email": null,
+   "content": "and cost too",
+   "resolved": false,
+   "created_time": "2026-10-29T11:06:00-07:00",
+   "quoted_text": null,
+   "action": null,
+   "status": "open",
+   "orphaned": false,
+   "ranges": null,
+   "type": "reply",
+   "parent_id": "a6"
+  },
+  {
+   "id": "a7",
+   "author": "Owner",
+   "author_email": null,
+   "content": "yes",
+   "resolved": false,
+   "created_time": "2026-10-29T11:07:00-07:00",
+   "quoted_text": "1. A?",
+   "action": null,
+   "status": "open",
+   "orphaned": false,
+   "ranges": [
+    {
+     "start_index": 1,
+     "end_index": 10,
+     "tab_id": "t.prop"
+    }
+   ],
+   "type": "comment",
+   "parent_id": null
+  },
+  {
+   "id": "a8",
+   "author": "Owner",
+   "author_email": null,
+   "content": "yes",
+   "resolved": false,
+   "created_time": "2026-10-29T11:08:00-07:00",
+   "quoted_text": "1. A?",
+   "action": null,
+   "status": "open",
+   "orphaned": false,
+   "ranges": [
+    {
+     "start_index": 1,
+     "end_index": 10,
+     "tab_id": "t.spec"
+    }
+   ],
+   "type": "comment",
+   "parent_id": null
+  },
+  {
+   "id": "o1",
+   "author": "Owner",
+   "author_email": null,
+   "content": "Can we drop the old chart?",
+   "resolved": false,
+   "created_time": "2026-10-29T11:09:00-07:00",
+   "quoted_text": null,
+   "action": null,
+   "status": "open",
+   "orphaned": true,
+   "ranges": null,
+   "type": "comment",
+   "parent_id": null
+  },
+  {
+   "id": "o2",
+   "author": "Owner",
+   "author_email": null,
+   "content": "ok thanks",
+   "resolved": false,
+   "created_time": "2026-10-29T11:10:00-07:00",
+   "quoted_text": null,
+   "action": null,
+   "status": "open",
+   "orphaned": false,
+   "ranges": null,
+   "type": "reply",
+   "parent_id": "o1"
+  },
+  {
+   "id": "b1",
+   "author": "Owner",
+   "author_email": null,
+   "content": "[🤖 Claude Code] Done.",
+   "resolved": false,
+   "created_time": "2026-10-29T11:11:00-07:00",
+   "quoted_text": null,
+   "action": null,
+   "status": "open",
+   "orphaned": false,
+   "ranges": null,
+   "type": "reply",
+   "parent_id": "o1"
+  },
+  {
+   "id": "o3",
+   "author": "Owner",
+   "author_email": null,
+   "content": "please keep it, it must stay",
+   "resolved": false,
+   "created_time": "2026-10-29T11:12:00-07:00",
+   "quoted_text": null,
+   "action": null,
+   "status": "open",
+   "orphaned": false,
+   "ranges": null,
+   "type": "reply",
+   "parent_id": "o1"
+  },
+  {
+   "id": "u1",
+   "author": "Owner",
+   "author_email": null,
+   "content": "what is this tab?",
+   "resolved": false,
+   "created_time": "2026-10-29T11:13:00-07:00",
+   "quoted_text": "x",
+   "action": null,
+   "status": "open",
+   "orphaned": false,
+   "ranges": [
+    {
+     "start_index": 1,
+     "end_index": 10,
+     "tab_id": "t.unknown"
+    }
+   ],
+   "type": "comment",
+   "parent_id": null
+  }
+ ],
+ "next_page_token": null
+}

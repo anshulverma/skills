@@ -1,0 +1,134 @@
+{
+ "slug": "demo",
+ "owner_name": "Owner",
+ "phase": "BUILD",
+ "status": "running",
+ "tick": 12,
+ "terminal": null,
+ "paused": false,
+ "blocked_reasons": [
+  "sdd"
+ ],
+ "waiting_reasons": [],
+ "pending_actions": {},
+ "diffs": {
+  "D123456789": "published",
+  "D555555555": "Needs Review"
+ },
+ "repo_kind": "sapling",
+ "tracker_doc": "TRK",
+ "tracker_title": "[Tracker] Lockstep: demo",
+ "tracker_status": {
+  "now": "Building T3",
+  "waiting_on": "nothing",
+  "since": "2026-10-19T06:00:00Z",
+  "next_wake": "cron */5"
+ },
+ "counters": {
+  "checks": 30,
+  "agents": 12,
+  "humanize_passes": 2
+ },
+ "docs": {
+  "tracker": {
+   "id": "TRK",
+   "tab": "t.0",
+   "parent": null,
+   "title": "[Tracker] Lockstep: demo",
+   "tab_title": "Tracker",
+   "kind": "tracker"
+  },
+  "events": {
+   "id": "TRK",
+   "tab": "t.ev",
+   "parent": "tracker",
+   "title": "Event log",
+   "tab_title": "Event log",
+   "kind": "log"
+  },
+  "proposal": {
+   "id": "TRK",
+   "title": "[Proposal] Demo",
+   "kind": "proposal",
+   "qprefix": "Q",
+   "status": "accepted",
+   "opened_at": "2026-10-19T04:00:00Z",
+   "accepted_at": "2026-10-19T04:30:00Z",
+   "accepted_hash": "x",
+   "questions_file": "docs/proposal/questions.json",
+   "answered": [
+    1,
+    2
+   ],
+   "tab": "t.prop",
+   "parent": null,
+   "tab_title": "Demo"
+  },
+  "spec": {
+   "id": "TRK",
+   "title": "[Design] Demo",
+   "kind": "spec",
+   "qprefix": "S",
+   "status": "accepted",
+   "opened_at": "2026-10-19T04:40:00Z",
+   "accepted_at": "2026-10-19T05:00:00Z",
+   "accepted_hash": "y",
+   "questions_file": "docs/spec/questions.json",
+   "answered": [
+    1
+   ],
+   "tab": "t.spec",
+   "parent": null,
+   "tab_title": "Demo"
+  },
+  "plan": {
+   "id": "TRK",
+   "title": "[Plan] Demo",
+   "kind": "plan",
+   "qprefix": "P",
+   "status": "reference",
+   "opened_at": "2026-10-19T05:30:00Z",
+   "tab": "t.plan",
+   "parent": null,
+   "tab_title": "Demo"
+  },
+  "task-2": {
+   "id": "TRK",
+   "title": "[Task 2] Demo question",
+   "kind": "task",
+   "qprefix": "T2.",
+   "status": "awaiting_acceptance",
+   "opened_at": "2026-10-19T06:10:00Z",
+   "questions_file": "docs/task-2/questions.json",
+   "answered": [],
+   "tab": "t.task2",
+   "parent": "plan",
+   "tab_title": "Task 2"
+  },
+  "experiments": {
+   "id": "TRK",
+   "tab": "t.exp",
+   "parent": null,
+   "title": "Experiments",
+   "tab_title": "Experiments",
+   "kind": "experiments",
+   "status": "reference"
+  },
+  "studies": {
+   "id": "TRK",
+   "tab": "t.stu",
+   "parent": null,
+   "title": "Studies",
+   "tab_title": "Studies",
+   "kind": "studies",
+   "status": "reference"
+  }
+ },
+ "layout": "tabs",
+ "tracker_tab": "t.0",
+ "tracker_events_tab": "t.ev",
+ "pageless": true,
+ "task_diffs": {
+  "2": "D123456789"
+ }
+}
