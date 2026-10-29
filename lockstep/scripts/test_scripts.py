@@ -957,6 +957,129 @@ def test_wait_spans_pair_and_stay_open():
         (T("2026-10-20T11:30:00Z"), now, "owner: I26")]
 
 
+# ---------- tabs layout: sweep.py ----------
+
+TABS_FIX = os.path.join(FIX, "run_tabs")
+
+
+def copy_tabs_run():
+    d = copy_run()
+    shutil.copytree(TABS_FIX, d, dirs_exist_ok=True)
+    return d
+
+
+def run_tabs_sweep(d, *extra):
+    """sweep.py CLI against the tabs fixture with a fake `meta` that serves comments_tabs_sweep.json and logs its calls."""
+    bin_ = tempfile.mkdtemp()
+    log = os.path.join(bin_, "calls")
+    open(os.path.join(bin_, "meta"), "w").write(
+        f'#!/bin/bash\necho "$*" >> {log}\ncat {os.path.join(FIX, "comments_tabs_sweep.json")}\n')
+    os.chmod(os.path.join(bin_, "meta"), 0o755)
+    env = {**os.environ, "PATH": bin_ + ":" + os.environ["PATH"]}
+    r = subprocess.run([sys.executable, os.path.join(HERE, "sweep.py"), "--run", d, "--owner", "Owner", *extra],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode == 0, r.stderr
+    return json.loads(r.stdout)["docs"], open(log).read().splitlines()
+
+
+def test_sweep_tabs_attribution_and_scopes():
+    d = copy_tabs_run()
+    out, calls = run_tabs_sweep(d)
+    assert len(calls) == 1 and "--id=TRK" in calls[0]          # one listing per host doc
+    assert list(out) == ["events", "proposal", "spec", "plan", "task-2", "experiments", "studies", "tracker"]
+    assert all(v["status"] == "ok" for v in out.values()), out
+    got = {k: [(i["id"], i["kind"]) for i in v["items"]] for k, v in out.items()}
+    assert got["task-2"] == [("a1", "accept")]                   # child-tab accept on its own title
+    assert got["plan"] == [("a2", "question")]                   # the task title quoted on another tab never accepts
+    assert got["proposal"] == [("a7", "answer")] and got["spec"] == [("a8", "question")]   # answers only on their own tab
+    assert got["experiments"] == [("a6", "requirement"), ("r1", "question")]   # null-range reply inherits its root
+    assert got["events"] == [] and got["studies"] == []
+    # "" tab -> tracker scope; no-range and unknown-tab roots -> open: never accept, Action: still works
+    assert got["tracker"] == [("a3", "question"), ("a4", "action"), ("a5", "ignored"), ("o1", "question"),
+                              ("o2", "question"), ("o3", "requirement"), ("u1", "question")]
+
+
+def test_sweep_tabs_handled_union_and_doc_filter():
+    d = copy_tabs_run()
+    os.makedirs(os.path.join(d, "docs", "spec"), exist_ok=True)
+    json.dump(["o1", "o2"], open(os.path.join(d, "docs", "spec", "handled.json"), "w"))   # handled while o1 was on spec
+    os.makedirs(os.path.join(d, "docs", "task-2"), exist_ok=True)
+    json.dump(["a1"], open(os.path.join(d, "docs", "task-2", "handled.json"), "w"))
+    out, calls = run_tabs_sweep(d, "--doc", "tracker", "--doc", "task-2")
+    assert list(out) == ["tracker", "task-2"] and len(calls) == 1
+    assert [i["id"] for i in out["tracker"]["items"]] == ["a3", "a4", "a5", "o3", "u1"]   # orphaned o1/o2 never replay
+    assert out["task-2"]["items"] == []
+
+
+def test_sweep_tabs_helpers():
+    p = json.load(open(os.path.join(TABS_FIX, "pipeline.json")))
+    assert "tracker" not in sweep.swept_keys(p["docs"])
+    rows = [{"id": "x", "ranges": [{"tab_id": ""}]}, {"id": "y", "ranges": []}, {"id": "z", "parent_id": "y", "ranges": None},
+            {"id": "w", "ranges": [{"tab_id": "t.spec"}]}]
+    assert sweep.attribute(rows, p["docs"], "t.0") == {"x": ("tracker", False), "y": ("tracker", True),
+                                                       "z": ("tracker", True), "w": ("spec", False)}
+    rows = [row("a", "Approved", quoted="[Design] X"), row("b", "Q1: yes", t="2026-10-19T05:01:00Z"),
+            row("c", "D123456789", t="2026-10-19T05:02:00Z"), row("d", "Changes: x", quoted="[Design] X", t="2026-10-19T05:03:00Z")]
+    assert kinds(sweep.pending(rows, dict(DOC), "Owner", set(), {}, "open")) == ["question", "question", "diff_ids", "question"]
+    try:
+        sweep._doc_dict("/nonexistent", "studies", {"title": "Studies"})
+        assert False
+    except ValueError:
+        pass
+    assert sweep._doc_dict("/nonexistent", "studies", {"title": "Studies"}, need_qprefix=False)["questions"] == []
+
+
+# ---------- tabs layout and diff line: render_tracker.py ----------
+
+def test_render_tabs_gates_docs_and_experiments_line():
+    d = copy_tabs_run()
+    h = render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+    sec = lambda name: h.split(f"<h2>{name}</h2>")[1].split("<h2>")[0]
+    gates, docs = sec("Gates"), sec("Docs produced")
+    assert re.findall(r"edit\?tab=([\w.]+)", gates) == ["t.prop", "t.spec", "t.task2"]   # gated kinds only
+    assert re.findall(r"edit\?tab=([\w.]+)", docs) == ["t.prop", "t.spec", "t.plan", "t.task2", "t.exp", "t.stu"]
+    assert 'href="https://docs.google.com/document/d/TRK/edit?tab=t.plan">[Plan] Demo</a>' in sec("Implementation plan")
+    status = sec("Status")
+    assert '<a href="https://docs.google.com/document/d/TRK/edit?tab=t.exp">2 running</a>' in status
+    assert '<a href="https://docs.google.com/document/d/TRK/edit?tab=t.stu">1 studies concluded</a>' in status
+    assert "Diffs not tied to a task: " in h and "D555555555" in sec("Build to closure")
+    assert "D123456789</a>" not in sec("Build to closure")   # tied to T2: it lives in the plan table
+    os.remove(os.path.join(d, "experiments", "state.json"))
+    assert "<b>Experiments</b>" not in render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+
+
+def test_render_drops_diff_table_lists_untied_diffs():
+    d = copy_run()      # legacy fixture: diff_created/diff_published events, diffs without task_diffs
+    h = render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+    closure = h.split("<h2>Build to closure</h2>")[1].split("<h2>")[0]
+    assert "<th>Created</th>" not in h and "<th>Landed</th>" not in h and "Request to closure:" in closure
+    assert closure.endswith('<p>Diffs not tied to a task: <a href="https://www.internalfb.com/diff/D123456789">D123456789</a>'
+                            ' (published).</p>\n')
+    assert "?tab=" not in h and "<b>Experiments</b>" not in h    # legacy: no tab links, no experiments line
+    p = json.load(open(os.path.join(d, "pipeline.json")))
+    p["task_diffs"] = {"2": "D123456789"}
+    json.dump(p, open(os.path.join(d, "pipeline.json"), "w"))
+    assert "Diffs not tied to a task" not in render_tracker.render(d, state.parse_ts("2026-10-19T07:00:00Z"))
+
+
+def test_render_tracker_cli_forms_on_tabs_layout():
+    d = copy_tabs_run()
+    body, ev = os.path.join(d, "body.html"), os.path.join(d, "events.html")
+    r = subprocess.run([sys.executable, os.path.join(HERE, "render_tracker.py"), d, body, ev], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "?tab=t.task2" in open(body).read() and "<h2>Event log</h2>" in open(ev).read()
+    r = subprocess.run([sys.executable, os.path.join(HERE, "render_tracker.py"), d, body], capture_output=True, text=True)
+    assert r.returncode == 0 and "<h2>Event log</h2>" in open(body).read()
+
+
+def test_event_log_to_separate_file():
+    d = copy_run()
+    out, ev = os.path.join(d, "o.html"), os.path.join(d, "ev.html")
+    r = subprocess.run([sys.executable, os.path.join(HERE, "render_tracker.py"), d, out, ev], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert "<h2>Event log</h2>" not in open(out).read() and re.match(r"(<h2>Timeline</h2>.*?)?<h2>Event log</h2>", open(ev).read(), re.S)
+
+
 def main() -> None:
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for t in tests:
@@ -967,10 +1090,3 @@ def main() -> None:
 if __name__ == "__main__":
     main()
 
-
-def test_event_log_to_separate_file():
-    d = copy_run()
-    out, ev = os.path.join(d, "o.html"), os.path.join(d, "ev.html")
-    r = subprocess.run([sys.executable, os.path.join(HERE, "render_tracker.py"), d, out, ev], capture_output=True, text=True)
-    assert r.returncode == 0, r.stderr
-    assert "<h2>Event log</h2>" not in open(out).read() and re.match(r"(<h2>Timeline</h2>.*?)?<h2>Event log</h2>", open(ev).read(), re.S)

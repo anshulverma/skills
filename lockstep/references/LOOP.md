@@ -31,7 +31,7 @@ CronCreate({cron: "2-59/5 * * * *", recurring: true, durable: true, prompt: "/lo
 | Expiry | 7 days. Re-arm when `cron_armed_at` is more than 6 days old |
 | Dedupe | Run `CronList` before every `CronCreate`. If an exact-prompt job exists, adopt it instead of creating one. Keep the job in `cron_job_id` |
 | sdd | Under lockstep, sdd never arms, re-arms or deletes crons (`run.json` has `driver: "lockstep"` and an empty `cron_job_id`) |
-| Cost of an idle tick | One comment list per published run doc. No agents |
+| Cost of an idle tick | One comment list per published run doc (tabs layout: one for the whole lockstep doc). No agents |
 
 INIT arms the cron after `owner_name` is written (references/GATE.md) and before INIT is left. Record the id right away:
 
@@ -100,7 +100,8 @@ Run it with Bash `run_in_background: true`, passing the Google Doc ids (`docs.<d
 ~/.claude/skills/lockstep/scripts/await_owner.sh <doc_id> [<doc_id> ...]
 ```
 
-- Write the background task id to `pipeline.json.awaits` under each listed doc key.
+- One await per host doc: in the tabs layout every gate is a tab of `tracker_doc`, so pass that id once.
+- Write the background task id to `pipeline.json.awaits` under each listed doc key (tabs layout: under each open gate's key).
 - The script runs `meta google.docs await --id <doc_id> --event-types comment.created,reply.created --auto-resume --timeout 3600` once per doc, in parallel.
 - It returns on the first human event and prints `HUMAN_EVENT doc=<doc_id> body=<first 300 chars>`.
 - It ignores empty bodies, bodies starting with `[🤖`, and bodies containing `(cont'd`. Without this filter, the skill's own replies (which also raise `reply.created`) would wake it at once.

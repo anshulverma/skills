@@ -471,7 +471,20 @@ def esc(v) -> str:
 
 def _doc_link(d, fallback):
     title = esc(d.get("title") or fallback)
-    return f'<a href="https://docs.google.com/document/d/{esc(d["id"])}/edit">{title}</a>' if d.get("id") else title
+    tab = f"?tab={esc(d['tab'])}" if d.get("tab") else ""
+    return f'<a href="https://docs.google.com/document/d/{esc(d["id"])}/edit{tab}">{title}</a>' if d.get("id") else title
+
+
+def _experiments_line(run_dir, docs):
+    """Tabs layout Status line from experiments/state.json, linking the Experiments and Studies tabs; None without it."""
+    path = os.path.join(run_dir, "experiments", "state.json")
+    if not os.path.exists(path):
+        return None
+    ex = read_json(path)
+    running = sum(j.get("state") in ("running", "starting") for j in ex.get("jobs") or [])
+    done = sum(s.get("status") == "concluded" for s in (ex.get("studies") or {}).values())
+    link = lambda k, text: _doc_link({**docs[k], "title": text}, k) if docs.get(k, {}).get("id") else esc(text)
+    return f"{link('experiments', f'{running} running')}, {link('studies', f'{done} studies concluded')}"
 
 
 def _qcount(run_dir, d):
@@ -546,6 +559,8 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
     t0 = parse_ts(events[0]["ts"]) if events else now
     st = run["tracker_status"]
     since = f" (since {hhmm(st['since'])})" if st.get("since") else ""
+    tabs = run.get("layout") == "tabs"
+    exp_line = _experiments_line(run_dir, run["docs"]) if tabs else None
     h = ['<p data-style="TITLE">' + esc(run.get("tracker_title", "Tracker")) + "</p>", STEER]
     h.append("<h2>Status</h2>" + _table(["", ""], [
         ("<b>Last updated</b>", f"{local(now):%Y-%m-%d %H:%M %Z} (tick {esc(run.get('tick', 0))})"),
@@ -555,6 +570,7 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
                               + " (each side counts its own working time: the agent's counts even while you are away, "
                                 "and time it spends waiting on you counts for neither)"),
         ("<b>Now</b>", esc(st.get("now", "")) + (f" (sdd stage {esc(sdd.get('stage'))})" if sdd else "")),
+        *([("<b>Experiments</b>", exp_line)] if exp_line else []),
         ("<b>Waiting on</b>", esc(st.get("waiting_on", "")) + since),
         ("<b>Next wake</b>", esc(st.get("next_wake", ""))),
     ]))
@@ -576,7 +592,7 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
         if e["kind"] == "test_run":
             tests[e.get("task")] = tests.get(e.get("task"), 0) + 1
     plan_path = sdd.get("plan_path") and os.path.join(run_dir, sdd["plan_path"])
-    tasks, states, times = [], {}, {}
+    tasks, states, times, dstat = [], {}, {}, None
     task_diffs, run_diffs = run.get("task_diffs") or {}, run.get("diffs") or {}
     if plan_path and os.path.exists(plan_path):
         tasks = plan_tasks(plan_path)
@@ -611,22 +627,20 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
                      + ". A task shows its least advanced live diff; abandoned only when all its diffs are.</p>")
         h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration", "Test runs", "Diff"], rows))
 
-    diff_ev = {}
-    for e in events:
-        if e["kind"].startswith("diff_") and e.get("diff"):
-            diff_ev.setdefault(str(e["diff"]), {})[e["kind"][5:]] = hhmm(e["ts"])
     end = next((parse_ts(e["ts"]) for e in reversed(events) if e["kind"] == "done"), None)
     h.append("<h2>Build to closure</h2><p>Request to closure: "
              f"{fmt_dur(active(t0, end or now))} active{'' if end else ' so far'} "
              f"({fmt_dur(((end or now) - t0).total_seconds())} wall clock). Test runs: {sum(tests.values())}.</p>")
-    if diff_ev:
-        h.append(_table(["Diff", "Created", "Published", "Reviewed", "Landed"],
-                        [(esc(d), v.get("created", ""), v.get("published", ""), v.get("reviewed", ""), v.get("landed", ""))
-                         for d, v in diff_ev.items()]))
+    tied = {i for v in task_diffs.values() for i in re.findall(r"D\d+", str(v))}
+    loose = [d for d in run_diffs if d not in tied]   # diffs and test runs live in the plan table; only these are listed here
+    if loose:
+        h.append(f"<p>Diffs not tied to a task: {_diff_cell(', '.join(loose), run_diffs, dstat)}.</p>")
 
     gates = []
     for k, d in run["docs"].items():
         if not isinstance(d, dict) or not d.get("id") or d.get("kind") in ("plan", "explainer", "external"):
+            continue
+        if tabs and d.get("kind") not in ("proposal", "spec", "task"):
             continue
         versions = sum(1 for e in events if e.get("doc") == k and e["kind"] in ("published", "humanize"))
         wait = overlap(owner_spans(events, k), t0, now)
@@ -679,7 +693,7 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
 
     docs = []
     for k, d in run["docs"].items():
-        if not isinstance(d, dict) or not d.get("id"):
+        if not isinstance(d, dict) or not d.get("id") or (tabs and k in ("tracker", "events")):
             continue
         opened, accepted = d.get("opened_at", ""), d.get("accepted_at", "")
         if d.get("status") == "reference":

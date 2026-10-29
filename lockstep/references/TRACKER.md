@@ -2,6 +2,8 @@
 
 This page is the single owner of the tracker doc: a private Google Doc dashboard showing where a run is, what it waits on and how long each step took. It also owns `events.jsonl` (the run's event log) and the LAND-phase polling that follows merged or landed code.
 
+In the tabs layout (`pipeline.json.layout == "tabs"`, every new run) the tracker is the first tab, "Tracker", of the one private lockstep doc, and the event log is its child tab "Event log". The other tabs and `tabs.py` are in references/DOCS.md, Tabs layout. Runs without `layout` (legacy) keep the separate-doc steps below marked legacy.
+
 Run dir: `/data/users/anshulverma/sdd-runs/<slug>/` (written `<run>` below; never under `~/.claude` or `~/workspace`). Scripts: `~/.claude/skills/lockstep/scripts/` (written `$S` below).
 
 ## Rules
@@ -14,10 +16,22 @@ Run dir: `/data/users/anshulverma/sdd-runs/<slug>/` (written `<run>` below; neve
 | When to write | On every transition, plus at most one heartbeat write per tick (a tick is one pass of `/lockstep --tick <slug>`; see references/LOOP.md) |
 | Title | The renderer keeps the title paragraph byte-identical. Never change `pipeline.json.tracker_title` after INIT |
 | Comments | The steering box asks for tracker comments on the title only. The tracker sweep acts on `Action:`, CONFIRM_ACTION and DIFF_IDS only; references/GATE.md handles all three |
-| Conflict mode | `--conflict-resolution=ours` on the tracker only, never on a gated doc |
+| Conflict mode | `--conflict-resolution=ours` on the tracker only (tabs layout: the tracker and Event log tabs, references/DOCS.md, Tabs layout), never on a gated doc |
 | Refused apply | Log it, skip that write, carry on. A tracker write never blocks the tick |
 
 ## Create (INIT)
+
+Tabs layout (every new run):
+
+1. `meta google.docs create --title="<tracker_title>" --output=json </dev/null`, then save `tracker_doc` at once with `state.save` (references/STATE.md). `layout: "tabs"` and `tracker_tab` are already in `pipeline.json` from INIT; `tabs.py` refuses without them.
+2. `python3 $S/tabs.py private <run>` (exit 0 private, 2 not). On exit 2 follow the privacy block in references/DOCS.md and write nothing.
+3. `meta google.docs.tab rename --id=<tracker_doc> --tab-id=t.0 --title=Tracker </dev/null`.
+4. Record the page setup: `pageless` is true when `meta google.docs get --id=<tracker_doc> --output=raw-json </dev/null` contains `"documentMode":"PAGELESS"`. Figures size to it (references/DOCS.md, Figures).
+5. `python3 $S/tabs.py ensure <run> events --title "Event log" --tab-title "Event log" --kind log --parent tracker`. It records `docs.events` and `tracker_events_tab`.
+6. Post the steering comment on the title with `--tab-id=t.0 --occurrence=1` and record `owner_name` from its author (references/GATE.md).
+7. Render and apply (below).
+
+Legacy:
 
 1. `meta google.docs create --title="<tracker_title>" --output=json`, then save `tracker_doc` at once with `state.save` (references/STATE.md).
 2. Run the privacy check on the stub (references/DOCS.md). If it fails, follow the privacy block there and write nothing.
@@ -40,22 +54,32 @@ Render only when something changed this tick, or as a heartbeat when the last re
 
 4. If the apply refuses, record a `tick` event with its first output line. If the refusal is about anchored comments (the owner commented inside the body), reply in each such thread asking for comments on the title only, and print `tracker frozen: comment inside the body` to the terminal on every tick until a write succeeds.
 
+Tabs layout, in place of steps 1-4:
+
+```bash
+~/.cache/humanize-venv/bin/python $S/render_tracker.py <run> <run>/docs/tracker/body.html <run>/docs/events/body.html
+python3 $S/tabs.py apply <run> tracker --body <run>/docs/tracker/body.html --ours
+python3 $S/tabs.py apply <run> events --body <run>/docs/events/body.html --ours
+```
+
+`tabs.py apply` runs the privacy check itself. Render exit codes are as in step 2. Apply exit 0 is applied (blocks under open comments may be held live, logged as `apply_held`); exit 3 means nothing applied because every pass would orphan a comment: handle it like the anchored-comment refusal in step 4; exit 2 (refused, including not private) and exit 1 (meta failed) log a `tick` event and the tick goes on. Same render cadence as above.
+
 The renderer masks a credential value in `request.md` as `[credential masked]`, keeps the key name, and appends one `blocked` event naming the key (`credential masked in request.md (<key>)`).
 
 ## What the renderer draws
 
 | Section | Content and source |
 |---|---|
-| Status block | Last updated (owner's timezone, `owner_tz`, + tick), status, now (phase, unit, start, elapsed), waiting on (who, what, since, link, what unblocks it), next wake (cron cadence, next fire, expiry, armed awaits), all from `tracker_status`. INIT writes `tracker_status` before the first render; every transition rewrites it |
+| Status block | Last updated (owner's timezone, `owner_tz`, + tick), status, now (phase, unit, start, elapsed), waiting on (who, what, since, link, what unblocks it), next wake (cron cadence, next fire, expiry, armed awaits), all from `tracker_status`. INIT writes `tracker_status` before the first render; every transition rewrites it. Tabs layout with `experiments/state.json`: an Experiments row, "n running, m studies concluded", linking the Experiments and Studies tabs |
 | Larger plan | When `pipeline.json.roadmap` is set: this run as milestone 1 and the later milestones (name, scope, status). The phase flowchart draws this run's phases left to right inside a milestone-1 box, with later milestones stacked below it. Bookkeeping only; the owner sets or edits the list |
 | Where the run is | Phase flowchart INIT, RESEARCH, PROPOSAL, SPEC, PLAN, BUILD, LAND, DONE with start and end states. Each gated doc is followed by an "accepted?" decision with a dashed revise loop. LAND is followed by an "all code landed?" decision with a review-fixes loop. The current phase is filled blue and each gated doc shows its state |
-| Timeline | Active time per phase, with you engaged and the agent working drawn as separate bars; time when neither was working is cut out. Build to closure (R5) adds implementation time per plan task, test runs, each diff from creation to publish, review and land, and request-to-closure time |
+| Timeline | Active time per phase, with you engaged and the agent working drawn as separate bars; time when neither was working is cut out. Build to closure (R5) gives request-to-closure time (active and wall clock) and the test-run count. Diffs and test runs live in the Implementation plan table; the only diff line here is "Diffs not tied to a task", for ids in `diffs` that no `task_diffs` value names |
 | Implementation plan (R9) | From PLAN on: link to the plan doc, the plan's `**Goal:**` line, sdd stage, tasks complete n/m, a task flowchart and a task table (ID, task, depends on, state, started, duration) |
-| Gates | Doc, link, version, status, opened, accepted, wait time, questions answered n/m |
+| Gates | Doc, link, version, status, opened, accepted, wait time, questions answered n/m. Tabs layout: gated kinds only (proposal, spec, task) |
 | Milestones | Timestamp, event, delta from the previous one, cumulative per phase |
 | Metrics | Elapsed, comments answered, questions answered n/m, requirements added from comments, agents dispatched, humanize passes, comment checks (`counters.checks`, the check count per tick from Q6), doc slop trend |
 | Follow-ups and blockers | From `decisions.md` and `blocked_reasons` / `waiting_reasons`, each with the exact owner action that clears it |
-| Docs produced (R7) | Every doc: status, created, accepted, time to accept, questions answered n/m. Always rendered |
+| Docs produced (R7) | Every doc: status, created, accepted, time to accept, questions answered n/m. Always rendered. Tabs layout: every tab except tracker and events, each linked with `?tab=<tab id>` |
 | Actions (R3) | Every `action` event: time, verb, action, status |
 | Parked tasks | Parked tasks with their task-N docs. Each plan task's diff shows in the Implementation plan table's Diff column, from `pipeline.json.task_diffs` (`{"<task n>": "D<n>" or a note such as "none (local commit <hash>)"}`), with the state from `pipeline.json.diffs`. There is no separate Diffs section (owner: the tasks link the diffs) |
 | Original request (verbatim, R8) | `request.md`, HTML-escaped. It is exempt from the no-data-paths rule because the tracker is verified private. Credentials are never exempt |
@@ -76,6 +100,8 @@ python3 $S/state.py <run> event <kind> "<text>" [doc=<key>] [task=<n>] [diff=D<n
 `action` events also carry `verb=<verb>` and `status=<outcome>` for the Actions table. `lease_takeover` is written by `state.py lease acquire`; never append it by hand.
 
 `kind` is one of: milestone, tick, published, gate_open, comment, requirement, answer, accept, confirm_pending, changes, reopen, action, humanize, task_start, task_done, task_parked, test_run, diff_created, diff_published, diff_reviewed, diff_landed, blocked, done, abort, cron_rearmed, local_merge, lease_takeover, owner_active, unit_start, unit_done, wait_start, wait_done.
+
+Tabs layout adds: tab_created and apply_held and figure_frame_reset (written by `tabs.py`), job_launch, job_done, job_verdict, study_start, study_done, study_reopen and learning (written by `experiments.py`; references/EXPERIMENTS.md). Never append these by hand.
 
 - `comment_ts` is the API `created_time` of the owner comment (each sweep item carries it as `created_time`). Set it on comment, answer, requirement and accept events. Review sessions are built from it (references/VELOCITY.md).
 - Only active time counts (`render_tracker.active_pieces`). The purpose is measuring how fast the owner completes a task. You and the agent are counted separately: your time away lowers only your time, and the agent's working time counts whether or not you are around. Time when neither is working counts for nobody.
@@ -132,6 +158,14 @@ python3 $S/state.py <run> event diff_published "D<n> published" diff=D<n>
 
 Leave LAND for DONE when `diffs` is non-empty and every entry is landed or abandoned. Under either `repo_kind`, also leave when the owner confirms `Action: close` (references/ACTIONS.md), even with diffs still open.
 
+**Experiments leave gate** (tabs layout): while `<run>/experiments/tick` exists, both leave rules above also need `sweep_stopped` in `experiments/state.json` to be non-`null`. A confirmed `Action: close` sets it, then leaves:
+
+```bash
+~/.cache/humanize-venv/bin/python $S/experiments.py set <run> sweep_stopped="owner: Action: close"
+```
+
+### Legacy experiment sweep (runs without `layout`)
+
 **Experiment sweep**: when `<run>/sweep/sweep.py` exists, each LAND tick, after the diff poll, runs once each, in this order:
 
 ```bash
@@ -150,6 +184,8 @@ with ops.locked_state() as s:
     s["sweep"]["stopped"] = s["sweep"]["stopped"] or "owner: Action: close"
 EOF
 ```
+
+### DONE
 
 **DONE**: append `done`, do the final render and apply. After a confirmed abort, append `abort` and render so the tracker shows the run as aborted.
 

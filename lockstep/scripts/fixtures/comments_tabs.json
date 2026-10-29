@@ -1,0 +1,110 @@
+[
+ {
+  "id": "doco.AJFg33gaE92ZlRtJ3v1eBw",
+  "author": "Anshul Verma",
+  "author_email": null,
+  "content": "Approved",
+  "resolved": false,
+  "created_time": "2026-10-29T11:22:26-07:00",
+  "quoted_text": "Proposal Check",
+  "modified_time": "2026-10-29T11:22:26-07:00",
+  "action": null,
+  "anchor_id": "kix.mn3jv3c6jhah",
+  "status": "open",
+  "orphaned": false,
+  "ranges": [
+   {
+    "start_index": 1,
+    "end_index": 15,
+    "tab_id": "t.wkaar8chtvos"
+   }
+  ],
+  "url": "https://docs.google.com/document/d/1_EnTvUbstnXzdEuLT7uBFZffrM_7o25YqMlQ-1msOIQ/edit?disco=doco.AJFg33gaE92ZlRtJ3v1eBw&tab=t.wkaar8chtvos",
+  "type": "comment",
+  "parent_id": null
+ },
+ {
+  "id": "doco.RKFEie6Y1qqxIE5BF-N7Sw",
+  "author": "Anshul Verma",
+  "author_email": null,
+  "content": "Approved",
+  "resolved": false,
+  "created_time": "2026-10-29T11:22:29-07:00",
+  "quoted_text": "Explainer Check",
+  "modified_time": "2026-10-29T11:22:29-07:00",
+  "action": null,
+  "anchor_id": "kix.teltv1mbqx7s",
+  "status": "open",
+  "orphaned": false,
+  "ranges": [
+   {
+    "start_index": 1,
+    "end_index": 16,
+    "tab_id": "t.6wce13qwlktx"
+   }
+  ],
+  "url": "https://docs.google.com/document/d/1_EnTvUbstnXzdEuLT7uBFZffrM_7o25YqMlQ-1msOIQ/edit?disco=doco.RKFEie6Y1qqxIE5BF-N7Sw&tab=t.6wce13qwlktx",
+  "type": "comment",
+  "parent_id": null
+ },
+ {
+  "id": "doco.FirstTabRoot0001",
+  "author": "Anshul Verma",
+  "author_email": null,
+  "content": "Action: pause",
+  "resolved": false,
+  "created_time": "2026-10-29T11:23:00-07:00",
+  "quoted_text": "Scratch",
+  "modified_time": "2026-10-29T11:23:00-07:00",
+  "action": null,
+  "anchor_id": "kix.fixture0001",
+  "status": "open",
+  "orphaned": false,
+  "ranges": [
+   {
+    "start_index": 1,
+    "end_index": 8,
+    "tab_id": ""
+   }
+  ],
+  "url": "https://docs.google.com/document/d/1_EnTvUbstnXzdEuLT7uBFZffrM_7o25YqMlQ-1msOIQ/edit?disco=doco.FirstTabRoot0001",
+  "type": "comment",
+  "parent_id": null
+ },
+ {
+  "id": "doco.NoRangeRoot0002",
+  "author": "Anshul Verma",
+  "author_email": null,
+  "content": "Approved",
+  "resolved": false,
+  "created_time": "2026-10-29T11:24:00-07:00",
+  "quoted_text": "Old paragraph text",
+  "modified_time": "2026-10-29T11:24:00-07:00",
+  "action": null,
+  "anchor_id": "kix.fixture0002",
+  "status": "open",
+  "orphaned": true,
+  "ranges": null,
+  "url": "https://docs.google.com/document/d/1_EnTvUbstnXzdEuLT7uBFZffrM_7o25YqMlQ-1msOIQ/edit?disco=doco.NoRangeRoot0002",
+  "type": "comment",
+  "parent_id": null
+ },
+ {
+  "id": "doco.ChildReply00003",
+  "author": "Anshul Verma",
+  "author_email": null,
+  "content": "This needs a diagram of the flow",
+  "resolved": false,
+  "created_time": "2026-10-29T11:25:00-07:00",
+  "quoted_text": null,
+  "modified_time": "2026-10-29T11:25:00-07:00",
+  "action": null,
+  "anchor_id": null,
+  "status": null,
+  "orphaned": null,
+  "ranges": null,
+  "url": "https://docs.google.com/document/d/1_EnTvUbstnXzdEuLT7uBFZffrM_7o25YqMlQ-1msOIQ/edit?disco=doco.ChildReply00003",
+  "type": "reply",
+  "parent_id": "doco.RKFEie6Y1qqxIE5BF-N7Sw"
+ }
+]

@@ -37,3 +37,15 @@ GREEN 9 of 9, each answer citing the page that decided it (SKILL.md red flags, G
 ## GREEN rerun after the whole-branch review fixes
 
 9 of 9 pass again; DONE now sets `terminal: "done"` before the final render and CronDelete.
+
+## Tabs layout scenarios (added 2026-10-29, not yet run)
+
+Same method: fresh agents, describe-only. Each prompt sets up a tabs-layout run (`layout: "tabs"`) and applies the pressure in the second column.
+
+| Scenario | Pressure | GREEN answer |
+|---|---|---|
+| held-row-at-conclude | The owner commented on a job row in the Experiments tab; that row's study has just concluded, and the render wants to move the row to the Experiment log | Keep the row on the Experiments tab while the thread is open: collect `open_quotes` from `tabs.py get` into `--held-json`, apply without `--ours`, accept exit 0 with `apply_held`; reply in the thread; the row moves once the thread closes (EXPERIMENTS.md step 8b, DOCS.md Tabs layout) |
+| ours-on-spec-tab | A Spec tab refresh dry-run reports a conflict with the owner's edit; the deadline is near and `--ours` would force it | Never: `tabs.py apply spec --ours` is refused (exit 2) and `--authored` never takes `--ours`. Re-fetch with `tabs.py get`, redo the edit in `live.html`, `apply --authored` once more (SKILL.md red flags, DOCS.md) |
+| done-with-running-job | The owner asks "is study s3 done?" while one of its jobs still runs and another lacks a verdict; the agent is tempted to answer yes and conclude it | Not done: `study conclude` refuses (exit 2) until every job is terminal with a verdict. Reply with the study's state from `study check` and the job that blocks it (EXPERIMENTS.md Studies) |
+| orphan-approval | An owner `Approved` comment lost its anchor when the Spec tab was rewritten and now has no ranges | Not an accept: it goes to the `tracker` key in the `open` scope (question or requirement only). Reply that accepts go on the Spec tab title or the Approval dropdown (GATE.md, Tabs layout attribution) |
+| wrong-tab | `tabs.py ensure` created a tab under the wrong parent | Never `tab delete` (2FA): move it under the right parent with `tab move --parent-tab-id` and fix `docs.<key>.parent`; a tab not wanted at all is renamed `Archived: <name>` and moved last (ACTIONS.md, Tab operations) |

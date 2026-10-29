@@ -26,8 +26,8 @@ Use `flock` only around single-command jsonl appends. `state.py event` already d
 
 ## 2. Preconditions
 
-- `pipeline.json.owner_name` must be set before any sweep runs. At INIT, after creating the tracker, post the steering-box comment on the tracker title (`meta google.docs.comment add --id=<tracker_doc> --quoted-text='<title>' --content='<steering box>'`). Read that comment's `author` from `comment list` (`author_email` is null there) and write it to `owner_name`. Only then arm the cron ([references/LOOP.md](LOOP.md)).
-- If `doc_not_private:<doc>` is in `blocked_reasons`, handle no verdicts and no Actions on that doc and leave its items pending. The re-check that clears this reason belongs to [references/DOCS.md](DOCS.md).
+- `pipeline.json.owner_name` must be set before any sweep runs. At INIT, after creating the tracker, post the steering-box comment on the tracker title (`meta google.docs.comment add --id=<tracker_doc> --quoted-text='<title>' --content='<steering box>'`; tabs layout adds `--tab-id=t.0 --occurrence=1`). Read that comment's `author` from `comment list` (`author_email` is null there) and write it to `owner_name`. Only then arm the cron ([references/LOOP.md](LOOP.md)).
+- If `doc_not_private:<doc>` is in `blocked_reasons`, handle no verdicts and no Actions on that doc and leave its items pending. In the tabs layout, `doc_not_private:tracker` blocks every key whose `docs.<key>` has a `tab`, because all tabs share one doc's sharing. The re-check that clears this reason belongs to [references/DOCS.md](DOCS.md).
 
 ## 3. Sweep
 
@@ -45,8 +45,20 @@ python3 $S/sweep.py --run $RUN --owner "<owner_name>" [--doc KEY ...]
 | `gate` | Any other status | Full classification |
 | `accepted` | Status `accepted`, `superseded` or `reference` | Question, answer, requirement, `Action:`, `confirm_action`, `Reopen`. An accept or `Changes:` gets `already_accepted` |
 | `tracker` | `tracker_doc` (`--doc tracker`) | `Action:`, `confirm_action`, `diff_ids`. Everything else is `ignored` |
+| `open` | Tabs layout: comments with no anchor (below), the ungated generated tabs (`events`, `experiments`, `experiment_log`, `studies`) and authored tabs without a qprefix | `Action:`, `confirm_action`, `diff_ids`, otherwise `requirement` or `question`. Never `accept`, `changes` or `answer` |
 
-The script lists comments with `--output=json -l 200 --columns=all` and follows `--page-token` until no pages remain. It groups rows by thread and classifies replies as well as roots. It skips resolve/reopen marker rows (API `action` set, unrelated to `Action:` comments), empty rows, the `humanize-context` thread, and the skill's own replies (prefix `[🤖 Claude Code]` or `(cont'd`). The own-reply filter runs before the owner gate because both post as the same user. Resolved threads are not skipped: the ledger decides.
+The script lists comments with `--output=json -l 2000 --columns=all` and follows `--page-token` until no pages remain. It groups rows by thread and classifies replies as well as roots. It skips resolve/reopen marker rows (API `action` set, unrelated to `Action:` comments), empty rows, the `humanize-context` thread, and the skill's own replies (prefix `[🤖 Claude Code]` or `(cont'd`). The own-reply filter runs before the owner gate because both post as the same user. Resolved threads are not skipped: the ledger decides.
+
+### Tabs layout attribution
+
+When `layout == "tabs"`, `sweep.py` lists the lockstep doc's comments once and splits them by tab:
+
+- A root goes to the key whose `docs.<key>.tab` equals its `ranges[0].tab_id`. An empty `tab_id` is the first tab, `tracker_tab`. A reply goes wherever its root went.
+- A root with no ranges (a doc-level comment, or one whose anchored text or image was replaced) or on an unknown tab goes to the `tracker` key with the `open` scope. It can never accept a gate.
+- `accept` and `changes` count only for the key the comment is attributed to, and only on that tab's title; `answer` only against that key's own questions.
+- The handled filter is the union of `handled.json` over every key on the doc, so a thread that loses its anchor and moves to `tracker` is never handled twice. Record each item in the `handled.json` of the key it came under.
+- Replies use `--id=<tracker_doc>` (= `docs.<key>.id`) as usual.
+- An `other_author` item on any tab adds `doc_not_private:tracker`.
 
 Then read the dropdown chips of every doc with numbered questions (`chips.py`, references/DOCS.md, Answered marks). A chip change is an item too: handle it with the swept items, ordered after them.
 
@@ -80,7 +92,7 @@ Then read the dropdown chips of every doc with numbered questions (`chips.py`, r
 | `already_accepted` | Says the doc is already accepted (a `Reopen` comment re-opens an accepted doc; superseded and reference docs never re-gate) | None |
 | `answer` | Answers question `q` | Record `<qprefix><q>` in `decisions.md`, add `q` to `docs.<doc>.answered`, then in the same tick mark it in the doc, update `Decisions so far` and resolve its thread (references/DOCS.md, Answered marks) |
 | `requirement` | "adopted" plus how it is applied, or "not adopted: conflicts with <rule>" when it conflicts with the never-allowed list in [references/ACTIONS.md](ACTIONS.md) or with `decisions.md` | Adopted: record in `decisions.md`, add to `Decisions so far` |
-| `question` | The researched answer | Dispatch one agent per question with a small payload. A comment that asks nothing (a note or a link shared "as a reference") gets recorded under References in `decisions.md` and a short acknowledgement, with no agent |
+| `question` | The researched answer | Dispatch one agent per question with a small payload. A comment that asks nothing (a note or a link shared "as a reference") gets recorded under References in `decisions.md` and a short acknowledgement, with no agent. Tabs layout: a question whose answer needs measurement, jobs or investigation becomes a study, and the reply names its id ([references/EXPERIMENTS.md](EXPERIMENTS.md), Studies) |
 
 Classification patterns (all case-insensitive):
 

@@ -3,6 +3,7 @@
 
 Usage: sweep.py --run RUN_DIR --owner NAME [--doc KEY ...]
 Prints {"docs": {key: {"status": "ok", "items": [...]} | {"status": "error", "error": str}}}.
+Tabs layout (pipeline.json layout == "tabs"): the tracker doc's comments are listed once and attributed to tab keys.
 """
 import argparse
 import html
@@ -21,6 +22,7 @@ REOPEN = re.compile(r"^\s*reopen\b", re.I)
 ACTION = re.compile(r"^\s*action\s*:", re.I)
 REQ = re.compile(r"\b(should|must|make sure|needs?|has to|want)\b", re.I)
 DIFF = re.compile(r"\bD\d{6,}\b")
+OPEN_KINDS = ("log", "experiments", "experiment_log", "studies")  # ungated generated tabs
 
 
 def qref(qprefix: str) -> re.Pattern:
@@ -126,6 +128,8 @@ def pending(rows: list[dict], doc: dict, owner: str, handled: set[str], pending_
             kind = "confirm_action"
         elif scope == "tracker":
             kind = "diff_ids" if DIFF.search(text) else "ignored"
+        elif scope == "open":  # orphaned/doc-level roots and ungated tabs: never accept, changes or answer
+            kind = "diff_ids" if DIFF.search(text) else "requirement" if REQ.search(text) and "?" not in text else "question"
         elif frozen and REOPEN.match(text):
             if status == "accepted":
                 kind, status, frozen = "reopen", "awaiting_acceptance", False
@@ -177,8 +181,8 @@ def _after(r: dict, asked: dict | None) -> bool:
     return asked is not None and parse_ts(r["created_time"]) > parse_ts(asked["created_time"])
 
 
-def _doc_dict(run_dir: str, key: str, d: dict) -> dict:
-    for field in ("qprefix", "title"):
+def _doc_dict(run_dir: str, key: str, d: dict, need_qprefix: bool = True) -> dict:
+    for field in ("qprefix", "title") if need_qprefix else ("title",):
         if not d.get(field):
             raise ValueError(f"docs.{key}.{field} is required")
     qfile = d.get("questions_file")
@@ -199,8 +203,87 @@ def _handled(run_dir: str, key: str) -> set[str]:
 
 
 def swept_keys(docs: dict) -> list[str]:
-    """Docs whose comments the sweep reads: every run doc, plus linked (external) docs marked `watch`."""
-    return [k for k, d in docs.items() if d.get("kind") != "external" or d.get("watch")]
+    """Docs whose comments the sweep reads: every run doc, plus linked (external) docs marked `watch`.
+    docs.tracker (tabs layout) is left out: the tracker branch sweeps it."""
+    return [k for k, d in docs.items() if k != "tracker" and (d.get("kind") != "external" or d.get("watch"))]
+
+
+def attribute(rows: list[dict], docs: dict, tracker_tab: str) -> dict[str, tuple[str, bool]]:
+    """{row id: (key, open)}. A root goes to the key whose `tab` is its ranges[0].tab_id ("" = first tab = tracker_tab);
+    replies inherit their root. A root with no ranges (doc-level or orphaned) or on an unknown tab is ("tracker", True)."""
+    by_tab = {d["tab"]: k for k, d in docs.items() if isinstance(d, dict) and d.get("tab")}
+    by_tab[tracker_tab] = "tracker"
+    by_id = {r["id"]: r for r in rows}
+    out = {}
+    for r in rows:
+        root = by_id.get(r.get("parent_id"), r) if r.get("parent_id") else r
+        rg = root.get("ranges") or []
+        key = by_tab.get(rg[0].get("tab_id") or tracker_tab) if rg else None
+        out[r["id"]] = (key, False) if key else ("tracker", True)
+    return out
+
+
+def _scope(d: dict) -> str:
+    return "accepted" if d.get("status") in ("accepted", "superseded", "reference") else "gate"
+
+
+def _sweep_one(run_dir: str, p: dict, key: str, owner: str) -> dict:
+    if key == "tracker":
+        if not p.get("tracker_doc"):
+            raise ValueError("tracker_doc is not set")
+        doc, scope, doc_id = {"title": p.get("tracker_title", ""), "qprefix": "Q"}, "tracker", p["tracker_doc"]
+    else:
+        d = p.get("docs", {})[key]
+        doc, scope, doc_id = _doc_dict(run_dir, key, d), _scope(d), d["id"]
+    items = pending(list_comments(doc_id), doc, owner, _handled(run_dir, key), p.get("pending_actions") or {}, scope)
+    return {"status": "ok", "items": items}
+
+
+def sweep_tabs(run_dir: str, p: dict, keys: list[str], owner: str) -> dict:
+    """Tabs layout: list the tracker doc once, attribute each root to a tab key, filter on the union of handled.json
+    across every key on the doc (an orphaned root never replays), and classify per key. Standalone docs sweep as before."""
+    docs, result = p.get("docs", {}), {}
+    on_host = ["tracker", *[k for k, d in docs.items() if k != "tracker" and isinstance(d, dict) and d.get("tab")]]
+    for key in keys:
+        if key not in on_host:
+            try:
+                result[key] = _sweep_one(run_dir, p, key, owner)
+            except Exception as e:
+                result[key] = {"status": "error", "error": f"{type(e).__name__}: {e}"}
+    tab_keys = [k for k in keys if k in on_host]
+    if not tab_keys:
+        return {k: result[k] for k in keys}
+    try:
+        if not p.get("tracker_doc"):
+            raise ValueError("tracker_doc is not set")
+        rows = list_comments(p["tracker_doc"])
+        handled = set().union(*(_handled(run_dir, k) for k in on_host))
+        attr = attribute(rows, docs, p.get("tracker_tab") or "t.0")
+    except Exception as e:
+        for key in tab_keys:
+            result[key] = {"status": "error", "error": f"{type(e).__name__}: {e}"}
+        return {k: result[k] for k in keys}
+    pa = p.get("pending_actions") or {}
+    for key in tab_keys:
+        try:
+            if key == "tracker":
+                doc, scope = {"title": p.get("tracker_title", ""), "qprefix": "Q"}, "tracker"
+            else:
+                d = docs[key]
+                if d["id"] != p["tracker_doc"]:
+                    raise ValueError(f"docs.{key} has a tab but its id is not tracker_doc")
+                ungated = d.get("kind") in OPEN_KINDS or not d.get("qprefix")
+                doc, scope = _doc_dict(run_dir, key, d, need_qprefix=not ungated), "open" if ungated else _scope(d)
+            items = pending([r for r in rows if attr[r["id"]] == (key, False)], doc, owner, handled, pa, scope)
+            orphans = [r for r in rows if attr[r["id"]] == (key, True)]
+            if orphans:
+                items += pending(orphans, doc, owner, handled, pa, "open")
+                items.sort(key=lambda i: (parse_ts(i["created_time"]), i["id"]))
+            result[key] = {"status": "ok", "items": items}
+        except Exception as e:
+            result[key] = {"status": "error", "error": f"{type(e).__name__}: {e}"}
+    return {k: result[k] for k in keys}
+
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser()
@@ -215,22 +298,15 @@ def main(argv: list[str]) -> int:
     docs = p.get("docs", {})
     swept = swept_keys(docs)
     keys = a.doc or [*swept, *(["tracker"] if p.get("tracker_doc") else [])]
-    result = {}
-    for key in keys:
-        try:  # one doc failing never aborts the others
-            if key == "tracker":
-                if not p.get("tracker_doc"):
-                    raise ValueError("tracker_doc is not set")
-                doc, scope, doc_id = {"title": p.get("tracker_title", ""), "qprefix": "Q"}, "tracker", p["tracker_doc"]
-            else:
-                d = docs[key]
-                doc = _doc_dict(a.run, key, d)
-                scope = "accepted" if d.get("status") in ("accepted", "superseded", "reference") else "gate"
-                doc_id = d["id"]
-            items = pending(list_comments(doc_id), doc, a.owner, _handled(a.run, key), p.get("pending_actions") or {}, scope)
-            result[key] = {"status": "ok", "items": items}
-        except Exception as e:
-            result[key] = {"status": "error", "error": f"{type(e).__name__}: {e}"}
+    if p.get("layout") == "tabs":
+        result = sweep_tabs(a.run, p, keys, a.owner)
+    else:
+        result = {}
+        for key in keys:
+            try:  # one doc failing never aborts the others
+                result[key] = _sweep_one(a.run, p, key, a.owner)
+            except Exception as e:
+                result[key] = {"status": "error", "error": f"{type(e).__name__}: {e}"}
     print(json.dumps({"docs": result}, ensure_ascii=False))
     return 0
 
