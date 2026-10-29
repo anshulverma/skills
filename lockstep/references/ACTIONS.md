@@ -21,7 +21,8 @@ An `Action:` comment is an owner comment whose text starts with `Action:` (case-
 | Doc | Acts on `Action:` |
 |---|---|
 | A gated doc, open or accepted | yes |
-| The tracker | yes (along with Confirm replies and diff ids, nothing else) |
+| Any tab of the lockstep doc, and a comment with no anchor (tabs layout) | yes (references/GATE.md, Tabs layout attribution) |
+| The tracker | yes, along with Confirm replies and diff ids. Comments on the tracker itself get nothing else. Tabs layout: the `tracker` key also receives orphaned, doc-level and archived-tab comments, swept in the `open` scope, so those can also be a question or a requirement (references/GATE.md, Tabs layout attribution) |
 | The global "Review velocity" doc | never (runs never sweep it) |
 
 No sweep runs until `owner_name` is set. A `--tick` that finds the run dir missing, or status `done` or `aborted`, cleans up and exits without sweeping (references/LOOP.md).
@@ -34,10 +35,22 @@ No sweep runs until `owner_name` is set. A `--tick` that finds the run dir missi
 | `resume` | no | Clear `paused`. If it was not set, reply "not paused, nothing changed" |
 | `abort` | yes | `CronDelete`, `TaskStop` awaits, tracker marked aborted |
 | `unblock` | yes | Remove `sdd` from `blocked_reasons`; sets sdd `run.json` `status: running` only if that file exists. Never touches `doc_not_private:*` |
-| `close` | yes | Leave `LAND` for `DONE` with diffs still open |
+| `close` | yes | Leave `LAND` for `DONE` with diffs still open; stops the run's sweep where one exists |
 | `add explainer` / `no explainer` | no | Force the per-doc explainer on or off (Q5) |
 
 Read the verb as the text after `Action:`, trimmed and lowercased. It must exactly match a row above. Any other verb is unsupported, and nothing runs.
+
+## Tab operations
+
+Tabs layout only. These are run housekeeping, not `Action:` verbs:
+
+| Operation | Rule |
+|---|---|
+| `meta google.docs.tab add`, `tab rename`, `tab move` | Allowed without Confirm. Add tabs through `tabs.py ensure` (references/DOCS.md) |
+| `tab delete`, deleting a doc | Never run: both need 2FA. Move a tab under the wrong parent with `tab move --parent-tab-id` and fix `docs.<key>.parent` |
+| Archive an unwanted tab | Rename it `Archived: <old name>`, move it last (`tab move --index=<last>`), then set `docs.<key>.archived = true` with `state.load` / `state.save`. Keep `docs.<key>.tab` and `id`: never drop the tab id. The owner deletes the tab |
+
+An archived key is never swept on its own. Comments on its tab go to the `tracker` key in the `open` scope, and its `handled.json` stays in the handled union, so no handled comment replays (references/GATE.md, Tabs layout attribution). `tabs.py ensure <key>` never adopts an archived tab: it adds a fresh one and clears `archived`.
 
 ## Never allowed, even with Confirm
 
@@ -116,7 +129,7 @@ r = sys.argv[1]; p = state.load(r); p.setdefault("pending_actions", {})[sys.argv
 | `resume` | If `paused` is false, reply `not paused, nothing changed`. Otherwise set `paused: false`, then re-arm awaits per references/LOOP.md |
 | `abort` | Set `terminal: "aborted"`. `TaskStop` every id in `awaits`. `CronDelete` per references/LOOP.md. Log an `abort` event. Re-render the tracker so it shows aborted (references/TRACKER.md) |
 | `unblock` | `state.py <run> reason drop blocked sdd`. If `<run>/run.json` exists, rewrite it atomically with `status: running` and an empty `blocked_reason`. Leave every `doc_not_private:*` entry alone |
-| `close` | Leave `LAND` for `DONE` even though diffs are still open. The `DONE` steps are in the skill's SKILL.md and references/LOOP.md |
+| `close` | Leave `LAND` for `DONE` even though diffs are still open. With `experiments/tick` (tabs layout) or `sweep/sweep.py` (legacy), first set the sweep stop as references/TRACKER.md, LAND says. The `DONE` steps are in the skill's SKILL.md and references/LOOP.md |
 | `add explainer` / `no explainer` | Force the explainer on or off for the doc that carries the comment. Generation and suppression are in references/DOCS.md |
 
 ```bash
@@ -125,4 +138,4 @@ python3 ~/.claude/skills/lockstep/scripts/state.py /data/users/anshulverma/sdd-r
 
 ## Steering box
 
-Every gated doc and the tracker carries a short "How to steer this run" box. It lists the comment kinds side by side with one example each: question, answer to a numbered question (or pick in the dropdown under it), requirement, `Action:`, `Approved` (or set the Approval dropdown under the title), `Confirm`, `Changes:`, `Reopen`. Gated docs get the full box (references/DOCS.md, Publish step 1). The tracker's box lists only `Action:`, `Confirm` and diff ids, because the tracker acts on nothing else. The verbs it lists must match the table above.
+Every gated doc and the tracker carries a short "How to steer this run" box. It lists the comment kinds side by side with one example each: question, answer to a numbered question (or pick in the dropdown under it), requirement, `Action:`, `Approved` (or set the Approval dropdown under the title), `Confirm`, `Changes:`, `Reopen`. Gated docs get the full box (references/DOCS.md, Publish step 1). The tracker's box lists only `Action:`, `Confirm` and diff ids, because a comment on the tracker acts on nothing else (orphaned and doc-level comments routed to the `tracker` key are the exception in references/GATE.md). The verbs it lists must match the table above.

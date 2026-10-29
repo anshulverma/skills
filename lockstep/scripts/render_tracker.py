@@ -93,7 +93,9 @@ def mask_credentials(text: str) -> tuple[str, list[str]]:
 OWNER_GAP = 10 * 60   # owner comments closer than this belong to one reading session (decision Q8)
 LEAD_IN = 5 * 60      # reading before the first comment of a session
 SKILL_GAP = 45 * 60   # after a work event, a quiet gap longer than this means nothing was running
-IDLE_KINDS = ("tick", "gate_open")   # after these the agent waits for the owner unless a unit is running
+# After these the agent waits for the owner unless a unit is running. apply_held repeats on every render while a
+# comment holds a block; job_done carries no marker of `job poll` (a tick's quiet MAST poll) vs `job set`.
+IDLE_KINDS = ("tick", "gate_open", "apply_held", "job_done")
 OWNER_ACTIVITY = OWNER_KINDS + ("reopen", "owner_active")
 
 
@@ -370,6 +372,7 @@ def time_split(events: list[dict], now: datetime) -> tuple[float, float, float]:
 
 
 TIMELINE_WINDOW = timedelta(hours=48)
+EVENT_LOG_WINDOW = timedelta(days=14)   # tabs layout: the Event log tab lists this much; events.jsonl keeps it all
 
 
 def timeline_windows(events, now):
@@ -471,7 +474,20 @@ def esc(v) -> str:
 
 def _doc_link(d, fallback):
     title = esc(d.get("title") or fallback)
-    return f'<a href="https://docs.google.com/document/d/{esc(d["id"])}/edit">{title}</a>' if d.get("id") else title
+    tab = f"?tab={esc(d['tab'])}" if d.get("tab") else ""
+    return f'<a href="https://docs.google.com/document/d/{esc(d["id"])}/edit{tab}">{title}</a>' if d.get("id") else title
+
+
+def _experiments_line(run_dir, docs):
+    """Tabs layout Status line from experiments/state.json, linking the Experiments and Studies tabs; None without it."""
+    path = os.path.join(run_dir, "experiments", "state.json")
+    if not os.path.exists(path):
+        return None
+    ex = read_json(path)
+    running = sum(j.get("state") in ("running", "starting") for j in ex.get("jobs") or [])
+    done = sum(s.get("status") == "concluded" for s in (ex.get("studies") or {}).values())
+    link = lambda k, text: _doc_link({**docs[k], "title": text}, k) if docs.get(k, {}).get("id") else esc(text)
+    return f"{link('experiments', f'{running} running')}, {link('studies', f'{done} studies concluded')}"
 
 
 def _qcount(run_dir, d):
@@ -546,6 +562,8 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
     t0 = parse_ts(events[0]["ts"]) if events else now
     st = run["tracker_status"]
     since = f" (since {hhmm(st['since'])})" if st.get("since") else ""
+    tabs = run.get("layout") == "tabs"
+    exp_line = _experiments_line(run_dir, run["docs"]) if tabs else None
     h = ['<p data-style="TITLE">' + esc(run.get("tracker_title", "Tracker")) + "</p>", STEER]
     h.append("<h2>Status</h2>" + _table(["", ""], [
         ("<b>Last updated</b>", f"{local(now):%Y-%m-%d %H:%M %Z} (tick {esc(run.get('tick', 0))})"),
@@ -555,6 +573,7 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
                               + " (each side counts its own working time: the agent's counts even while you are away, "
                                 "and time it spends waiting on you counts for neither)"),
         ("<b>Now</b>", esc(st.get("now", "")) + (f" (sdd stage {esc(sdd.get('stage'))})" if sdd else "")),
+        *([("<b>Experiments</b>", exp_line)] if exp_line else []),
         ("<b>Waiting on</b>", esc(st.get("waiting_on", "")) + since),
         ("<b>Next wake</b>", esc(st.get("next_wake", ""))),
     ]))
@@ -576,7 +595,7 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
         if e["kind"] == "test_run":
             tests[e.get("task")] = tests.get(e.get("task"), 0) + 1
     plan_path = sdd.get("plan_path") and os.path.join(run_dir, sdd["plan_path"])
-    tasks, states, times = [], {}, {}
+    tasks, states, times, dstat = [], {}, {}, None
     task_diffs, run_diffs = run.get("task_diffs") or {}, run.get("diffs") or {}
     if plan_path and os.path.exists(plan_path):
         tasks = plan_tasks(plan_path)
@@ -611,22 +630,20 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
                      + ". A task shows its least advanced live diff; abandoned only when all its diffs are.</p>")
         h.append(_table(["ID", "Task", "Depends on", "State", f"Started ({tzl})", "Duration", "Test runs", "Diff"], rows))
 
-    diff_ev = {}
-    for e in events:
-        if e["kind"].startswith("diff_") and e.get("diff"):
-            diff_ev.setdefault(str(e["diff"]), {})[e["kind"][5:]] = hhmm(e["ts"])
     end = next((parse_ts(e["ts"]) for e in reversed(events) if e["kind"] == "done"), None)
     h.append("<h2>Build to closure</h2><p>Request to closure: "
              f"{fmt_dur(active(t0, end or now))} active{'' if end else ' so far'} "
              f"({fmt_dur(((end or now) - t0).total_seconds())} wall clock). Test runs: {sum(tests.values())}.</p>")
-    if diff_ev:
-        h.append(_table(["Diff", "Created", "Published", "Reviewed", "Landed"],
-                        [(esc(d), v.get("created", ""), v.get("published", ""), v.get("reviewed", ""), v.get("landed", ""))
-                         for d, v in diff_ev.items()]))
+    tied = {i for v in task_diffs.values() for i in re.findall(r"D\d+", str(v))}
+    loose = [d for d in run_diffs if d not in tied]   # diffs and test runs live in the plan table; only these are listed here
+    if loose:
+        h.append(f"<p>Diffs not tied to a task: {_diff_cell(', '.join(loose), run_diffs, dstat)}.</p>")
 
     gates = []
     for k, d in run["docs"].items():
         if not isinstance(d, dict) or not d.get("id") or d.get("kind") in ("plan", "explainer", "external"):
+            continue
+        if tabs and d.get("kind") not in ("proposal", "spec", "task"):
             continue
         versions = sum(1 for e in events if e.get("doc") == k and e["kind"] in ("published", "humanize"))
         wait = overlap(owner_spans(events, k), t0, now)
@@ -679,7 +696,7 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
 
     docs = []
     for k, d in run["docs"].items():
-        if not isinstance(d, dict) or not d.get("id"):
+        if not isinstance(d, dict) or not d.get("id") or (tabs and k in ("tracker", "events")):
             continue
         opened, accepted = d.get("opened_at", ""), d.get("accepted_at", "")
         if d.get("status") == "reference":
@@ -703,17 +720,20 @@ def render(run_dir: str, now: datetime, events_out: list[str] | None = None) -> 
     h.append("<h2>Parked tasks</h2>" + (_table(["Task", "Doc", "Since"], parked) if parked else "<p>None.</p><p></p>"))
 
     h.append("<h2>Original request (verbatim)</h2><p><i>" + esc(request) + "</i></p><p></p>")
-    log, prev = [], None
+    log, prev, older = [], None, 0
     for e in events:
         t = parse_ts(e["ts"])
-        log.append((hhmm(e["ts"]), esc((e.get("phase") or "").title()), esc(e["event"]),
-                    fmt_dur((t - prev).total_seconds()) if prev else ""))
+        if tabs and t < now - EVENT_LOG_WINDOW:
+            older += 1
+        else:
+            log.append((hhmm(e["ts"]), esc((e.get("phase") or "").title()), esc(e["event"]),
+                        fmt_dur((t - prev).total_seconds()) if prev else ""))
         prev = t
     blocks = ("<h2>Timeline</h2>" if windows else "") + "".join(f"<h3>{local(a):%b %d %H:%M} to {local(b):%b %d %H:%M} {tzl}</h3>"
                      + _figure(figdir, f"timeline-{local(a):%Y%m%d%H%M}.png", "timeline", f"E{i}",
                                "Active time in this 48-hour block, drawn as on the main tab.")
                      for i, (a, b) in enumerate(windows, 1))
-    section = blocks + "<h2>Event log</h2>" + _table([f"Time ({tzl})", "Phase", "Event", "Since previous"], log)
+    section = blocks + "<h2>Event log</h2>" + (f"<p>{older} earlier events are in events.jsonl.</p>" if older else "") + _table([f"Time ({tzl})", "Phase", "Event", "Since previous"], log)
     if events_out is None:
         h.append(section)
     else:
@@ -731,12 +751,14 @@ def main(argv: list[str]) -> int:
     events = [] if len(argv) == 3 else None
     try:
         body = render(argv[0], now_utc(), events)
+        for out in argv[1:]:
+            os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
+        open(argv[1], "w").write(body)
+        if events is not None:
+            open(argv[2], "w").write("".join(events))
     except (ValueError, OSError, subprocess.CalledProcessError) as e:
         print(e, file=sys.stderr)
         return 1
-    open(argv[1], "w").write(body)
-    if events is not None:
-        open(argv[2], "w").write("".join(events))
     return 0
 
 

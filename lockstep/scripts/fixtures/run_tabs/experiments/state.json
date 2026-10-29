@@ -1,0 +1,41 @@
+{
+ "jobs": [
+  {
+   "n": 1,
+   "name": "smoke",
+   "kind": "smoke",
+   "study": "s1",
+   "state": "done",
+   "verdict": "ok"
+  },
+  {
+   "n": 2,
+   "name": "arm-a",
+   "kind": "train",
+   "study": "s1",
+   "state": "running"
+  },
+  {
+   "n": 3,
+   "name": "arm-b",
+   "kind": "train",
+   "study": "s2",
+   "state": "starting"
+  }
+ ],
+ "studies": {
+  "s1": {
+   "title": "Smoke",
+   "status": "concluded"
+  },
+  "s2": {
+   "title": "Arms",
+   "status": "running"
+  }
+ },
+ "learnings": [],
+ "bottom_line": "",
+ "primary_metric": "",
+ "archive": [],
+ "sweep_stopped": null
+}
