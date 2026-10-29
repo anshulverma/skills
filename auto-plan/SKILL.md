@@ -57,6 +57,7 @@ digraph auto_plan {
 | `--redo` | — | Change a decision (e.g., `--redo "use SQLite instead of PostgreSQL"`) |
 | `--harden` | off | Run the hardening meta-loop: re-examine artifacts across fresh-context passes until convergence (Phase 5). |
 | `--max-passes` | `3` | Maximum hardening passes. Distinct from `--max-iterations` (in-pass grill cycles). |
+| `--targets` | default | Hardening target overrides, e.g. `"grounding precision >= 90% \| length vs pass 1 <= 1.5"`. Gates stay at 100%. |
 | `--unattended` | off | Suppress user prompts; bubble-up questions degrade to `UNRESOLVED` so the loop never blocks. |
 
 **Phase matrix:**
@@ -69,7 +70,7 @@ digraph auto_plan {
 | `--dry-run` | 0 → 0.5 → 1 | nothing (shows skeleton) |
 | `--resume` | load state → continue | remaining artifacts |
 | `--redo` | load state → 2 → 3 → 4 | updated artifacts |
-| `--harden` | 0 → … → 4, then Phase 5 loop | artifacts + convergence CSV/PNG + report |
+| `--harden` | 0 → … → 4, then Phase 5 loop | artifacts + convergence CSV/PNG + metrics history + report |
 
 ## Input Mode Detection
 
@@ -283,6 +284,7 @@ mutation; never patched in place).
 "harden": {
   "enabled": true,
   "max_passes": 3,
+  "targets": "default",
   "current_pass": 2,
   "convergence_status": "in_progress",
   "snapshots_dir": "docs/auto-plan/reports/snapshots",
@@ -294,19 +296,25 @@ mutation; never patched in place).
       "status": "complete",
       "snapshot_path": "docs/auto-plan/reports/snapshots/pass-1",
       "judge_verdict": "NOT CONVERGED",
+      "verdict": "CONTINUE",
       "judge_rationale": "Spec gained an error-handling section; 2 ADRs revised.",
       "fingerprint": ["d014", "d015", "spec:error-handling"],
       "gaps_filled": ["partial-write recovery", "retry semantics"],
       "questions_bubbled_up": [],
       "decisions_delta": {"added": ["d014", "d015"], "modified": ["d007"], "invalidated": []},
       "metrics": {"material_changes": 2, "minor_changes": 4, "open_gaps": 0,
-                  "pending_questions": 0, "unresolved_markers": 0, "instability_score": 2}
+                  "pending_questions": 0, "unresolved_markers": 0, "instability_score": 2,
+                  "scope": "full", "gaps_blocking": 0, "coverage": 1.0, "executability": 1.0,
+                  "spec_coverage": 1.0, "grounding_precision": 1.0, "regression_rate": 0.0,
+                  "self_report_matches": true, "length_ratio": 1.04}
     }
   ]
 }
 ```
 
-`convergence_status` ∈ `in_progress | converged | max_passes_reached | oscillation | failed | interrupted`.
+`convergence_status` ∈ `in_progress | converged | plateau | max_passes_reached | oscillation | failed | interrupted`.
+`verdict` is the last line `scripts/metrics.py` printed for the pass; `metrics` is the pass's
+`history.jsonl` row (see Convergence Metrics). Older passes may carry only the first six keys.
 `current_pass` and `convergence_status` sit at the top of the `harden` object for quick inspection.
 **Two-phase write:** each pass entry is written as `status:"running"` (with `judge_verdict:null`)
 *before* the Pass agent runs, then updated to `status:"complete"` *after* the judge verdicts — the
@@ -458,18 +466,24 @@ while pass < max_passes:
     else if result has Bubble-Up Questions:
         record each as UNRESOLVED with its recommended answer        # unattended / low threshold
     apply result.Edits in place; full-rewrite state (decisions delta, status:"complete")
-    verdict ← dispatch Convergence judge (fresh context)             # independent diff
-    metrics ← compute instability_score from verdict + state
-    write state: harden.passes[pass].{judge_verdict, metrics, fingerprint}; full rewrite
-    if converged(verdict): status ← "converged"; break
-    if oscillation(pass fingerprints): status ← "oscillation"; break
-if pass == max_passes and not converged: status ← "max_passes_reached"
-emit report + convergence CSV + convergence PNG
+    judge ← dispatch Convergence judge (fresh context, scope full or scoped)   # independent diff
+    verdict ← run scripts/metrics.py on the judge response                     # logs history, CSV, PNG
+    if verdict needs a full-coverage judge:                                    # scoped judge, instability 0
+        judge ← dispatch Convergence judge (fresh context, scope full); verdict ← rerun metrics.py
+    if verdict == CONVERGED:
+        audit ← dispatch Convergence judge (fresh context, scope full)       # escape audit
+        verdict ← rerun metrics.py on audit with --escapes <audit open gaps>
+    write state: harden.passes[pass].{judge_verdict, verdict, metrics, fingerprint ← regions_changed}
+    if verdict != CONTINUE: status ← verdict (converged | oscillation | plateau | max_passes_reached); break
+emit report (+ the convergence CSV and PNG metrics.py wrote)
 ```
 
-`converged(verdict)` is true iff `verdict.material_changes == 0` AND `verdict.open_gaps == 0` AND no
-`UNRESOLVED:` marker remains in any artifact AND no bubble-up question is pending an answer — i.e.
-exactly `instability_score == 0`.
+The script's verdict is the only stop condition. `CONVERGED` needs `instability_score == 0` from a
+**full-coverage** judgment (every task, or spec section, read in full) with every gate passing.
+A **scoped** judge (briefed to check only the last edit) is cheaper and may report gaps, but its
+`0` never converges: when the script asks for a full-coverage judge, dispatch one on the same pass
+before deciding anything. On `PLATEAU`, `OSCILLATION` or `CAP`, write each open gap of the last
+full-coverage judgment into the artifacts as an `UNRESOLVED:` marker so it survives the run.
 
 ### Dispatching the Hardening Pass agent
 
@@ -521,14 +535,20 @@ Agent({
     contents of CONVERGENCE-JUDGE-CHECKLIST.md,
     "Snapshot (pass N-1):", [content],
     "Current artifacts (pass N):", [content],
-    "Pass agent Material Change Assessment:", [content]
+    "Pass agent Material Change Assessment:", [content],
+    "Scope:", "full" | "scoped",
+    "Base revision for grounding checks:", [revision]
   ],
   model: "opus"
 })
 ```
 
+The judge needs read access to the source tree at the base revision for its grounding checks.
+Save its response to `docs/auto-plan/reports/judges/pass-N.md` (a re-judge or escape audit
+overwrites it) and run `scripts/metrics.py` on it.
+
 The judge **independently diffs** snapshot vs current and emits `Verdict` / `Changes` / `Open Gaps`
-/ `Rationale`. The Pass agent's self-report is a cross-check only. It runs after **every** pass —
+/ `Rationale` / `Metrics`. The Pass agent's self-report is a cross-check only. It runs after **every** pass —
 including Pass 1, which diffs against Snapshot-0. Ambiguous changes are classified **material**
 (conservative bias).
 
@@ -564,36 +584,63 @@ and continue under the corrected constraint.
 
 | Condition | Detected by | Emitted | `convergence_status` |
 |-----------|-------------|---------|----------------------|
-| Convergence | judge: 0 material + 0 gaps + 0 UNRESOLVED + 0 pending | final hardened artifacts | `converged` |
-| Pass budget exhausted | orchestrator: `pass == max_passes`, not converged | most-hardened artifacts + surviving `UNRESOLVED` markers + "did not converge" banner | `max_passes_reached` |
-| Oscillation | orchestrator: pass-N fingerprint == pass-(N-2) | the version with fewer open gaps; tie → latest | `oscillation` |
+| Convergence | `metrics.py` `CONVERGED`: instability 0 from a full-coverage judge, every gate passing, escape audit clean | final hardened artifacts | `converged` |
+| Plateau | `metrics.py` `PLATEAU`: open gaps did not fall over the last three full-coverage judgments | most-hardened artifacts + open gaps as `UNRESOLVED` markers + "did not converge" banner | `plateau` |
+| Oscillation | `metrics.py` `OSCILLATION`: pass N changed the same regions as pass N-2 | the version with fewer open gaps; tie → latest | `oscillation` |
+| Pass budget exhausted | `metrics.py` `CAP`: `pass == max_passes` | most-hardened artifacts + surviving `UNRESOLVED` markers + "did not converge" banner | `max_passes_reached` |
 | Hard failure | Pass agent garbage/timeout twice | last-good artifacts | `failed` |
 
-A retried (failed-then-redispatched) pass does **not** consume the `--max-passes` budget.
-Oscillation compares the per-pass material-change **fingerprint** sets stored in state (not raw
-text), so minor edits don't mask a ping-pong. Oscillation detection is orchestrator-owned; the
-judge stays stateless and pairwise.
+A retried (failed-then-redispatched) pass does **not** consume the `--max-passes` budget, and
+neither does a re-judge. Oscillation compares the judges' `regions_changed` sets (stored as each
+pass's `fingerprint`), not raw text, so minor edits don't mask a ping-pong. The judge stays
+stateless and pairwise; the script holds the history.
 
-### Convergence Metric and Chart
+### Convergence Metrics
 
-Each pass yields an **instability score**:
+The instability score is self-reported by the judge; the counter-metrics catch a loop that
+converges by looking less:
+
+| Metric | Catches | Target | Kind |
+|---|---|---|---|
+| Instability score | artifact still changing | 0 | progress |
+| Open gaps by severity | `0 gaps` hiding a severity mix | 0 blocking | progress |
+| Judge coverage: tasks (or spec sections) read in full, anchors checked | `0 gaps` from a judge that barely looked | 100% read, scope `full` | gate |
+| Literal executability (plans): run/test steps with every flag, argument and input named and produced earlier | steps that read fine but cannot be launched | 100% | gate |
+| Spec coverage (plans): spec steps and acceptance criteria mapped to a task | dropping scope to converge | 100% | gate |
+| Grounding precision: sampled `file:line` / signature / flag claims matching the source | invented anchors | 95% or more | target |
+| Fix regression rate: gaps in text the pass changed ÷ gaps it was handed | fixes that break something | falls pass over pass | target |
+| Self-report accuracy: passes whose self-report the judge's diff agrees with | passes misreporting what they changed | 100% | target |
+| Length vs pass 1 (words, all artifacts) | resolving gaps by bloat | 1.3x or less | target |
+| Escapes: open gaps the post-`CONVERGED` escape audit finds | the whole set gamed together | falls over runs | trend |
+| Tokens and wall-clock per pass | cost | reported | trend |
 
 ```
 instability_score = material_changes + open_gaps + pending_questions + unresolved_markers
 ```
 
-It reaches 0 exactly at convergence — the numeric form of the stop condition. Per-pass metrics are
-stored in `harden.passes[].metrics` and written to
-`docs/auto-plan/reports/YYYY-MM-DD-<topic>-convergence.csv` on every run (no dependencies). CSV
-columns: `pass,material_changes,minor_changes,open_gaps,pending_questions,unresolved_markers,instability_score`.
+Gates and instability decide `CONVERGED`; targets print as `short:` lines for the next pass and the
+report; trends are reported. `--targets` overrides target bounds by the names the script prints
+(case does not matter); the gates stay at 100%. Record it in `harden.targets`.
 
-A best-effort PNG at `docs/auto-plan/reports/YYYY-MM-DD-<topic>-convergence.png` plots the
-instability score (plus component lines) against pass number, titled `Convergence — <topic>`.
-Rendering mirrors the `dot -Tpng` best-effort pattern: try `python3` + matplotlib (from the CSV),
-else `gnuplot`, else skip the PNG and embed an ASCII sparkline of the instability score in the
-report with a note that no renderer was found.
+After each judge, run:
 
-**Output per pass:** `[auto-plan] Phase 5/pass N: instability=K (material M, gaps G, pending P, unresolved U) — <verdict>`
+```
+python3 ~/.claude/skills/auto-plan/scripts/metrics.py --judge reports/judges/pass-N.md \
+  --artifact <spec> [--artifact <adr> ...] [--artifact <plan>] --pass N \
+  --history reports/YYYY-MM-DD-<topic>-history.jsonl \
+  --csv reports/YYYY-MM-DD-<topic>-convergence.csv --png reports/YYYY-MM-DD-<topic>-convergence.png \
+  --pending <unanswered bubble-up questions> --max-passes <max_passes> [--targets "<--targets>"] \
+  [--tokens N --seconds N] [--escapes N]
+```
+
+It counts `UNRESOLVED:` markers and words in the artifacts, appends the pass to `history.jsonl`
+(a pass number lower than the row before starts a new run; a pass logged again replaces its row), appends the CSV row
+(`pass,material_changes,minor_changes,open_gaps,pending_questions,unresolved_markers,instability_score`),
+redraws the PNG (instability and its components by pass; needs matplotlib, else it prints an
+ASCII sparkline to embed in the report), prints one table, the `short:` lines, and the verdict
+last. Exit status 0 means stop, 1 means continue.
+
+**Output per pass:** `[auto-plan] Phase 5/pass N: instability=K (material M, gaps G [B blocking], pending P, unresolved U), coverage C% (scope) — <verdict>`
 
 ## --redo Support
 
@@ -627,8 +674,8 @@ re-invoke with `--harden`.
 **`--harden` re-entry.** If the state has a `harden` object, read `harden.convergence_status` and
 `harden.current_pass`. If the last `passes[]` entry is `status:"running"` (interrupted mid-pass),
 restore the artifacts from its snapshot, then re-run that pass. If `status:"complete"` but not
-converged, start the next pass. If terminal (`converged` / `max_passes_reached` / `oscillation` /
-`failed`), the meta-loop is done — fall through to normal completion.
+converged, start the next pass. If terminal (`converged` / `plateau` / `max_passes_reached` /
+`oscillation` / `failed`), the meta-loop is done — fall through to normal completion.
 
 Also triggered automatically: if the skill detects a state file for the topic on startup (without `--resume` flag), ask "Found interrupted session. Resume or start fresh?"
 
@@ -663,6 +710,8 @@ _Only when `--harden` was used. `Convergence: <status> after N passes`, followed
 |------|-----------|-------------|----------------------|-------------------|----------|
 | 1 | yes | 2 | 0 | spec gained error-handling section | `snapshots/pass-1/` |
 | 2 | no (minor) | 0 | 1 | only wording changes | `snapshots/pass-2/` |
+
+Then the last pass's `metrics.py` table (with its `short:` lines and the escape count), and:
 
 ![convergence](YYYY-MM-DD-<topic>-convergence.png)
 
@@ -735,6 +784,8 @@ docs/auto-plan/
     YYYY-MM-DD-<topic>-state.json       (always kept)
     YYYY-MM-DD-<topic>-convergence.csv  (--harden only; always written)
     YYYY-MM-DD-<topic>-convergence.png  (--harden only; best-effort)
+    YYYY-MM-DD-<topic>-history.jsonl    (--harden only; one metrics row per pass)
+    judges/pass-N.md                    (--harden only; latest judge response per pass)
     snapshots/pass-N/                   (--harden only; last 2 retained)
 docs/adr/NNNN-<slug>.md
 ```

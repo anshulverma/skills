@@ -111,7 +111,7 @@ Every later tick: identical, plus `--resume`.
 
 | Value | Action |
 |---|---|
-| `converged`, `max_passes_reached`, `oscillation` | Copy surviving `UNRESOLVED:` markers into `questions.md` and `run.json.unresolved`; go to `PLAN_WRITE` |
+| `converged`, `plateau`, `max_passes_reached`, `oscillation` | Copy surviving `UNRESOLVED:` markers into `questions.md` and `run.json.unresolved`; go to `PLAN_WRITE` |
 | `in_progress` | Stay; next tick adds `--resume` |
 | `failed` | Retry once with `--resume`; second failure → `blocked` |
 
@@ -138,11 +138,15 @@ rather than content.
 
 ### Stop on divergence, not just convergence
 
-auto-plan detects `converged`, `oscillation`, and `max_passes_reached`. It does **not** detect
-an artifact that is steadily *inflating* — every pass makes real changes, so nothing looks
+auto-plan's Phase 5 stops on the verdict of its `scripts/metrics.py`, run after every judge
+(including judges you dispatch yourself when running Phase 5 by hand): `CONVERGED` only from a
+full-coverage judge with every gate passing, else `PLATEAU`, `OSCILLATION` or `CAP`. A scoped
+judge's 0 gaps never ends a stage. The script reports length vs pass 1 as a target, not a stop, so
+auto-plan does **not** stop an artifact that is steadily *inflating* — every pass makes real changes, so nothing looks
 stuck, and the loop runs to the pass cap while the document grows past the thing it describes.
 
-After each pass, compute two numbers and record them in `run.json`:
+After each pass, compute two numbers and record them in `run.json` (`harden_metrics` for stage 2,
+`plan_harden_metrics` for stage 4):
 
 - artifact line count
 - markers raised this pass minus markers retired this pass
@@ -184,7 +188,8 @@ Check for the state file before stage 4. If it is absent, reconstruct it: record
 paths (spec, plan, ADRs), a `harden_spec` block summarising what stage 2 actually did, and a
 fresh `harden` block at `current_pass: 1`. Mark it `"reconstructed": true` with a note saying
 why, so the audit trail does not claim auto-plan produced it. Then run Phase 5's protocol
-directly — pass agent, apply edits, convergence judge — rather than relying on `--resume`.
+directly — pass agent, apply edits, convergence judge, `metrics.py` — rather than relying on
+`--resume`.
 
 Stage 4 must **harden this plan**, not regenerate it. auto-plan's state file must therefore
 name it. Rewrite `autoplan_state` in full:
