@@ -19,6 +19,7 @@ import md2ghtml  # noqa: E402
 import render_tracker  # noqa: E402
 import diff_status  # noqa: E402
 import velocity  # noqa: E402
+import chips  # noqa: E402
 
 
 def test_recompute_status():
@@ -348,6 +349,41 @@ def test_md2ghtml_edges():
     assert f'<p style="text-align:center"><img src="file://{d}/fig/a.png" alt="Flow"></p>' in h
     assert f'see <img src="file://{d}/b.png" alt="x"> inline' in h and 'src="https://e.com/r.png"' in h
     assert "<aside" not in h and "| TL;DR |" in h and "![no](c.png)" in h
+
+
+def test_md2ghtml_chip():
+    _, h = md2ghtml.convert("# T\n\n**Your answer:** [[Q1 answer: Pick one | A (recommended) | B]]\n", tempfile.mkdtemp())
+    assert ('<select data-dropdown title="Q1 answer"><option selected>Pick one</option>'
+            "<option>A (recommended)</option><option>B</option></select>") in h
+
+
+# ---------- chips.py ----------
+
+def test_chips_read_export_and_changes():
+    # Export shape: the chip shows only its selection; the title lives on a shared datalist.
+    s = ('<datalist id="kix.a" title="S2 answer"><option>Pick one</option><option>X</option></datalist>'
+         '<datalist id="kix.b" title="Approval"><option>Not yet</option><option>Approved</option></datalist>'
+         '<p><select data-dropdown data-dropdown-definition-id="kix.a"><option value="i1" selected>X</option></select></p>'
+         '<p><select data-dropdown data-dropdown-definition-id="kix.b"><option value="i2" selected>Not yet</option></select></p>'
+         '<p><select data-dropdown title="Mood"><option selected>Good</option></select></p>')
+    got = chips.read(s)
+    assert got == [("S2 answer", "X"), ("Approval", "Not yet"), ("Mood", "Good")]
+    # Unseen chips on their initial value are not changes; unknown titles are ignored.
+    assert chips.changes(got, {}, "S") == [{"chip": "S2 answer", "kind": "answer", "q": 2, "option": "X"}]
+    assert chips.changes(got, {"S2 answer": "X"}, "S") == []
+    # Approved, then back to Not yet: both are changes once seen.
+    assert chips.changes([("Approval", "Approved")], {"Approval": "Not yet"}, "S")[0]["kind"] == "approval"
+    assert chips.changes([("Approval", "Not yet")], {"Approval": "Approved"}, "S")[0]["option"] == "Not yet"
+
+
+def test_chips_commit():
+    d = tempfile.mkdtemp()
+    doc, seen = os.path.join(d, "d.html"), os.path.join(d, "seen.json")
+    open(doc, "w").write('<select data-dropdown title="Q3 answer"><option selected>B</option></select>')
+    r = subprocess.run([sys.executable, os.path.join(HERE, "chips.py"), doc, seen, "Q", "--commit"], capture_output=True, text=True)
+    assert r.returncode == 0 and json.loads(r.stdout)[0]["q"] == 3 and json.load(open(seen)) == {"Q3 answer": "B"}
+    r = subprocess.run([sys.executable, os.path.join(HERE, "chips.py"), doc, seen, "Q"], capture_output=True, text=True)
+    assert json.loads(r.stdout) == []
 
 
 # ---------- render_tracker.py ----------

@@ -33,6 +33,16 @@ def _img(m: re.Match, src_dir: str) -> str:
     return f'<p style="text-align:center">{tag}</p>' if m.group(0) == m.string.strip() else tag
 
 
+CHIP = re.compile(r"\[\[([^\]:|]+):([^\]]+)\]\]")
+
+
+def _chip(m: re.Match) -> str:
+    """[[Title: first | second | ...]] -> a Docs dropdown chip with the first option selected."""
+    opts = [o.strip() for o in m.group(2).split("|")]
+    body = "".join(f"<option{' selected' if i == 0 else ''}>{o}</option>" for i, o in enumerate(opts))
+    return f'<select data-dropdown title="{m.group(1).strip()}">{body}</select>'
+
+
 def _outside_fences(md: str, fn) -> str:
     """Apply fn to every chunk of md that is not inside a ``` fence."""
     parts = re.split(r"(^```.*?^```[^\n]*$)", md, flags=re.M | re.S)
@@ -54,6 +64,7 @@ def convert(md: str, src_dir: str) -> tuple[str, str]:
     h = h.replace("<p>@@TLDR@@</p>", "<p></p>\n" + aside)
     h = re.sub(r"<p>(<p style=\"text-align:center\"><img [^>]*></p>)</p>", r"\1", h)
     h = re.sub(r"<p><em>(Figure \d+\..*?)</em></p>", r'<p style="text-align:center"><i>\1</i></p>', h)
+    h = CHIP.sub(_chip, h)
     m = re.search(r"<h1>(.*?)</h1>", h)
     title = html.unescape(re.sub(r"<[^>]+>", "", m.group(1))) if m else ""
     h = re.sub(r"<h1>(.*?)</h1>", r'<p data-style="TITLE">\1</p>', h, count=1)

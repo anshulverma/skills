@@ -119,7 +119,7 @@ If the check fails, `publish` exits 1 with `velocity doc <id> is not private; no
 | Owner-only | Only owner comments on run docs produce `comment_ts` events (references/GATE.md) |
 | Privacy | Owner is the only principal and link sharing is off, checked before every write. Never `share grant` |
 | Writes | Only `apply` from a fresh render. Never `replace`, never `--orphan-comments-ok` |
-| Comments | Never resolve or delete a comment on any doc |
+| Comments | Never delete comments; resolve only answered-question threads (references/DOCS.md, Answered marks) |
 | Code | Never push, publish or land anything |
 
 ## Known gaps
