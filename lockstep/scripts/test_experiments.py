@@ -72,6 +72,7 @@ def test_record_assigns_upserts_never_reuses():
     st = exp(d)
     assert [(j["n"], j["name"], j["state"]) for j in st["jobs"]] == [(1, "a", "queued"), (2, "b", "queued")]
     assert st["jobs"][0]["eta_utc"] == "2026-10-29T20:00:00Z" and st["jobs"][1]["url"] == "u"
+    assert st["jobs"][0]["url"] == "https://www.internalfb.com/mlhub/pipelines/runs/mast/a"  # MAST link by default
     assert [e["n"] for e in events(d) if e["kind"] == "job_launch"] == [1, 2]
     ok(d, "set", 'archive={"paste": "P1", "through_n": 7}')
     assert record(d, "c") == "8"  # numbers covered by an archive are never reused
@@ -193,6 +194,8 @@ def test_study_new_conclude_reopen():
     assert cli(d, *conclude, *[x for i in range(6) for x in ("--learning", f"L{i}")]).returncode == 2
     check = json.loads(ok(d, "study", "check"))
     assert check["ready"] == ["A"] and check["no_learnings_tab"] == []
+    assert cli(d, *conclude, *two).returncode == 2  # report Results still the template placeholder
+    open(out, "w").write(open(out).read().replace("**Verdict: pending.**", "**Verdict: negative.** Flat."))
     ok(d, *conclude, *two)
     s = exp(d)["studies"]["A"]
     assert (s["status"], s["verdict"], s["short_answer"], s["learnings"]) == ("concluded", "negative", "No.", ["L1", "L2"])
@@ -212,6 +215,8 @@ def test_reading_only_study_and_poll_file():
     ok(d, "study", "new", "R", "--title", "Read", "--question", "q")
     open(os.path.join(d, "studies", "R", "poll"), "w").write("#!/bin/sh\nexit 1\n")
     assert json.loads(ok(d, "study", "check")) == {"ready": [], "no_learnings_tab": [], "poll": ["R"]}
+    rp = os.path.join(d, "studies", "R", "report.md")
+    open(rp, "w").write(open(rp).read().replace("**Verdict: pending.**", "**Verdict: confirmed.**"))
     ok(d, "study", "conclude", "R", "--verdict", "confirmed", "--short", "s", "--learning", "a", "--learning", "b")
 
 

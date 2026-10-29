@@ -35,6 +35,7 @@ ROW_STATES = TERMINAL | {"queued", "starting", "running"}
 # FAILED may be restarted by MAST; DEAD is final. UNKNOWN is what _status_from returns for JOB_NOT_FOUND.
 MAST_TO_ROW = {"PENDING": "queued", "RUNNING": "running", "SHUTTING_DOWN": "running", "COMPLETE": "done",
                "FAILED": "queued", "DEAD": "failed", "UNKNOWN": "void"}
+MAST_URL = "https://www.internalfb.com/mlhub/pipelines/runs/mast/"  # job links in the tabs default to this
 MAST_STATE_ENUM = {0: "PENDING", 1: "RUNNING", 2: "COMPLETE", 3: "FAILED", 4: "DEAD"}  # HpcJobState
 STARTUP_S = 1200
 VERDICTS = ("confirmed", "negative", "inconclusive", "default-stays")
@@ -285,7 +286,7 @@ def job_record(run: str, a) -> None:
             print(row["n"])
             return
         n = max([j["n"] for j in st["jobs"]] + [x.get("through_n", 0) for x in st["archive"]] + [0]) + 1
-        st["jobs"].append({"n": n, "name": a.name, "url": "", "kind": "", "study": "", "hypothesis": "",
+        st["jobs"].append({"n": n, "name": a.name, "url": MAST_URL + a.name, "kind": "", "study": "", "hypothesis": "",
                            "launched_utc": iso(now_utc()), "eta_utc": "", "state": "queued", "started_utc": "",
                            "ended_utc": "", "attempts": 0, "gpus": None, "cost_gpu_h": 0.0, "readout": "",
                            "verdict": "", "stopped_done": 0, "void_reason": "", **given})
@@ -348,6 +349,9 @@ def study_conclude(run: str, a) -> None:
         bad = _unsettled(_study_jobs(st, a.id))
         if bad:
             raise Refused(f"study {a.id} has jobs not terminal or without a verdict: {', '.join(bad)}")
+        report = os.path.join(run, "studies", a.id, "report.md")
+        if os.path.exists(report) and "**Verdict: pending.**" in open(report).read():
+            raise Refused(f"write the Results section of {report} (bold verdict first) before concluding")
         s.update(status="concluded", verdict=a.verdict, short_answer=a.short, learnings=a.learning,
                  concluded_utc=iso(now_utc()))
         events.append(("study_done", f"study {a.id} concluded: {a.verdict}. {a.short}",

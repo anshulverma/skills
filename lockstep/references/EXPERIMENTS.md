@@ -53,12 +53,12 @@ Other files:
 
 | Command | Does |
 |---|---|
-| `job record RUN --name N --kind K --hypothesis H [--study ID] [--url U] [--eta ISO]` | Adds the job and prints its `n`; emits `job_launch` once. On an existing name it updates the given fields. Refused if `--study` is not registered |
+| `job record RUN --name N --kind K --hypothesis H [--study ID] [--url U] [--eta ISO]` | Adds the job and prints its `n`; emits `job_launch` once. `--url` defaults to the job's MAST page. On an existing name it updates the given fields. Refused if `--study` is not registered |
 | `job set RUN NAME k=v ...` | Keys: `url kind study hypothesis launched_utc eta_utc state started_utc ended_utc attempts gpus cost_gpu_h readout verdict stopped_done void_reason` (numbers as JSON). A new `verdict` emits `job_verdict`; a first terminal `state` emits `job_done`; `stopped_done=1` turns `failed` into `stopped` |
 | `job poll RUN` | Polls MAST (`mast --output json get-status`, `get-job-history`, `get-job-definition`, 300 s timeout each) for every non-terminal row. PENDING and FAILED (MAST may restart it) map to `queued`; RUNNING and SHUTTING_DOWN to `running`; COMPLETE to `done`; DEAD to `failed`; job not found to `void`. Any other state exits 1. Rows already terminal are never touched |
 | `job missing RUN` | JSON list `[{n, name, state, study, missing}]`: every `done` job needs a `readout`, every terminal job a `verdict` |
 | `study new RUN ID --title T --question Q [--requested-by owner\|plan\|self] [--thread ROOT]` | Registers the study (default `self`), writes `studies/<id>/report.md` from template A if missing, prints its path, emits `study_start` |
-| `study conclude RUN ID --verdict V --short S --learning L ...` | Refused unless 2-5 `--learning` and every job of the study is terminal with a verdict. Emits `study_done` plus one `learning` event per bullet |
+| `study conclude RUN ID --verdict V --short S --learning L ...` | Refused unless 2-5 `--learning`, every job of the study is terminal with a verdict, and report.md "Results" no longer holds the template's `**Verdict: pending.**`. Emits `study_done` plus one `learning` event per bullet |
 | `study reopen RUN ID` | Concluded to `reopened`; emits `study_reopen` |
 | `study set RUN ID k=v ...` | `learnings_tab`, `questions` (JSON list of I-ids), `followups` (JSON list) |
 | `study check RUN` | JSON `{ready, no_learnings_tab, poll}`. `ready` never lists a study with no jobs: conclude a reading-only study yourself when the reading is done |
