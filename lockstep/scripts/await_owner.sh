@@ -29,7 +29,7 @@ wait_one() {
       echo "HUMAN_EVENT doc=$doc body=$body"
       return 0
     fi
-    if [ $rc -ne 0 ]; then  # auth lapse, ACL, network: back off instead of spinning
+    if [ $rc -ne 0 ] && ! printf '%s' "$out" | grep -q 'ERROR Timeout'; then  # auth lapse, ACL, network: back off instead of spinning
       echo "await_owner: meta await failed for $doc (exit $rc): $(printf '%s' "$out" | head -1)" >&2
       sleep "$RETRY"
     fi
