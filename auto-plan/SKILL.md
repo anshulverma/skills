@@ -289,6 +289,7 @@ mutation; never patched in place).
   "convergence_status": "in_progress",
   "chart_url": null,
   "snapshots_dir": "docs/auto-plan/reports/snapshots",
+  "settled_log": "docs/auto-plan/reports/2026-06-05-topic-settled.md",
   "passes": [
     {
       "pass": 1,
@@ -319,16 +320,19 @@ Each pass entry leads with `verdict` (the last line `metrics.py` printed) and `c
 progress PNG path); `metrics` is the pass's `history.jsonl` row (see Convergence Metrics). Older
 passes may carry only the first six keys. `current_pass`, `convergence_status` and `chart_url` (the
 `pxl.cl` link `metrics.py --upload` printed when the loop stopped; null while it runs or when the
-upload failed) sit at the top of the `harden` object for quick inspection.
+upload failed) sit at the top of the `harden` object for quick inspection. `settled_log` is the
+Settled Decisions Log (Phase 5); a later hardening stage over the same topic keeps the same file.
 **Two-phase write:** each pass entry is written as `status:"running"` (with `judge_verdict:null`)
 *before* the Pass agent runs, then updated to `status:"complete"` *after* the judge verdicts — the
 `running`→`complete` transition is how an interrupted pass is detected.
 
 **Snapshots.** Plain file copies (not git commits, not a concatenated history file) under
 `docs/auto-plan/reports/snapshots/pass-N/`, preserving original artifact filenames including any
-`adr/NNNN-*.md`. Each `pass-N/` holds the full pre-overwrite artifact set. Retention: keep the last
-2 pass directories, pruning older ones as each new pass starts (the per-pass changelog in state is
-the permanent audit trail). The artifact filename date prefix is frozen at Pass 1's date so paths
+`adr/NNNN-*.md`. Each `pass-N/` holds the full pre-overwrite artifact set: every artifact the pass
+may touch, including the spec (or its working copy) while hardening a plan, so the judge can diff
+each one. An artifact edited but missing from the snapshot leaves its change unjudged. Retention:
+keep the last 2 pass directories, pruning older ones as each new pass starts (the per-pass
+changelog in state is the permanent audit trail). The artifact filename date prefix is frozen at Pass 1's date so paths
 never churn across multi-day runs.
 
 **Output:** `[auto-plan] State saved to docs/auto-plan/reports/YYYY-MM-DD-<topic>-state.json`
@@ -457,6 +461,7 @@ it runs its own cascade and does **not** auto-re-harden; re-hardening requires a
 ```
 pass ← 1
 run Phases 0–4 normally          # interactive; produces baseline artifacts = Snapshot-0
+seed the Settled Decisions Log (or keep the existing one)
 while pass < max_passes:
     pass ← pass + 1
     write state: harden.passes[] += {pass, status:"running", judge_verdict:null}   # full rewrite
@@ -471,11 +476,13 @@ while pass < max_passes:
         record each as UNRESOLVED with its recommended answer        # unattended / low threshold
     apply result.Edits in place; full-rewrite state (decisions delta, status:"complete")
     judge ← dispatch Convergence judge (fresh context, scope full or scoped)   # independent diff
-    verdict ← run scripts/metrics.py --upload on the judge response            # history, CSV, progress chart; pxl.cl link on a stop
+    adjudicate judge reopens; update the Settled Decisions Log                 # before the script
+    verdict ← run scripts/metrics.py --upload [--reverts ...] on the judge response   # history, CSV, progress chart; pxl.cl link on a stop
     if verdict needs a full-coverage judge:                                    # scoped judge, instability 0
         judge ← dispatch Convergence judge (fresh context, scope full); verdict ← rerun metrics.py
     if verdict == CONVERGED:
         audit ← dispatch Convergence judge (fresh context, scope full)       # escape audit
+        adjudicate audit reopens
         verdict ← rerun metrics.py on audit with --escapes <audit open gaps>
     write state: harden.passes[pass].{verdict, chart, judge_verdict, metrics, fingerprint ← regions_changed}
     if verdict != CONTINUE:
@@ -491,6 +498,37 @@ A **scoped** judge (briefed to check only the last edit) is cheaper and may repo
 before deciding anything. On `PLATEAU`, `OSCILLATION` or `CAP`, write each open gap of the last
 full-coverage judgment into the artifacts as an `UNRESOLVED:` marker so it survives the run.
 
+### Settled Decisions Log
+
+The orchestrator keeps `docs/auto-plan/reports/YYYY-MM-DD-<topic>-settled.md` (`harden.settled_log`):
+the hardening view of the decision log. Numbered decisions, one line each, ending with the source:
+
+```
+4. Workers retry 3 times with 5/20/60 s backoff (spec:42).
+```
+
+Sources are `spec:<line>` or `owner, pass N` (a spec clarification or owner answer), `rule` (a
+standing owner rule from the user model brief), `confirmed pass N` (a fix a later full-coverage
+judge raised no gap on), and `resolved pass N` (the orchestrator's call on a disagreement). A
+decision is added:
+
+- **at seeding**: spec-required text (clarifications, standing constraints) and standing owner
+  rules are settled from the start, as are state decisions with a `user` source;
+- after a bubble-up answer or spec clarification;
+- after a full-coverage judge raises no gap on text the previous pass's fix changed: the decision
+  that fix made;
+- when two reviewers disagree on a gap (one asks to add what another asks to cut): the
+  orchestrator decides once and logs it.
+
+Every Pass agent, convergence judge and escape audit reads the log first. A finding that would
+change a settled decision is never an ordinary gap: it is reported as `reopen: <#>` with code or
+spec evidence. Before running `metrics.py`, the orchestrator adjudicates each reopen: **accept**
+when the evidence shows the decision wrong (rewrite the entry, append `reopened pass N`; the next
+pass applies it), else **reject** with a one-line reason appended to the entry, and a rejected
+reopen is not raised again without new evidence. Pass `--reverts` one age per accepted reopen: how
+many passes ago the reverted decision was settled. A fixer changes a settled decision only on an
+accepted reopen. Rationale is not a decision; entries state what, not why.
+
 ### Dispatching the Hardening Pass agent
 
 ```
@@ -503,7 +541,7 @@ Agent({
     contents of SPEC-REVIEW-CHECKLIST.md, PLAN-REVIEW-CHECKLIST.md, FINAL-REVIEW-CHECKLIST.md,
     "Current artifacts (spec, ADRs, plan, CONTEXT.md):", [content],
     "Decision log + unresolved (from state):", [content],
-    "Settled decisions (constraints — do not re-decide):", [list],
+    "Settled Decisions Log (read first; change an entry only on an accepted reopen):", [content],
     "User model brief:", [brief],
     "Prior-pass change summaries:", [summaries],
     "Confidence threshold:", [--confidence-threshold]
@@ -528,7 +566,8 @@ section headers:
 3. **Gaps Filled** — record in the pass's `gaps_filled`.
 4. **Unresolved Resolved** — remove the corresponding `UNRESOLVED:` markers.
 5. **ADR Candidates** — write any that meet all three ADR criteria.
-6. **Bubble-Up Questions** — handle per Escalation below.
+6. **Bubble-Up Questions** — handle per Escalation below; a `reopen: <#>` entry is adjudicated
+   per the Settled Decisions Log.
 7. **Material Change Assessment** — the Pass agent's self-report; input to the judge (cross-check only).
 
 ### Dispatching the Convergence judge
@@ -542,6 +581,7 @@ Agent({
     "Snapshot (pass N-1):", [content],
     "Current artifacts (pass N):", [content],
     "Pass agent Material Change Assessment:", [content],
+    "Settled Decisions Log (read first):", [content],
     "Scope:", "full" | "scoped",
     "Base revision for grounding checks:", [revision]
   ],
@@ -554,7 +594,7 @@ Save its response to `docs/auto-plan/reports/judges/pass-N.md` (a re-judge or es
 overwrites it) and run `scripts/metrics.py` on it.
 
 The judge **independently diffs** snapshot vs current and emits `Verdict` / `Changes` / `Open Gaps`
-/ `Rationale` / `Metrics`. The Pass agent's self-report is a cross-check only. It runs after **every** pass —
+/ `Reopens` / `Rationale` / `Metrics`. The Pass agent's self-report is a cross-check only. It runs after **every** pass —
 including Pass 1, which diffs against Snapshot-0. Ambiguous changes are classified **material**
 (conservative bias).
 
@@ -563,8 +603,8 @@ including Pass 1, which diffs against Snapshot-0. Ambiguous changes are classifi
 Pass agents are non-interactive; only the orchestrator talks to the user. On collecting a pass's
 `Bubble-Up Questions`, the orchestrator asks the user immediately (batched, with recommendations,
 **deduped** against already-answered/deferred questions), saves each answer as a domain-tagged
-feedback memory and a settled decision (`source: "user/bubble-up"`), and the **next** pass applies
-them (record-and-defer). Applying an answer is itself a material change, so a pass that only raised
+feedback memory, a settled decision (`source: "user/bubble-up"`) and a Settled Decisions Log
+entry, and the **next** pass applies them (record-and-defer). Applying an answer is itself a material change, so a pass that only raised
 questions is never converged.
 
 **Confidence gating** (by `--confidence-threshold`):
@@ -584,22 +624,23 @@ recommended answer and the loop continues without blocking. An `UNRESOLVED` mark
 **Contradiction with a settled decision.** If a user's bubble-up answer contradicts a settled
 decision, reuse the `--redo` cascade: mark the contradicted decision `invalidated`, walk
 `depends_on` to re-queue affected gaps, apply the >60%-invalidated "consider re-planning" warning,
-and continue under the corrected constraint.
+rewrite the log entry, and continue under the corrected constraint.
 
 ### Termination
 
 | Condition | Detected by | Emitted | `convergence_status` |
 |-----------|-------------|---------|----------------------|
-| Convergence | `metrics.py` `CONVERGED`: instability 0 from a full-coverage judge, every gate passing, escape audit clean | final hardened artifacts | `converged` |
+| Convergence | `metrics.py` `CONVERGED`: instability 0 from a full-coverage judge, every gate passing, no reopen accepted, escape audit clean | final hardened artifacts | `converged` |
 | Plateau | `metrics.py` `PLATEAU`: open gaps did not fall over the last three full-coverage judgments | most-hardened artifacts + open gaps as `UNRESOLVED` markers + "did not converge" banner | `plateau` |
-| Oscillation | `metrics.py` `OSCILLATION`: pass N changed the same regions as pass N-2 | the version with fewer open gaps; tie → latest | `oscillation` |
+| Oscillation | `metrics.py` `OSCILLATION`: pass N changed the same regions as pass N-2, or an accepted reopen reverts a decision settled within the last 3 passes | the version with fewer open gaps; tie → latest | `oscillation` |
 | Pass budget exhausted | `metrics.py` `CAP`: `pass == max_passes` | most-hardened artifacts + surviving `UNRESOLVED` markers + "did not converge" banner | `max_passes_reached` |
 | Hard failure | Pass agent garbage/timeout twice | last-good artifacts | `failed` |
 
 A retried (failed-then-redispatched) pass does **not** consume the `--max-passes` budget, and
 neither does a re-judge. Oscillation compares the judges' `regions_changed` sets (stored as each
-pass's `fingerprint`), not raw text, so minor edits don't mask a ping-pong. The judge stays
-stateless and pairwise; the script holds the history.
+pass's `fingerprint`), not raw text, so minor edits don't mask a ping-pong; a reopen reverting a
+young decision is the direct flip-flop signal. Gap counts swing with judge coverage, so they feed
+only `PLATEAU`. The judge stays stateless and pairwise; the script holds the history.
 
 ### Convergence Metrics
 
@@ -616,6 +657,7 @@ converges by looking less:
 | Grounding precision: sampled `file:line` / signature / flag claims matching the source | invented anchors | 95% or more | target |
 | Fix regression rate: gaps in text the pass changed ÷ gaps it was handed | fixes that break something | falls pass over pass | target |
 | Self-report accuracy: passes whose self-report the judge's diff agrees with | passes misreporting what they changed | 100% | target |
+| Reopens: findings that would change a settled decision (raised, accepted) | flip-flops between reviewers | 0 | target |
 | Length vs pass 1 (words, all artifacts) | resolving gaps by bloat | 1.3x or less | target |
 | Escapes: open gaps the post-`CONVERGED` escape audit finds | the whole set gamed together | falls over runs | trend |
 | Tokens and wall-clock per pass | cost | reported | trend |
@@ -636,7 +678,7 @@ After each judge, run:
   --history reports/YYYY-MM-DD-<topic>-history.jsonl \
   --csv reports/YYYY-MM-DD-<topic>-convergence.csv --upload \
   --pending <unanswered bubble-up questions> --max-passes <max_passes> [--targets "<--targets>"] \
-  [--tokens N --seconds N] [--escapes N]
+  [--tokens N --seconds N] [--escapes N] [--reverts <age per accepted reopen> ...]
 ```
 
 It counts `UNRESOLVED:` markers and words in the artifacts, appends the pass to `history.jsonl`
@@ -644,7 +686,8 @@ It counts `UNRESOLVED:` markers and words in the artifacts, appends the pass to 
 (`pass,material_changes,minor_changes,open_gaps,pending_questions,unresolved_markers,instability_score`),
 redraws the progress chart next to the history (`<history stem>-progress.png`, e.g.
 `reports/YYYY-MM-DD-<topic>-history-progress.png`: one panel per metric by pass, target dashed,
-misses hollow red, scoped judges as squares, escape audits as a dotted line; the x axis has a tick
+misses hollow red, scoped judges as squares, escape audits as a dotted line, fix-induced gaps
+(`gaps_in_last_changed_text`) as their own line beside the severities; the x axis has a tick
 for every pass of the run), stores the verdict on the pass's history line, then prints one table, the
 `short:` lines, and the verdict last. Exit status 0 means stop, 1 means continue. Only a stopping
 verdict (`CONVERGED`, `PLATEAU`, `OSCILLATION`, `CAP`) uploads the chart with
@@ -803,6 +846,7 @@ docs/auto-plan/
     YYYY-MM-DD-<topic>-convergence.csv  (--harden only; always written)
     YYYY-MM-DD-<topic>-history.jsonl    (--harden only; one metrics row per pass)
     YYYY-MM-DD-<topic>-history-progress.png  (--harden only; redrawn every pass, needs matplotlib)
+    YYYY-MM-DD-<topic>-settled.md       (--harden only; Settled Decisions Log)
     judges/pass-N.md                    (--harden only; latest judge response per pass)
     snapshots/pass-N/                   (--harden only; last 2 retained)
 docs/adr/NNNN-<slug>.md

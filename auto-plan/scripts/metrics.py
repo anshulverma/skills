@@ -5,12 +5,14 @@ Usage:
   metrics.py --judge JUDGE.md --artifact SPEC.md [--artifact PLAN.md ...] --pass N --history HISTORY.jsonl
              [--csv CONVERGENCE.csv] [--png CONVERGENCE.png] [--pending N] [--max-passes 3]
              [--targets "grounding precision >= 0.9 | length vs pass 1 <= 1.5"]
-             [--tokens N] [--seconds N] [--escapes N] [--upload]
+             [--tokens N] [--seconds N] [--escapes N] [--reverts AGE ...] [--upload]
 
 --judge is the convergence judge's response (or just its Metrics JSON); the first ```json block
 is read. --artifact is every artifact under hardening (spec, ADRs, plan): their words give the
 length, and their `UNRESOLVED:` markers are counted here. --pending is the number of bubble-up
-questions still waiting for an answer.
+questions still waiting for an answer. --reverts takes, for each reopen the orchestrator accepted
+after this judge, how many passes ago the settled decision it reverts was settled. The judge's
+optional `reopens` count (findings that would change a settled decision) shows in the table.
 
 --history gets one JSON line per pass. A pass number lower than the line before starts a new run
 (sdd's plan stage restarts at 1); a pass logged again (a full-coverage re-judge, the escape audit)
@@ -22,15 +24,17 @@ ASCII sparkline prints instead).
 
 Every run redraws the progress chart next to the history, <history stem>-progress.png: one panel per
 metric on one x axis with a tick for every pass of the run, target dashed, misses hollow red, scoped
-judges as squares, escape audits as a dotted line (needs matplotlib: run with
+judges as squares, escape audits as a dotted line, fix-induced gaps (gaps_in_last_changed_text) as their
+own line in the gaps panel (needs matplotlib: run with
 ~/.cache/humanize-venv/bin/python). With --upload, a verdict that stops the loop also uploads it to
 Pixelcloud, prints the pxl.cl link and stores it on the pass's history line as chart_url; CONTINUE
 never uploads, and a failed upload prints a warning and changes nothing else. The pass's line also
 stores its verdict.
 
 Verdict, on the last line printed:
-  CONVERGED    instability 0, from a full-coverage judge, every gate passes -> stop
-  OSCILLATION  this pass changed the same regions as two passes ago         -> stop
+  CONVERGED    instability 0, from a full-coverage judge, every gate passes, no reopen accepted -> stop
+  OSCILLATION  this pass changed the same regions as two passes ago, or an accepted reopen reverts
+               a decision settled within the last 3 passes                 -> stop
   PLATEAU      open gaps did not fall over the last three full-coverage judgments -> stop
   CAP          --max-passes reached                                         -> stop
   CONTINUE     run another pass (or a full-coverage judge, when one is asked for)
@@ -46,6 +50,7 @@ import subprocess
 import sys
 
 TARGETS = {"grounding precision": (">=", 0.95), "self-report accuracy": (">=", 1.0), "length vs pass 1": ("<=", 1.3)}
+REVERT_WINDOW = 3  # passes; an accepted reopen of a decision this young is a flip-flop
 CSV_COLUMNS = ["pass", "material_changes", "minor_changes", "open_gaps", "pending_questions", "unresolved_markers", "instability_score"]
 
 
@@ -82,7 +87,7 @@ def make_row(j: dict, n: int, words: int, unresolved: int, pending: int, run: li
          "gaps_cosmetic": gaps["cosmetic"], "open_gaps": sum(gaps.values()),
          "pending_questions": pending, "unresolved_markers": unresolved, "words": words}
     for k in ("tasks_read", "tasks_total", "anchors_checked", "anchors_wrong", "executable_steps", "run_steps",
-              "spec_items_mapped", "spec_items_total", "gaps_in_last_changed_text", "self_report_matches"):
+              "spec_items_mapped", "spec_items_total", "gaps_in_last_changed_text", "self_report_matches", "reopens"):
         r[k] = j.get(k)
     r["instability_score"] = r["material_changes"] + r["open_gaps"] + pending + unresolved
     r["full_coverage"] = r["scope"] == "full" and bool(r["tasks_total"]) and r["tasks_read"] == r["tasks_total"]
@@ -104,8 +109,11 @@ def make_row(j: dict, n: int, words: int, unresolved: int, pending: int, run: li
 def verdict(rows: list[dict], max_passes: int) -> str:
     rows = [r for r in rows if not r.get("backfilled")]
     last = rows[-1]
-    if last["instability_score"] == 0 and last["full_coverage"] and not last["gates_failing"]:
+    reverts = last.get("reverts") or []
+    if last["instability_score"] == 0 and last["full_coverage"] and not last["gates_failing"] and not reverts:
         return "CONVERGED"
+    if any(age <= REVERT_WINDOW for age in reverts):
+        return "OSCILLATION"
     if len(rows) >= 3 and last["regions"] and last["regions"] == rows[-3]["regions"]:
         return "OSCILLATION"
     g = [r["open_gaps"] for r in rows if r["full_coverage"]][-3:]
@@ -156,6 +164,9 @@ def table(rows: list[dict], targets: dict) -> list[tuple[str, str, str, str]]:
         tgt("self-report accuracy"), check("self-report accuracy", acc))
     add("length vs pass 1", f"{r['words']} / {rows[0]['words']} words = {r['length_ratio']:.2f}x", tgt("length vs pass 1"),
         check("length vs pass 1", r["length_ratio"]))
+    if r.get("reopens") is not None or r.get("reverts"):
+        add("reopens", f"{r.get('reopens') or 0} raised, {len(r.get('reverts') or [])} accepted", "0",
+            not r.get("reopens") and not r.get("reverts"))
     if r.get("escapes") is not None:
         add("escapes (post-CONVERGED audit)", str(r["escapes"]), "falls over runs", None)
     if r.get("tokens") is not None or r.get("seconds") is not None:
@@ -215,7 +226,8 @@ def progress_chart(rows: list[dict], targets: dict, out: str, title: str) -> Non
     panels = [("instability score", "<=", 0, [("", col("instability_score"))]),
               ("open gaps by severity", "<=", 0, [("total", col("open_gaps")), ("blocking", col("gaps_blocking")),
                                                    ("inconsistency", col("gaps_inconsistency")),
-                                                   ("cosmetic", col("gaps_cosmetic"))]),
+                                                   ("cosmetic", col("gaps_cosmetic")),
+                                                   ("fix-induced", col("gaps_in_last_changed_text"))]),
               ("judge coverage [gate]", ">=", 1.0, [("", col("coverage"))]),
               ("literal executability [gate]", ">=", 1.0, [("", col("executability"))]),
               ("spec coverage [gate]", ">=", 1.0, [("", col("spec_coverage"))]),
@@ -224,7 +236,7 @@ def progress_chart(rows: list[dict], targets: dict, out: str, title: str) -> Non
               ("self-report accuracy", *targets["self-report accuracy"], [("", acc)]),
               ("length vs pass 1", *targets["length vs pass 1"], [("", col("length_ratio"))])]
     surface, ink, ink2, bad, audit = "#fcfcfb", "#0b0b0b", "#52514e", "#e34948", "#7b3fbf"
-    colors = ["#2a78d6", "#9b2c2c", "#8a6d1f", "#9a9893"]
+    colors = ["#2a78d6", "#9b2c2c", "#8a6d1f", "#9a9893", "#d9822b"]
     xs = col("pass")
     ticks = list(range(xs[0], xs[-1] + 1))
     fig, axes = plt.subplots(3, 3, figsize=(10.8, 7.5), dpi=170)
@@ -304,6 +316,7 @@ def main() -> None:
     ap.add_argument("--tokens", type=int)
     ap.add_argument("--seconds", type=int)
     ap.add_argument("--escapes", type=int)
+    ap.add_argument("--reverts", type=int, nargs="*", default=[])
     ap.add_argument("--upload", action="store_true")
     o = ap.parse_args()
 
@@ -319,7 +332,7 @@ def main() -> None:
     old = load_run(o.history)
     run = [] if old and o.n < old[-1]["pass"] else [r for r in old if r["pass"] < o.n]
     row = make_row(read_judge(o.judge), o.n, words, unresolved, o.pending, run)
-    row.update(tokens=o.tokens, seconds=o.seconds, escapes=o.escapes)
+    row.update(tokens=o.tokens, seconds=o.seconds, escapes=o.escapes, reverts=o.reverts)
     rows = run + [row]
     v = row["verdict"] = verdict(rows, o.max_passes)
     if o.csv:

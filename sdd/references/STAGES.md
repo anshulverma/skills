@@ -136,6 +136,12 @@ This is the same rule as "keep payloads small, materialize files from the main l
 to hardening. The convergence judge can stay a single agent, because it returns a verdict
 rather than content.
 
+The split keeps auto-plan's convergence rules. Every audit and judge reads the Settled
+Decisions Log first and reports `reopen: <#>` items apart from gaps; the orchestrator, as the
+fixer, follows the Hardening Pass Protocol's Fixer Discipline (verify each mechanism against the
+code or `--help`, update every consumer in the same pass) and snapshots every artifact it edits,
+the spec working copy included.
+
 ### Stop on divergence, not just convergence
 
 auto-plan's Phase 5 stops on the verdict of its `scripts/metrics.py`, run after every judge
@@ -201,7 +207,7 @@ name it. Rewrite `autoplan_state` in full:
 
 - set `artifacts.plan` to `plan_path`
 - rename the existing `harden` block to `harden_spec` (keeps the stage-2 audit trail)
-- install a fresh `harden`: `{enabled: true, max_passes: 20, current_pass: 1, convergence_status: "in_progress", passes: []}`
+- install a fresh `harden`: `{enabled: true, max_passes: 20, current_pass: 1, convergence_status: "in_progress", settled_log: <harden_spec.settled_log>, passes: []}`; the plan stage keeps the spec stage's Settled Decisions Log
 
 Without the reset, `--resume` reads a terminal `convergence_status` and falls straight
 through stage 4 doing nothing.

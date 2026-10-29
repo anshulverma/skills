@@ -6,7 +6,8 @@ after a pass. Be rigorous and concrete.
 ## Your Job
 
 You are given two artifact sets — the **snapshot** (pass N-1, the pre-overwrite copy) and the
-**current** artifacts (pass N) — plus the Pass agent's self-reported Material Change Assessment.
+**current** artifacts (pass N) — plus the Pass agent's self-reported Material Change Assessment
+and the **Settled Decisions Log**. Read the log first.
 
 **Independently diff** the snapshot against the current artifacts and classify every change
 yourself. The Pass agent's self-report is only a cross-check; if it disagrees with your diff, trust
@@ -17,6 +18,17 @@ when there is no plan) in full, not only the text this pass changed. `scoped`: c
 text the last pass changed. A scoped judgment may report gaps but never `CONVERGED`.
 
 ## What to Check
+
+At any scope:
+
+- **Settled decisions**: a finding that would change a logged decision is not a gap. List it
+  under Reopens as `reopen: <#>` with the code (`file:line` at the base revision) or spec text
+  that shows the decision wrong; without that evidence, drop it. A diff that changed a settled
+  decision with no accepted reopen is an `inconsistency` gap: restore the entry's text.
+- **CLI usage**: check every command, subcommand and flag against the tool's `--help` (or its
+  source) before calling it right or wrong.
+- **Rationale**: never report missing rationale or ask to add it. A step needs a reason only where
+  it would otherwise look wrong.
 
 At full scope, beyond the diff:
 
@@ -29,7 +41,8 @@ At full scope, beyond the diff:
   against the source at the base revision the artifacts name. Each wrong one is a gap.
 
 Tag every open gap with its severity: `blocks-execution` (an implementer cannot carry the step
-out as written), `inconsistency` (two parts of the artifacts disagree), or `cosmetic`.
+out as written), `inconsistency` (two parts of the artifacts disagree), or `cosmetic`; and with
+where it sits: `changed` (in text the last pass changed) or `untouched`.
 
 ## Classification Rubric
 
@@ -71,7 +84,10 @@ MUST emit `NOT CONVERGED`.)
 | # | Artifact | Change summary | Classification: material/minor | Why |
 
 ### Open Gaps
-- [blocks-execution|inconsistency|cosmetic] [gap the judge spotted that this pass missed]   (feeds the next pass; empty if none)
+- [blocks-execution|inconsistency|cosmetic] [changed|untouched] [gap the judge spotted that this pass missed]   (feeds the next pass; empty if none)
+
+### Reopens
+- reopen: <#> | evidence: [file:line or spec quote] | proposed: [the corrected decision]   (empty if none)
 
 ### Rationale
 [1–3 sentences tying the verdict to the convergence condition, noting any discrepancy with the
@@ -83,7 +99,7 @@ Pass agent's self-report]
  "gaps": {"blocks_execution": 0, "inconsistency": 0, "cosmetic": 0},
  "tasks_read": 0, "tasks_total": 0, "anchors_checked": 0, "anchors_wrong": 0,
  "executable_steps": 0, "run_steps": 0, "spec_items_mapped": 0, "spec_items_total": 0,
- "gaps_in_last_changed_text": 0, "self_report_matches": true}
+ "gaps_in_last_changed_text": 0, "self_report_matches": true, "reopens": 0}
 ```
 ````
 
@@ -99,5 +115,6 @@ Metrics fields, all counts from this judgment:
   many did not match.
 - `executable_steps` / `run_steps`, `spec_items_mapped` / `spec_items_total`: the plan checks above;
   `null` when there is no plan.
-- `gaps_in_last_changed_text`: open gaps that sit in text this pass changed.
+- `gaps_in_last_changed_text`: open gaps tagged `changed`.
+- `reopens`: entries under Reopens (optional; omit only when you were given no log).
 - `self_report_matches`: `true` when your diff agrees with the Pass agent's self-report.

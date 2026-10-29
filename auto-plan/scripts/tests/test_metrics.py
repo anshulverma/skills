@@ -68,6 +68,17 @@ class T(unittest.TestCase):
         self.assertEqual(metrics.verdict(rows, 20), "CONTINUE")
         metrics.table(rows, metrics.TARGETS)   # a backfilled previous row lacks the judge fields
 
+    def test_reopens(self):
+        rows = run_of(judge(), judge())
+        self.assertNotIn("reopens", {t[0] for t in metrics.table(rows, metrics.TARGETS)})   # old rows: no line
+        rows = run_of(judge(), judge(reopens=1))
+        self.assertEqual({t[0]: t[3] for t in metrics.table(rows, metrics.TARGETS)}["reopens"], "FAIL")
+        self.assertEqual(metrics.verdict(rows, 20), "CONVERGED")    # raised, not accepted
+        rows[-1]["reverts"] = [2]                                    # reverts a decision settled 2 passes ago
+        self.assertEqual(metrics.verdict(rows, 20), "OSCILLATION")
+        rows[-1]["reverts"] = [9]                                    # an old decision: no flip-flop, still no convergence
+        self.assertEqual(metrics.verdict(rows, 20), "CONTINUE")
+
     def test_cap(self):
         busy = judge(material_changes=2, regions_changed=["x"])
         rows = run_of(busy, judge(material_changes=1, regions_changed=["y"]), judge(material_changes=3, regions_changed=["z"]))
@@ -117,6 +128,9 @@ class T(unittest.TestCase):
             self.assertEqual(lines[0], ",".join(metrics.CSV_COLUMNS))
             self.assertEqual([ln.split(",")[0] for ln in lines[1:]], ["1", "2"])
             self.assertNotEqual(call(3, judge(), "--targets", "fact retention >= 0.5").returncode, 0)
+            r = call(3, judge(reopens=1), "--reverts", "1")
+            self.assertEqual((r.returncode, r.stdout.strip().splitlines()[-1]), (0, "OSCILLATION"))
+            self.assertIn("1 raised, 1 accepted", r.stdout)
             # A restart at pass 1 (sdd's plan stage) is a new run with its own length baseline.
             open(p("plan.md"), "w").write("word " * 2000)
             call(1, judge(material_changes=1))
@@ -181,6 +195,8 @@ class T(unittest.TestCase):
                 self.assertTrue(os.path.getsize(os.path.join(d, "c.png")) > 0)
         finally:
             plt.Figure.savefig = real_savefig
+        labels = [t.get_text() for ax in captured[0].axes if ax.get_legend() for t in ax.get_legend().get_texts()]
+        self.assertIn("fix-induced", labels)
         for ax in captured[0].axes:
             self.assertEqual(list(ax.get_xticks()), list(range(1, 31)))
             self.assertEqual([t.get_text() for t in ax.get_xticklabels()], [str(n) for n in range(1, 31)])
