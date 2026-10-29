@@ -16,8 +16,10 @@ import math
 import os
 import re
 import statistics
+import shutil
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 
 from state import atomic_write_json, iso, now_utc, parse_ts, read_events, read_json
@@ -248,7 +250,10 @@ def publish() -> str:
         raise PermissionError(f"velocity doc {doc_id} is not private; not writing to it")
     body = os.path.join(root(), "body.html")
     open(body, "w").write(render_body(os.path.join(root(), "fig")))
-    _meta("google.docs", "apply", f"--id={doc_id}", f"--from=file://{body}", "--conflict-resolution=ours")
+    # meta apply fails on a file outside /tmp (it asks to write the ghtml back), so apply a /tmp copy.
+    with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+        staged = shutil.copy(body, os.path.join(tmp, "velocity-body.html"))
+        _meta("google.docs", "apply", f"--id={doc_id}", f"--from=file://{staged}", "--conflict-resolution=ours")
     return doc_id
 
 
